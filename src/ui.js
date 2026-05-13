@@ -8,7 +8,7 @@
  *   showDeathScreen(), showStartScreen(text), hideStartScreen()
  */
 import { state } from './state.js';
-import { commitRunResults, getMeta, setOption, achievementCount, ACHIEVEMENTS, SHOP_UPGRADES, upgradeCost, buyUpgrade, shopLevel, isDiscovered, dailyChallengeConfig, commitDailyRun, equippedRelic, selectedStage, HOUSE_UPGRADES, houseLevel, houseCost, buyHouseUpgrade } from './meta.js';
+import { commitRunResults, getMeta, setOption, achievementCount, ACHIEVEMENTS, SHOP_UPGRADES, upgradeCost, buyUpgrade, shopLevel, isDiscovered, dailyChallengeConfig, commitDailyRun, equippedRelic, selectedStage, HOUSE_UPGRADES, houseLevel, houseCost, buyHouseUpgrade, QUEST_TEMPLATES, availableQuests, activeQuests, acceptQuest, abandonQuest, claimQuest, maxActiveQuests } from './meta.js';
 import { CHARACTERS, STAGES } from './config.js';
 import { SLOT_SYMBOLS, rollReel, resolveOutcome, applyOutcome } from './slotMachine.js';
 
@@ -1833,6 +1833,163 @@ export function hideHouse() {
   if (!_houseModal) return;
   if (_houseModal.parentNode) _houseModal.parentNode.removeChild(_houseModal);
   _houseModal = null;
+}
+
+// ── Quest Board modal (90s CRT in the house interior) ──
+let _questModal = null;
+export function isQuestBoardOpen() { return !!_questModal; }
+export function showQuestBoard() {
+  if (_questModal) return;
+  const meta = getMeta();
+  const lain = !!(meta.quests && meta.quests.lainTerminal);
+  _questModal = document.createElement('div');
+  _questModal.style.cssText = `
+    position: fixed; inset: 0;
+    background:
+      radial-gradient(ellipse at 50% 25%, ${lain ? 'rgba(80,200,255,0.06)' : 'rgba(42,255,102,0.05)'}, transparent 60%),
+      radial-gradient(ellipse at center, rgba(0,0,0,0.62), rgba(0,0,0,0.92) 80%);
+    backdrop-filter: blur(10px);
+    display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+    pointer-events: auto;
+    font-family: ${F.body};
+    z-index: 120;
+    overflow-y: auto;
+    padding: 48px 20px;
+  `;
+
+  const title = document.createElement('div');
+  title.style.cssText = `font-family: ${F.display}; font-size: 38px; font-weight: 900;
+    letter-spacing: 0.22em; color: ${lain ? '#4fd0ff' : '#2aff66'};
+    text-shadow: 0 2px 16px rgba(0,0,0,0.55), 0 0 24px ${lain ? 'rgba(80,200,255,0.20)' : 'rgba(42,255,102,0.20)'};
+    margin-bottom: 6px;`;
+  title.textContent = lain ? 'NAVI · Quest Terminal' : 'KAKI-DOS · Bounty Board';
+
+  const subtitle = document.createElement('div');
+  subtitle.style.cssText = `font-family: ${F.mono}; font-size: 11px; letter-spacing: 0.32em;
+    color: rgba(245,239,225,0.6); text-transform: uppercase; margin-bottom: 22px;`;
+  subtitle.textContent = `Active ${activeQuests().length} / ${maxActiveQuests()}    Completed lifetime: ${(meta.quests && meta.quests.completedCount) || 0}`;
+
+  const grid = document.createElement('div');
+  grid.style.cssText = 'display: grid; grid-template-columns: 1fr 1fr; gap: 28px; max-width: 1100px; width: 100%;';
+
+  const activeCol = document.createElement('div');
+  const offerCol = document.createElement('div');
+  grid.appendChild(activeCol); grid.appendChild(offerCol);
+
+  function questCard(tpl, q) {
+    const isActive = !!q;
+    const complete = isActive && q.progress >= tpl.goal;
+    const card = document.createElement('div');
+    const accent = complete ? '#ffae6a' : (isActive ? (lain ? '#4fd0ff' : '#2aff66') : C.amber);
+    card.style.cssText = `
+      background: linear-gradient(180deg, rgba(20,28,22,0.94), rgba(8,14,12,0.96));
+      border: 1px solid ${accent};
+      border-radius: 10px;
+      box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 12px 26px rgba(0,0,0,0.55);
+      padding: 14px 16px;
+      margin-bottom: 12px;
+      display: grid; grid-template-columns: 44px 1fr; gap: 12px; align-items: start;
+    `;
+    let progressBar = '';
+    if (isActive) {
+      const pct = Math.min(100, Math.floor((q.progress / tpl.goal) * 100));
+      progressBar = `
+        <div style="height:6px; background:rgba(255,255,255,0.08); border-radius:3px; margin-top:6px; overflow:hidden;">
+          <div style="height:100%; width:${pct}%; background:${accent};"></div>
+        </div>
+        <div style="font-family:${F.mono}; font-size:10px; color:${accent}; margin-top:4px; letter-spacing:0.08em;">
+          ${q.progress} / ${tpl.goal}${complete ? '   ·   READY TO CLAIM' : ''}
+        </div>
+      `;
+    }
+    card.innerHTML = `
+      <div style="font-size:28px; line-height:1; filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));">${tpl.icon}</div>
+      <div>
+        <div style="font-family:${F.display}; font-size:13px; font-weight:700; letter-spacing:0.10em; color:${C.text};">${escapeHtml(tpl.name)}</div>
+        <div style="font-size:11.5px; color:rgba(245,239,225,0.72); line-height:1.45; margin-top:3px;">${escapeHtml(tpl.desc)}</div>
+        <div style="font-family:${F.mono}; font-size:11px; color:${C.amber}; margin-top:6px; letter-spacing:0.06em;">
+          Reward: ${tpl.coins} coins  ·  ${tpl.embers} 🔥
+        </div>
+        ${progressBar}
+      </div>
+    `;
+    // Buttons
+    const btns = document.createElement('div');
+    btns.style.cssText = 'display:flex; gap:8px; margin-top:10px; grid-column:1/-1;';
+    const mkBtn = (label, color, fn) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = label;
+      b.style.cssText = `padding:7px 14px; cursor:pointer;
+        background:rgba(20,28,22,0.78); border:1px solid ${color}; border-radius:6px;
+        color:${color}; font-family:${F.display}; font-size:11px; letter-spacing:0.22em;`;
+      b.addEventListener('click', (e) => { e.stopPropagation(); fn(); });
+      return b;
+    };
+    if (isActive && complete) {
+      btns.appendChild(mkBtn('Claim', '#ffae6a', () => {
+        const result = claimQuest(tpl.id);
+        if (result) { repaint(); }
+      }));
+    }
+    if (isActive && !complete) {
+      btns.appendChild(mkBtn('Abandon', '#c87b7b', () => {
+        if (abandonQuest(tpl.id)) repaint();
+      }));
+    }
+    if (!isActive) {
+      const canAccept = activeQuests().length < maxActiveQuests();
+      btns.appendChild(mkBtn(canAccept ? 'Accept' : 'Slot Full', canAccept ? (lain ? '#4fd0ff' : '#2aff66') : 'rgba(120,120,120,0.6)', () => {
+        if (!canAccept) return;
+        if (acceptQuest(tpl.id)) repaint();
+      }));
+    }
+    card.appendChild(btns);
+    return card;
+  }
+
+  function repaint() {
+    activeCol.innerHTML = `<div style="font-family:${F.display};font-size:12px;letter-spacing:0.30em;color:${lain ? '#4fd0ff' : '#2aff66'};margin-bottom:10px;text-transform:uppercase;">Active</div>`;
+    const active = activeQuests();
+    if (active.length === 0) {
+      const empty = document.createElement('div');
+      empty.style.cssText = `padding:18px; border:1px dashed ${C.edge}; border-radius:8px; color:rgba(245,239,225,0.5); font-size:13px; text-align:center;`;
+      empty.textContent = 'No active bounties. Accept one from the offer pool →';
+      activeCol.appendChild(empty);
+    } else {
+      for (const q of active) {
+        const tpl = QUEST_TEMPLATES.find(t => t.id === q.id);
+        if (tpl) activeCol.appendChild(questCard(tpl, q));
+      }
+    }
+    offerCol.innerHTML = `<div style="font-family:${F.display};font-size:12px;letter-spacing:0.30em;color:${C.amber};margin-bottom:10px;text-transform:uppercase;">Offer Pool</div>`;
+    const offers = availableQuests();
+    for (const tpl of offers) offerCol.appendChild(questCard(tpl, null));
+    // Update header counter
+    subtitle.textContent = `Active ${activeQuests().length} / ${maxActiveQuests()}    Completed lifetime: ${(getMeta().quests && getMeta().quests.completedCount) || 0}`;
+  }
+  repaint();
+
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.textContent = 'Close · Esc';
+  close.style.cssText = `margin-top: 28px; padding: 10px 26px; cursor: pointer;
+    background: linear-gradient(180deg, rgba(20,28,22,0.78), rgba(8,14,12,0.86));
+    border: 1px solid ${C.edge}; border-radius: 8px;
+    color: ${C.magenta}; font-family: ${F.display}; font-size: 13px; font-weight: 700;
+    letter-spacing: 0.28em;`;
+  close.onclick = hideQuestBoard;
+
+  _questModal.appendChild(title);
+  _questModal.appendChild(subtitle);
+  _questModal.appendChild(grid);
+  _questModal.appendChild(close);
+  _root.appendChild(_questModal);
+}
+export function hideQuestBoard() {
+  if (!_questModal) return;
+  if (_questModal.parentNode) _questModal.parentNode.removeChild(_questModal);
+  _questModal = null;
 }
 export function isShopOpen() { return !!_shopModal; }
 

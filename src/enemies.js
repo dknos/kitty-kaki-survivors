@@ -509,6 +509,13 @@ export function killEnemy(enemy) {
   state.run.kills++;
   state.run.noDmgKills = (state.run.noDmgKills || 0) + 1;
 
+  // Quest progress hooks — increment hunt/boss counters at the source.
+  import('./meta.js').then(({ questEvent }) => {
+    questEvent('kill', { tier: enemy.glbKey });
+    if (enemy.isMiniBoss)  questEvent('miniBoss');
+    if (enemy.isFinalBoss) questEvent('finalBoss');
+  });
+
   // Achievements
   import('./ui.js').then(({ tryAchievement, trySecret }) => {
     tryAchievement('first_kill');

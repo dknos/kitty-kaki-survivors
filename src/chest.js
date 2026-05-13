@@ -164,6 +164,7 @@ export function tickChests(dt) {
       state.fx.shake = Math.max(state.fx.shake, 0.4);
       state.fx.bloomBoost = Math.max(state.fx.bloomBoost, 0.5);
       import('./ui.js').then(({ tryAchievement }) => tryAchievement('first_chest'));
+      import('./meta.js').then(({ questEvent }) => questEvent('chestOpen'));
       showSlotMachine();
       return; // one chest per frame
     }

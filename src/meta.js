@@ -11,6 +11,10 @@ const DEFAULT = {
   coins: 0,
   embers: 0,          // House-upgrade currency. Scarce — ~3-6 per run.
   house: {},          // { kitchen: 2, cellar: 1, ... } owned levels
+  // ── Quest board (90s CRT in the house interior) ──
+  // Active: array of current bounties (length cap depends on lainTerminal flag).
+  // Completed: lifetime tally for the "quests done" stat.
+  quests: { active: [], completedCount: 0, lainTerminal: false },
   runs: 0,
   bestTime: 0,
   bestKills: 0,
@@ -248,6 +252,128 @@ export function houseCost(upg, currentLevel) {
   return upg.costs[currentLevel] || Infinity;
 }
 
+// ── Quest system ──
+// A quest is a goal-based bounty the player accepts at the house computer.
+// It tracks progress via in-game event hooks (killEnemy, chest open, etc.)
+// and is claimed on return to the computer for coins + embers.
+export const QUEST_TEMPLATES = [
+  // Hunt: kill N enemies of a tier-keyed type (glb key, matching ENEMY_TIERS).
+  { id: 'hunt_zombies', kind: 'hunt', target: 'zombie', goal: 30, name: 'Thin the Wandering Dead', desc: 'Slay 30 zombies (Mushnubs).', icon: '🧟', coins: 60, embers: 1 },
+  { id: 'hunt_bugs',    kind: 'hunt', target: 'ant',    goal: 60, name: 'Pest Control',            desc: 'Crush 60 ants.',           icon: '🐜', coins: 50, embers: 1 },
+  { id: 'hunt_spider',  kind: 'hunt', target: 'spider', goal: 20, name: 'Web Sweeper',             desc: 'Slay 20 spiders.',         icon: '🕷', coins: 70, embers: 1 },
+  { id: 'hunt_wolves',  kind: 'hunt', target: 'wolf',   goal: 15, name: 'Wolfsbane',               desc: 'Slay 15 wolves.',          icon: '🐺', coins: 90, embers: 2 },
+  { id: 'hunt_demon',   kind: 'hunt', target: 'demon',  goal: 10, name: 'Demonslayer',             desc: 'Defeat 10 demons.',        icon: '👹', coins: 110, embers: 2 },
+  // Boss: defeat any mini-boss (count goal = how many across runs).
+  { id: 'boss_mini',    kind: 'boss', target: 'mini',   goal: 3,  name: 'Three Trials',            desc: 'Defeat 3 mini-bosses (any run).', icon: '🛡', coins: 200, embers: 4 },
+  { id: 'boss_final',   kind: 'boss', target: 'final',  goal: 1,  name: 'The Nightmare',           desc: 'Defeat a final boss.',     icon: '👑', coins: 400, embers: 6 },
+  // Survive: live N seconds in a single run.
+  { id: 'survive_5',    kind: 'survive', goal: 300, name: 'Five Minutes of Hell', desc: 'Survive 5 minutes in one run.', icon: '⏱', coins: 80, embers: 1 },
+  { id: 'survive_10',   kind: 'survive', goal: 600, name: 'A Long Hunt',          desc: 'Survive 10 minutes in one run.', icon: '⏳', coins: 180, embers: 3 },
+  // Collect: chests opened across runs.
+  { id: 'collect_chests', kind: 'collect', target: 'chest', goal: 5, name: 'Treasure Seeker', desc: 'Open 5 chests (any runs).', icon: '🎁', coins: 80, embers: 1 },
+  // Hoard: total coins earned across runs.
+  { id: 'hoard_coins',  kind: 'hoard', target: 'coins', goal: 250, name: 'Bag of Gold', desc: 'Earn 250 coins across runs.', icon: '💰', coins: 100, embers: 2 },
+];
+
+export function maxActiveQuests() {
+  const meta = getMeta();
+  return (meta.quests && meta.quests.lainTerminal) ? 3 : 1;
+}
+
+/** Return the list of templates not currently active. Used by the offer screen. */
+export function availableQuests() {
+  const meta = getMeta();
+  if (!meta.quests) meta.quests = { active: [], completedCount: 0, lainTerminal: false };
+  const activeIds = new Set(meta.quests.active.map(q => q.id));
+  return QUEST_TEMPLATES.filter(t => !activeIds.has(t.id));
+}
+
+export function activeQuests() {
+  const meta = getMeta();
+  if (!meta.quests) meta.quests = { active: [], completedCount: 0, lainTerminal: false };
+  return meta.quests.active;
+}
+
+export function acceptQuest(id) {
+  const meta = getMeta();
+  if (!meta.quests) meta.quests = { active: [], completedCount: 0, lainTerminal: false };
+  if (meta.quests.active.length >= maxActiveQuests()) return false;
+  if (meta.quests.active.some(q => q.id === id)) return false;
+  const tpl = QUEST_TEMPLATES.find(t => t.id === id);
+  if (!tpl) return false;
+  meta.quests.active.push({ id, progress: 0, acceptedAt: Date.now() });
+  saveMeta();
+  return true;
+}
+
+export function abandonQuest(id) {
+  const meta = getMeta();
+  if (!meta.quests) return false;
+  const i = meta.quests.active.findIndex(q => q.id === id);
+  if (i < 0) return false;
+  meta.quests.active.splice(i, 1);
+  saveMeta();
+  return true;
+}
+
+export function claimQuest(id) {
+  const meta = getMeta();
+  if (!meta.quests) return null;
+  const i = meta.quests.active.findIndex(q => q.id === id);
+  if (i < 0) return null;
+  const q = meta.quests.active[i];
+  const tpl = QUEST_TEMPLATES.find(t => t.id === id);
+  if (!tpl) return null;
+  if (q.progress < tpl.goal) return null;       // not complete
+  meta.quests.active.splice(i, 1);
+  meta.quests.completedCount = (meta.quests.completedCount || 0) + 1;
+  meta.coins += tpl.coins;
+  meta.embers = (meta.embers || 0) + tpl.embers;
+  saveMeta();
+  return { coins: tpl.coins, embers: tpl.embers, template: tpl };
+}
+
+/**
+ * Progress-event hook. Called from gameplay code on relevant events.
+ * Examples:
+ *   questEvent('kill', { tier: 'wolf' });
+ *   questEvent('miniBoss');
+ *   questEvent('finalBoss');
+ *   questEvent('survive', { seconds: state.time.game });
+ *   questEvent('chestOpen');
+ *   questEvent('coinsEarned', { amount: 50 });
+ */
+export function questEvent(kind, payload) {
+  const meta = getMeta();
+  if (!meta.quests || !meta.quests.active.length) return;
+  let dirty = false;
+  for (const q of meta.quests.active) {
+    const tpl = QUEST_TEMPLATES.find(t => t.id === q.id);
+    if (!tpl) continue;
+    if (tpl.kind === 'hunt' && kind === 'kill' && payload && payload.tier === tpl.target) {
+      q.progress = Math.min(tpl.goal, (q.progress || 0) + 1);
+      dirty = true;
+    } else if (tpl.kind === 'boss' && tpl.target === 'mini' && kind === 'miniBoss') {
+      q.progress = Math.min(tpl.goal, (q.progress || 0) + 1);
+      dirty = true;
+    } else if (tpl.kind === 'boss' && tpl.target === 'final' && kind === 'finalBoss') {
+      q.progress = Math.min(tpl.goal, (q.progress || 0) + 1);
+      dirty = true;
+    } else if (tpl.kind === 'survive' && kind === 'survive' && payload) {
+      // Single-run survive uses max-reached, not additive.
+      q.progress = Math.max(q.progress || 0, Math.min(tpl.goal, Math.floor(payload.seconds)));
+      dirty = true;
+    } else if (tpl.kind === 'collect' && tpl.target === 'chest' && kind === 'chestOpen') {
+      q.progress = Math.min(tpl.goal, (q.progress || 0) + 1);
+      dirty = true;
+    } else if (tpl.kind === 'hoard' && tpl.target === 'coins' && kind === 'coinsEarned' && payload) {
+      q.progress = Math.min(tpl.goal, (q.progress || 0) + (payload.amount || 0));
+      dirty = true;
+    }
+  }
+  if (dirty) saveMeta();
+}
+
 /** Grant N Embers and persist. Used by house minigames. */
 export function grantEmbers(n) {
   if (!Number.isFinite(n) || n <= 0) return 0;
@@ -328,6 +454,9 @@ export function commitRunResults({ timeSurvived, kills, dmgDealt, level, victory
   // Embers — scarce hub currency. ~5 per 5-min run; +1 per 50 kills.
   const embersEarned = Math.max(0, Math.floor(timeSurvived / 60) + Math.floor(kills / 50) + (victory ? 2 : 0));
   meta.embers = (meta.embers || 0) + embersEarned;
+  // Quest hooks at run end (survive seconds + coins earned this run).
+  try { questEvent('survive', { seconds: timeSurvived }); } catch (_) {}
+  try { questEvent('coinsEarned', { amount: coinsEarned }); } catch (_) {}
   const isBestTime = timeSurvived > meta.bestTime;
   const isBestKills = kills > meta.bestKills;
   meta.coins += coinsEarned;

@@ -19,7 +19,7 @@ import { initEnemies, updateEnemies, prewarmPools } from './enemies.js';
 import { initWeapons, tickWeapons, acquireWeapon, weaponChoices, _resetEvoAnnouncements } from './weapons/index.js';
 import { initXP, updateGems, dropGem, applyLevelUpChoice } from './xp.js';
 import { initSpawnDirector, tickSpawnDirector, secondsUntilNextMiniBoss } from './spawnDirector.js';
-import { initUI, updateUI, showLevelUpModal, hideLevelUpModal, showDeathScreen, showStartScreen, hideStartScreen, showOptions, hideOptions, isOptionsOpen, showTutorial, showBanner, hideShop, isShopOpen, hideGrimoire, isGrimoireOpen, showHouse, hideHouse, isHouseOpen } from './ui.js';
+import { initUI, updateUI, showLevelUpModal, hideLevelUpModal, showDeathScreen, showStartScreen, hideStartScreen, showOptions, hideOptions, isOptionsOpen, showTutorial, showBanner, hideShop, isShopOpen, hideGrimoire, isGrimoireOpen, showHouse, hideHouse, isHouseOpen, showQuestBoard, hideQuestBoard, isQuestBoardOpen } from './ui.js';
 import { initDamageNumbers, updateDamageNumbers } from './damageNumbers.js';
 import { initFX, updateFX, updatePickupRing } from './fx.js';
 import { initVFXBurst, updateVFXBurst, resetVFXBurst } from './vfxBurst.js';
@@ -203,6 +203,7 @@ async function boot() {
   setInteriorHandler('sketch', () => showSketchbook());
   setInteriorHandler('yarn',   () => showYarnDart());
   setInteriorHandler('tea',    () => showTeaSteep());
+  setInteriorHandler('computer', () => showQuestBoard());
   window.kkStartRun = start;
   window.kkEnterTown = () => {
     hideStartScreen();
@@ -215,7 +216,8 @@ async function boot() {
   window.addEventListener('keydown', e => { if (e.code === 'Space' && state.mode === 'menu') start(); });
   window.addEventListener('keydown', e => {
     if (e.code === 'Escape') {
-      if (isHouseOpen()) hideHouse();
+      if (isQuestBoardOpen()) hideQuestBoard();
+      else if (isHouseOpen()) hideHouse();
       else if (state.mode === 'interior') { exitInterior(); enterTown(); }
       else if (isShopOpen()) hideShop();
       else if (isGrimoireOpen()) hideGrimoire();

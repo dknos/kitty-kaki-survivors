@@ -30,6 +30,7 @@ const _interactables = [
   { pos: { x:  4.0, z: -2.0 }, radius: 2.0, label: '✎  Sketchbook · trace a doodle', key: 'sketch'  },
   { pos: { x:  0,   z: -4.0 }, radius: 2.0, label: '☕  Tea Ceremony · perfect the pour', key: 'tea' },
   { pos: { x:  5.5, z:  2.2 }, radius: 1.8, label: '🧶  Yarn Toss · throw at baskets', key: 'yarn' },
+  { pos: { x: -5.5, z:  2.2 }, radius: 1.8, label: '💻  Quest Board · check the terminal', key: 'computer' },
 ];
 
 function _matStandard(color, roughness = 0.85, metalness = 0.0) {
@@ -166,6 +167,140 @@ function _makeTeaKettle() {
   return g;
 }
 
+// 90s computer setup — wood desk, beige CRT, keyboard, mouse, glowing screen.
+// Lain Navi variant (state.lain === true) is a darker translucent egg with
+// multiple monitors, evoking the Serial Experiments Lain terminal.
+function _makeComputerDesk(lain = false) {
+  const g = new THREE.Group();
+  // Desk top + 4 legs
+  const top = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.12, 1.2), _matStandard(0x6a4830, 0.7));
+  top.position.y = 0.85;
+  top.castShadow = true; top.receiveShadow = true;
+  g.add(top);
+  for (const [x, z] of [[-1.05, -0.50],[1.05, -0.50],[-1.05, 0.50],[1.05, 0.50]]) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.85, 0.12), _matStandard(0x4a2f1c, 0.85));
+    leg.position.set(x, 0.42, z);
+    g.add(leg);
+  }
+  if (lain) {
+    // ── Lain Navi terminal ──
+    // Translucent acrylic egg case with a soft cyan internal glow.
+    const eggCase = new THREE.Mesh(
+      new THREE.SphereGeometry(0.42, 24, 18),
+      new THREE.MeshStandardMaterial({
+        color: 0xc8d8ff, roughness: 0.15, metalness: 0.05,
+        transparent: true, opacity: 0.42, side: THREE.DoubleSide,
+      }),
+    );
+    eggCase.scale.set(1.0, 1.15, 1.0);
+    eggCase.position.set(0, 1.35, -0.12);
+    g.add(eggCase);
+    // Internal core (visible through acrylic)
+    const core = new THREE.Mesh(
+      new THREE.SphereGeometry(0.16, 16, 12),
+      new THREE.MeshStandardMaterial({ color: 0x4fd0ff, emissive: 0x4fd0ff, emissiveIntensity: 1.8, roughness: 0.4 }),
+    );
+    core.position.set(0, 1.35, -0.12);
+    g.add(core);
+    // Three flat monitors arranged in an arc
+    for (let i = -1; i <= 1; i++) {
+      const mon = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.65, 0.45),
+        new THREE.MeshStandardMaterial({
+          color: 0x0a0e14, emissive: 0x4fd0ff, emissiveIntensity: 0.6, roughness: 0.4,
+        }),
+      );
+      mon.position.set(i * 0.7, 1.30, 0.30);
+      mon.rotation.y = -i * 0.30;
+      g.add(mon);
+      // Bezel
+      const bez = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.72, 0.52),
+        new THREE.MeshStandardMaterial({ color: 0x18181f, roughness: 0.55 }),
+      );
+      bez.position.set(i * 0.7, 1.30, 0.295);
+      bez.rotation.y = -i * 0.30;
+      g.add(bez);
+    }
+    // Cool cyan accent light
+    const pl = new THREE.PointLight(0x4fd0ff, 1.4, 5, 2);
+    pl.position.set(0, 1.6, -0.1);
+    g.add(pl);
+    g.userData._coreGlow = core;
+  } else {
+    // ── 90s beige CRT ──
+    // Big chunky beige monitor with a green-on-black screen.
+    const crtCase = new THREE.Mesh(
+      new THREE.BoxGeometry(1.10, 0.95, 1.05),
+      _matStandard(0xd9cca0, 0.85),
+    );
+    crtCase.position.set(0, 1.40, -0.05);
+    crtCase.castShadow = true;
+    g.add(crtCase);
+    // Screen face — slightly inset, glowing green DOS text
+    const screen = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.78, 0.62),
+      new THREE.MeshStandardMaterial({
+        color: 0x0a1a0a, emissive: 0x2aff66, emissiveIntensity: 0.7, roughness: 0.55,
+      }),
+    );
+    screen.position.set(0, 1.42, 0.48);
+    g.add(screen);
+    g.userData._screen = screen;
+    // Speaker grille (two notches under the case)
+    for (const sx of [-0.42, 0.42]) {
+      const grille = new THREE.Mesh(
+        new THREE.PlaneGeometry(0.18, 0.04),
+        new THREE.MeshStandardMaterial({ color: 0x4a4232, roughness: 0.9 }),
+      );
+      grille.position.set(sx, 1.05, 0.55);
+      g.add(grille);
+    }
+    // Tower (PC case on the floor next to the desk)
+    const tower = new THREE.Mesh(
+      new THREE.BoxGeometry(0.34, 0.78, 0.62),
+      _matStandard(0xece2c2, 0.8),
+    );
+    tower.position.set(1.45, 0.39, 0);
+    tower.castShadow = true;
+    g.add(tower);
+    // Tower power LED
+    const led = new THREE.Mesh(
+      new THREE.SphereGeometry(0.025, 6, 4),
+      new THREE.MeshStandardMaterial({ color: 0x2aff66, emissive: 0x2aff66, emissiveIntensity: 2.0 }),
+    );
+    led.position.set(1.45, 0.55, 0.32);
+    g.add(led);
+    // Soft green accent light
+    const pl = new THREE.PointLight(0x2aff66, 0.55, 4, 2);
+    pl.position.set(0, 1.6, 0.5);
+    g.add(pl);
+  }
+  // Keyboard — flat box with key strip
+  const kb = new THREE.Mesh(
+    new THREE.BoxGeometry(1.20, 0.06, 0.40),
+    _matStandard(lain ? 0x1a1a22 : 0xc8bda0, 0.85),
+  );
+  kb.position.set(0, 0.94, 0.42);
+  g.add(kb);
+  // Key strip (a darker plane on top)
+  const keys = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.05, 0.30),
+    new THREE.MeshStandardMaterial({ color: lain ? 0x0a0e14 : 0x8a826a, roughness: 0.7 }),
+  );
+  keys.rotation.x = -Math.PI / 2;
+  keys.position.set(0, 0.98, 0.42);
+  g.add(keys);
+  // Mouse
+  const mouse = new THREE.Mesh(
+    new THREE.BoxGeometry(0.16, 0.05, 0.22),
+    _matStandard(lain ? 0x1a1a22 : 0xc8bda0, 0.85),
+  );
+  mouse.position.set(0.78, 0.94, 0.42);
+  g.add(mouse);
+  return g;
+}
+
 function _makeYarnBasket() {
   const g = new THREE.Group();
   // Wicker bowl — wide flat cylinder
@@ -283,6 +418,14 @@ export function buildInterior(scene) {
   const yarnBasket = _makeYarnBasket();
   yarnBasket.position.set(5.5, 0, 2.2);
   g.add(yarnBasket);
+
+  // Computer desk (90s CRT by default; Lain Navi when upgrade owned).
+  const lainOwned = !!(getMeta().quests && getMeta().quests.lainTerminal);
+  const computer = _makeComputerDesk(lainOwned);
+  computer.position.set(-5.5, 0, 2.2);
+  computer.rotation.y = -Math.PI / 5;
+  g.add(computer);
+  g.userData._computer = computer;
 
   // ── Ambient lighting (warm interior fill) ──
   const fill = new THREE.PointLight(0xffd4a0, 0.55, 22, 2);
