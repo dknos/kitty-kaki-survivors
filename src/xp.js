@@ -196,6 +196,22 @@ export function updateGems(dt) {
     }
   }
 
+  // Soft cap on on-screen gems: if more than 60 are sitting around, force
+  // the oldest 50% to magnetize regardless of distance. Stops the battlefield
+  // from accumulating into "hundreds of blue cubes orbit forever" territory.
+  let active = 0;
+  for (let i = 0; i < list.length; i++) if (list[i].active) active++;
+  if (active > 60) {
+    let toForce = Math.floor(active * 0.5);
+    for (let i = 0; i < list.length && toForce > 0; i++) {
+      const g = list[i];
+      if (g.active && !g.magnetized) {
+        g.magnetized = true;
+        toForce--;
+      }
+    }
+  }
+
   // Level-up: if multiple thresholds crossed, only show one modal;
   // applyLevelUpChoice re-checks for queued level-ups when the player picks.
   if (anyPickup && !state.pendingLevelUp && hero.xp >= hero.xpNext) {
@@ -206,6 +222,11 @@ export function updateGems(dt) {
     if (!state.run.speedrunChecked && hero.level >= 10 && state.time.game < 120) {
       state.run.speedrunChecked = true;
       import('./ui.js').then(({ trySecret }) => trySecret('speedrun_lv10'));
+    }
+    // Vampire-Survivors-style vacuum: every gem still on the field rushes
+    // the hero on a level-up. Satisfying "ka-chunk" beat + clears the screen.
+    for (let i = 0; i < list.length; i++) {
+      if (list[i].active) list[i].magnetized = true;
     }
     _triggerLevelUp();
   }

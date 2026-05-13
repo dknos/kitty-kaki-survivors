@@ -18,7 +18,7 @@ export const HERO = {
   speed: 8.0,               // units/sec
   hpMax: 100,
   iFramesSec: 0.6,
-  pickupRadius: 4.0,        // gem magnet radius (modified by magnet stat)
+  pickupRadius: 7.0,        // gem magnet radius (modified by magnet stat)
   contactPushback: 0.5,     // hero gets nudged on enemy contact
   yOffset: 0,
 };
