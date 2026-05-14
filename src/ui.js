@@ -2489,6 +2489,621 @@ function _closeSlot() {
   if (!state.gameOver && state.started) state.time.paused = false;
 }
 
+// ── Casino — Seedy Tent modals (iter 22B) ────────────────────────────────────
+// Three modals: showCasinoMenu (entry hub) → showCasinoSlots / showBossRushWager.
+// All share an Esc-to-close handler and the dark-amber gambling aesthetic.
+// State + RNG live in casino.js; this layer is presentation + input only.
+let _casinoModal = null;
+let _casinoKey = null;
+
+function _closeCasino() {
+  if (!_casinoModal) return;
+  if (_casinoKey) window.removeEventListener('keydown', _casinoKey);
+  _casinoKey = null;
+  if (_casinoModal.parentNode) _casinoModal.parentNode.removeChild(_casinoModal);
+  _casinoModal = null;
+  try { sfx.modalClose(); } catch (_) {}
+}
+
+// Shared dark-tent backdrop CSS — matches the lantern-red palette.
+const _CASINO_BG = `
+  position: fixed; inset: 0;
+  background:
+    radial-gradient(ellipse at 50% 30%, rgba(255,80,80,0.10), transparent 60%),
+    radial-gradient(ellipse at center, rgba(0,0,0,0.6), rgba(0,0,0,0.92) 80%);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: flex-start;
+  pointer-events: auto;
+  z-index: 122;
+  overflow-y: auto;
+  padding: 48px 20px;
+`;
+
+// Tiny color/balance helpers used across all three casino modals.
+const CASINO_RED = '#ff5e5e';
+function _embers() { return getMeta().embers || 0; }
+function _emberLine(label) {
+  const m = getMeta();
+  const won = (m.casinoLifetimeWon || 0);
+  const wagered = (m.casinoLifetimeWagered || 0);
+  return `
+    <div style="font-family:${F.display}; font-size:calc(var(--kk-font-scale,1) * 22px); color:#ffae6a;
+                margin-bottom: 22px; letter-spacing:0.18em;
+                display:flex; gap:24px; flex-wrap:wrap; justify-content:center; align-items:baseline;">
+      <span style="display:inline-flex;align-items:baseline;gap:10px;">
+        <span style="font-family:${F.body};font-size:calc(var(--kk-font-scale,1) * 13px);letter-spacing:0.32em;color:rgba(245,239,225,0.62);text-transform:uppercase;">${label || 'Embers'}</span>
+        <span style="font-family:${F.mono};">${_embers().toLocaleString()}</span> 🔥
+      </span>
+      <span style="display:inline-flex;align-items:baseline;gap:10px;font-size:calc(var(--kk-font-scale,1) * 13px);color:rgba(245,239,225,0.5);">
+        <span style="letter-spacing:0.32em;text-transform:uppercase;">Lifetime</span>
+        <span style="font-family:${F.mono};">+${won.toLocaleString()} / −${wagered.toLocaleString()}</span>
+      </span>
+    </div>`;
+}
+
+/**
+ * Casino entry hub — two big buttons (Slots, Boss Rush Wager) + a status line
+ * if a wager is already pending (which blocks starting another one).
+ */
+export function showCasinoMenu() {
+  try { hideTooltip(); } catch (_) {}
+  if (_casinoModal) return;
+  // Settle any pending wager on open too (belt-and-suspenders alongside the
+  // town.enterTown() hook — covers the case where the player walks past the
+  // tent right after a Boss Rush victory).
+  import('./casino.js').then(({ settlePendingWager }) => {
+    try { settlePendingWager(); } catch (_) {}
+  });
+  try { sfx.modalOpen(); } catch (_) {}
+  _casinoModal = document.createElement('div');
+  _casinoModal.style.cssText = _CASINO_BG;
+
+  const header = document.createElement('div');
+  header.innerHTML = `
+    <div style="font-family:${F.display}; font-size:calc(var(--kk-font-scale,1) * 48px); font-weight:900;
+                letter-spacing:0.22em; color:${CASINO_RED};
+                text-shadow: 0 2px 18px rgba(0,0,0,0.7), 0 0 30px rgba(255,80,80,0.25);
+                margin-bottom: 4px; text-align:center;">The Seedy Tent</div>
+    <div style="font-family:${F.body}; font-size:calc(var(--kk-font-scale,1) * 11px); letter-spacing:0.34em;
+                color:rgba(245,239,225,0.55); text-transform:uppercase; margin-bottom: 22px;">
+      Pull the lever. The wheel remembers.
+    </div>
+    ${_emberLine('Embers')}
+  `;
+  _casinoModal.appendChild(header);
+
+  // Pending-wager strip (only renders when one exists). Players can't start a
+  // new wager while one is open; we show what they committed so they know.
+  import('./casino.js').then(({ readWager }) => {
+    const w = readWager();
+    if (!w || !_casinoModal) return;
+    const strip = document.createElement('div');
+    strip.style.cssText = `
+      background: linear-gradient(180deg, rgba(40,16,16,0.94), rgba(20,8,8,0.96));
+      border: 1px solid ${CASINO_RED}; border-radius: 10px;
+      padding: 12px 18px; margin-bottom: 22px;
+      max-width: 560px; width: 100%;
+      font-family:${F.body}; font-size:calc(var(--kk-font-scale,1) * 12.5px);
+      color:#ffae6a; letter-spacing:0.10em; text-align:center;
+      box-shadow: 0 0 16px rgba(255,94,94,0.18);`;
+    strip.innerHTML = `
+      <div style="font-family:${F.display}; letter-spacing:0.28em; font-size:calc(var(--kk-font-scale,1) * 12px); color:${CASINO_RED}; margin-bottom:6px;">
+        WAGER PENDING
+      </div>
+      ${w.wagerAmount} 🔥 staked · ${w.stacks} mutator${w.stacks > 1 ? 's' : ''} · payout ×${w.payoutMul}<br>
+      <span style="opacity:0.7;">Complete the next Boss Rush run to settle.</span>
+    `;
+    _casinoModal.insertBefore(strip, _casinoModal.children[_casinoModal.children.length - 2] || null);
+  });
+
+  const btnRow = document.createElement('div');
+  btnRow.style.cssText = 'display: grid; grid-template-columns: 1fr 1fr; gap: 18px; max-width: 720px; width: 100%; margin-bottom: 28px;';
+
+  const mkBigBtn = (icon, label, sub, accent, onclick) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.style.cssText = `
+      padding: 22px 18px; cursor: pointer;
+      background: linear-gradient(180deg, rgba(28,16,16,0.94), rgba(14,8,8,0.96));
+      border: 1px solid ${accent}; border-radius: 12px;
+      color: ${accent}; font-family: ${F.display};
+      letter-spacing: 0.22em;
+      box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 14px 28px rgba(0,0,0,0.6);
+      transition: transform 0.14s ease, box-shadow 0.14s ease;`;
+    b.innerHTML = `
+      <div style="font-size:calc(var(--kk-font-scale,1) * 44px); margin-bottom: 6px;">${icon}</div>
+      <div style="font-size:calc(var(--kk-font-scale,1) * 18px); font-weight:700;">${label}</div>
+      <div style="font-size:calc(var(--kk-font-scale,1) * 11px); letter-spacing:0.18em; opacity:0.7; margin-top:6px; text-transform:uppercase;">${sub}</div>
+    `;
+    b.addEventListener('mouseenter', () => { b.style.transform = 'translateY(-2px)'; b.style.boxShadow = `0 1px 0 rgba(255,255,255,0.06) inset, 0 18px 34px rgba(0,0,0,0.65), 0 0 22px ${accent}33`; });
+    b.addEventListener('mouseleave', () => { b.style.transform = 'translateY(0)'; b.style.boxShadow = `0 1px 0 rgba(255,255,255,0.04) inset, 0 14px 28px rgba(0,0,0,0.6)`; });
+    b.addEventListener('click', () => { try { sfx.uiClick(); } catch (_) {} onclick(); });
+    return b;
+  };
+
+  btnRow.appendChild(mkBigBtn('🎰', 'Slots', 'Spin against the house', '#ffd27f', () => {
+    _closeCasino();
+    showCasinoSlots();
+  }));
+  btnRow.appendChild(mkBigBtn('⚔', 'Boss Rush Wager', 'Bet the next run', CASINO_RED, () => {
+    _closeCasino();
+    showBossRushWager();
+  }));
+  _casinoModal.appendChild(btnRow);
+
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.textContent = 'Leave · Esc';
+  close.style.cssText = `padding: 10px 26px; cursor: pointer;
+    background: linear-gradient(180deg, rgba(20,28,22,0.78), rgba(8,14,12,0.86));
+    border: 1px solid ${C.edge}; border-radius: 8px;
+    color: ${C.magenta}; font-family: ${F.display}; font-size: calc(var(--kk-font-scale,1) * 13px); font-weight: 700;
+    letter-spacing: 0.28em;`;
+  close.onclick = _closeCasino;
+  _casinoModal.appendChild(close);
+  _root.appendChild(_casinoModal);
+
+  _casinoKey = (e) => { if (e.code === 'Escape') _closeCasino(); };
+  window.addEventListener('keydown', _casinoKey);
+}
+
+/**
+ * Slot machine modal — 3 reels rendered as large emoji glyphs, staggered stop
+ * animation. Bet selector at the bottom. Math.random() RNG via casino.js;
+ * this layer just orchestrates the visuals + delegates resolveSpin().
+ */
+export function showCasinoSlots() {
+  try { hideTooltip(); } catch (_) {}
+  if (_casinoModal) return;
+  try { sfx.modalOpen(); } catch (_) {}
+  _casinoModal = document.createElement('div');
+  _casinoModal.style.cssText = _CASINO_BG;
+
+  const title = document.createElement('div');
+  title.style.cssText = `font-family:${F.display}; font-size:calc(var(--kk-font-scale,1) * 44px); font-weight:900;
+    letter-spacing:0.22em; color:${C.amber};
+    text-shadow: 0 2px 16px rgba(0,0,0,0.55), 0 0 24px rgba(255,210,127,0.22);
+    margin-bottom: 4px; text-align:center;`;
+  title.textContent = 'Slots';
+  _casinoModal.appendChild(title);
+
+  const sub = document.createElement('div');
+  sub.style.cssText = `font-family:${F.body}; font-size:calc(var(--kk-font-scale,1) * 11px); letter-spacing:0.34em;
+    color:rgba(245,239,225,0.6); text-transform:uppercase; margin-bottom: 22px; text-align:center;`;
+  sub.innerHTML = '★ ★ ★ = 25× · 3-match = 8× · pair = 1.5× · pity rail under 100 🔥 pays 1.2×';
+  _casinoModal.appendChild(sub);
+
+  const emberWrap = document.createElement('div');
+  emberWrap.innerHTML = _emberLine('Balance');
+  _casinoModal.appendChild(emberWrap);
+
+  // Reel cabinet
+  const reelRow = document.createElement('div');
+  reelRow.style.cssText = `display:flex; gap:14px; margin-bottom:18px;
+    background: linear-gradient(180deg, rgba(20,16,12,0.96), rgba(8,6,4,0.98));
+    border: 1px solid ${CASINO_RED};
+    border-radius: 12px;
+    box-shadow:
+      0 1px 0 rgba(255,255,255,0.05) inset,
+      0 0 0 1px rgba(0,0,0,0.4),
+      0 24px 48px rgba(0,0,0,0.6),
+      0 0 28px rgba(255,80,80,0.12);
+    padding: 22px 26px;`;
+
+  const reelEls = [];
+  for (let i = 0; i < 3; i++) {
+    const r = document.createElement('div');
+    r.style.cssText = `width:118px; height:138px;
+      background: linear-gradient(180deg, rgba(8,8,8,0.92), rgba(4,4,4,0.96));
+      border: 1px solid ${C.edge};
+      border-radius: 8px;
+      display:flex; align-items:center; justify-content:center;
+      font-size: calc(var(--kk-font-scale,1) * 64px); line-height: 1;
+      box-shadow: inset 0 2px 10px rgba(0,0,0,0.7), inset 0 -1px 0 rgba(255,255,255,0.04);
+      transition: border-color 0.18s ease, box-shadow 0.18s ease;`;
+    r.textContent = '❓';
+    reelEls.push(r);
+    reelRow.appendChild(r);
+  }
+  _casinoModal.appendChild(reelRow);
+
+  // Result line
+  const resultEl = document.createElement('div');
+  resultEl.style.cssText = `min-height:42px; font-family:${F.display}; font-size:calc(var(--kk-font-scale,1) * 22px); font-weight:700;
+    letter-spacing:0.22em; color:${C.text};
+    margin-bottom: 14px; text-align:center;`;
+  resultEl.textContent = ' ';
+  _casinoModal.appendChild(resultEl);
+
+  // Bet selector row
+  const betRow = document.createElement('div');
+  betRow.style.cssText = 'display:flex; gap:12px; margin-bottom:18px; flex-wrap:wrap; justify-content:center;';
+  let _selectedBet = 10;
+  let _spinning = false;
+  const betBtns = [];
+  // Bet-row render lives at function scope so the spin-completion handler
+  // can re-paint after the payout shifts the balance. CASINO is captured at
+  // import time and threaded into renderBets via closure.
+  let renderBets = () => {};
+  // Async import + render — keeps the modal building UI immediately and lets
+  // casino.js stay out of the top-level import graph for ui.js (lazy boot).
+  import('./casino.js').then((CASINO) => {
+    renderBets = () => {
+      betRow.innerHTML = '';
+      betBtns.length = 0;
+      for (const bet of CASINO.SLOT_BETS) {
+        const can = _embers() >= bet && !_spinning;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        const active = _selectedBet === bet;
+        btn.style.cssText = `padding:10px 22px; cursor:${can ? 'pointer' : 'not-allowed'};
+          background: linear-gradient(180deg, ${active ? 'rgba(60,30,10,0.96)' : 'rgba(20,16,12,0.88)'}, rgba(8,6,4,0.95));
+          border: 1px solid ${can ? (active ? C.amber : C.edge) : 'rgba(80,80,80,0.4)'};
+          border-radius: 8px;
+          color: ${can ? (active ? C.amber : C.text) : 'rgba(120,120,120,0.6)'};
+          font-family:${F.display}; font-size:calc(var(--kk-font-scale,1) * 13px); font-weight:700;
+          letter-spacing:0.22em;
+          box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 18px rgba(0,0,0,0.5);
+          opacity: ${can ? 1 : 0.55};`;
+        btn.textContent = `${bet} 🔥`;
+        if (can) {
+          btn.addEventListener('click', () => {
+            try { sfx.uiClick(); } catch (_) {}
+            _selectedBet = bet;
+            renderBets();
+          });
+        }
+        betBtns.push(btn);
+        betRow.appendChild(btn);
+      }
+      // Hint when balance is below the smallest bet — kept inside renderBets
+      // so it survives every re-render call (single source of truth).
+      if (_embers() < CASINO.SLOT_BETS[0]) {
+        const hint = document.createElement('div');
+        hint.style.cssText = `font-family:${F.body}; font-size:calc(var(--kk-font-scale,1) * 12px); letter-spacing:0.20em;
+          text-align:center; color:${CASINO_RED}; margin-top:8px; text-transform:uppercase; width:100%;`;
+        hint.textContent = 'Need more Embers — try a run!';
+        betRow.appendChild(hint);
+      }
+    };
+    renderBets();
+    // Wire spin
+    _wireSpin(CASINO);
+  });
+  _casinoModal.appendChild(betRow);
+
+  // Spin button
+  const spinBtn = document.createElement('button');
+  spinBtn.type = 'button';
+  spinBtn.textContent = 'SPIN · Space';
+  spinBtn.style.cssText = `padding: 14px 36px; cursor:pointer;
+    background: linear-gradient(180deg, rgba(60,16,16,0.96), rgba(28,8,8,0.98));
+    border: 1px solid ${CASINO_RED}; border-radius: 10px;
+    color: ${CASINO_RED}; font-family:${F.display}; font-size:calc(var(--kk-font-scale,1) * 18px); font-weight:900;
+    letter-spacing:0.30em; margin-bottom: 18px;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.05) inset, 0 16px 32px rgba(0,0,0,0.6), 0 0 22px rgba(255,80,80,0.25);`;
+  _casinoModal.appendChild(spinBtn);
+
+  // Footer — back/leave row
+  const footRow = document.createElement('div');
+  footRow.style.cssText = 'display:flex; gap:12px;';
+  const backBtn = document.createElement('button');
+  backBtn.type = 'button';
+  backBtn.textContent = 'Back to Menu';
+  backBtn.style.cssText = `padding: 9px 22px; cursor:pointer;
+    background: linear-gradient(180deg, rgba(20,28,22,0.78), rgba(8,14,12,0.86));
+    border: 1px solid ${C.edge}; border-radius: 8px;
+    color: ${C.magenta}; font-family:${F.display}; font-size: calc(var(--kk-font-scale,1) * 12px); font-weight:700;
+    letter-spacing:0.26em;`;
+  backBtn.onclick = () => { _closeCasino(); showCasinoMenu(); };
+  footRow.appendChild(backBtn);
+  const leaveBtn = document.createElement('button');
+  leaveBtn.type = 'button';
+  leaveBtn.textContent = 'Leave · Esc';
+  leaveBtn.style.cssText = backBtn.style.cssText;
+  leaveBtn.onclick = _closeCasino;
+  footRow.appendChild(leaveBtn);
+  _casinoModal.appendChild(footRow);
+  _root.appendChild(_casinoModal);
+
+  // ── Spin engine ──
+  // SLOT_SYMBOLS imported lazily by the .then() block above; this closure is
+  // initialized from inside the .then() handler (_wireSpin) so the array is
+  // captured. Each spin: debit bet, animate scrolling glyphs, lock reels in
+  // 0.6s staggers, then resolve via casino.resolveSpin and credit payout.
+  let _rafId = 0;
+  function _wireSpin(CASINO) {
+    const doSpin = () => {
+      if (_spinning) return;
+      if (_embers() < _selectedBet) {
+        try { sfx.uiError(); } catch (_) {}
+        return;
+      }
+      // Debit bet up-front so the displayed balance reflects the stake during
+      // the spin. resolveSpin() credits the payout after.
+      const m = getMeta();
+      m.embers -= _selectedBet;
+      // No saveMeta here — resolveSpin saves once with payout baked in.
+      _spinning = true;
+      // Refresh the bet row to reflect new disabled state.
+      // (cheap — same DOM, just a re-render.)
+      const reels = CASINO.rollThreeReels();
+      const stopAt = [700, 1300, 1900];   // ms — 0.6s offsets
+      const t0 = performance.now();
+      // Sound cue at spin start
+      try { sfx.coinPickup(); } catch (_) {}
+      for (const r of reelEls) {
+        r.style.borderColor = C.edge;
+        r.style.boxShadow = 'inset 0 2px 10px rgba(0,0,0,0.7), inset 0 -1px 0 rgba(255,255,255,0.04)';
+      }
+      resultEl.textContent = 'Spinning…';
+      resultEl.style.color = C.text;
+      const tick = () => {
+        const t = performance.now() - t0;
+        for (let i = 0; i < 3; i++) {
+          if (t >= stopAt[i]) {
+            reelEls[i].textContent = reels[i].icon;
+            // Lock indicator
+            if (reelEls[i].style.borderColor !== C.amber) {
+              reelEls[i].style.borderColor = C.amber;
+              reelEls[i].style.boxShadow = `0 0 18px ${C.amber}, inset 0 0 12px rgba(0,0,0,0.7)`;
+            }
+          } else {
+            // Cycle symbol icons rapidly; slow down as we approach stop.
+            const rem = stopAt[i] - t;
+            const speed = Math.max(45, 360 - rem * 0.22);
+            const idx = Math.floor(t / speed) % CASINO.SLOT_SYMBOLS.length;
+            reelEls[i].textContent = CASINO.SLOT_SYMBOLS[idx].icon;
+          }
+        }
+        if (t < stopAt[2] + 120) {
+          _rafId = requestAnimationFrame(tick);
+          return;
+        }
+        // Settle
+        const out = CASINO.resolveSpin(_selectedBet, reels);
+        _spinning = false;
+        // Show result
+        if (out.tier === 'jackpot') {
+          resultEl.style.color = C.amber;
+          resultEl.textContent = `${out.label}  ·  +${out.payout.toLocaleString()} 🔥`;
+          try { sfx.levelUp(); } catch (_) {}
+        } else if (out.tier === 'triple') {
+          resultEl.style.color = C.amber;
+          resultEl.textContent = `${out.label}  ·  +${out.payout.toLocaleString()} 🔥`;
+          try { sfx.uiClick(); } catch (_) {}
+        } else if (out.tier === 'double') {
+          resultEl.style.color = C.cyan;
+          resultEl.textContent = `${out.label}  ·  +${out.payout.toLocaleString()} 🔥`;
+          try { sfx.uiClick(); } catch (_) {}
+        } else if (out.pity) {
+          resultEl.style.color = '#ffae6a';
+          resultEl.textContent = `pity  ·  +${out.payout.toLocaleString()} 🔥`;
+          try { sfx.uiClick(); } catch (_) {}
+        } else {
+          resultEl.style.color = CASINO_RED;
+          resultEl.textContent = 'no match  ·  −' + _selectedBet.toLocaleString() + ' 🔥';
+          try { sfx.uiCancel(); } catch (_) {}
+        }
+        // Repaint balance line + bet buttons (some bets may now be disabled).
+        emberWrap.innerHTML = _emberLine('Balance');
+        renderBets();
+      };
+      _rafId = requestAnimationFrame(tick);
+    };
+    spinBtn.addEventListener('click', doSpin);
+    // Track for cleanup
+    _casinoModal.__cancelRaf = () => { if (_rafId) cancelAnimationFrame(_rafId); _rafId = 0; };
+  }
+
+  _casinoKey = (e) => {
+    if (e.code === 'Escape') {
+      if (_casinoModal && _casinoModal.__cancelRaf) _casinoModal.__cancelRaf();
+      _closeCasino();
+    } else if (e.code === 'Space' || e.code === 'Enter') {
+      e.preventDefault();
+      spinBtn.click();
+    }
+  };
+  window.addEventListener('keydown', _casinoKey);
+}
+
+/**
+ * Boss Rush Wager modal — pick 1-3 mutator chips, slide the wager (100-1000),
+ * commit. Confirming routes through casino.startBossRushWager() which debits
+ * Embers, flips state.modes.bossRush, and stashes the localStorage record.
+ * After commit we close + nudge the player to the gate; they walk over,
+ * press E, the run starts in Boss Rush mode.
+ */
+export function showBossRushWager() {
+  try { hideTooltip(); } catch (_) {}
+  if (_casinoModal) return;
+  try { sfx.modalOpen(); } catch (_) {}
+  _casinoModal = document.createElement('div');
+  _casinoModal.style.cssText = _CASINO_BG;
+
+  const title = document.createElement('div');
+  title.style.cssText = `font-family:${F.display}; font-size:calc(var(--kk-font-scale,1) * 38px); font-weight:900;
+    letter-spacing:0.22em; color:${CASINO_RED};
+    text-shadow: 0 2px 16px rgba(0,0,0,0.6), 0 0 28px rgba(255,80,80,0.25);
+    margin-bottom: 4px; text-align:center;`;
+  title.textContent = 'Boss Rush Wager';
+  _casinoModal.appendChild(title);
+
+  const sub = document.createElement('div');
+  sub.style.cssText = `font-family:${F.body}; font-size:calc(var(--kk-font-scale,1) * 11px); letter-spacing:0.34em;
+    color:rgba(245,239,225,0.6); text-transform:uppercase; margin-bottom: 22px; text-align:center;`;
+  sub.innerHTML = 'Stake 100–1000 🔥 · 1 stack = ×2 · 2 stacks = ×4 · 3 stacks = ×8 · Forfeit on death';
+  _casinoModal.appendChild(sub);
+
+  const emberWrap = document.createElement('div');
+  emberWrap.innerHTML = _emberLine('Balance');
+  _casinoModal.appendChild(emberWrap);
+
+  // Mutator chip row + commit are built after the dynamic import (we need the
+  // BOSS_RUSH_MUTATORS array and the existing-wager guard).
+  import('./casino.js').then((CASINO) => {
+    // Active-wager guard
+    if (CASINO.hasActiveWager()) {
+      const warn = document.createElement('div');
+      warn.style.cssText = `max-width: 560px; width:100%; padding:14px 22px;
+        background: linear-gradient(180deg, rgba(40,16,16,0.94), rgba(20,8,8,0.96));
+        border: 1px solid ${CASINO_RED}; border-radius: 10px;
+        color:#ffae6a; font-family:${F.body}; font-size:calc(var(--kk-font-scale,1) * 13px);
+        text-align:center; margin-bottom: 18px; letter-spacing:0.10em;`;
+      warn.innerHTML = `You have an active wager — complete it first.<br>
+        <span style="opacity:0.7;">Win or lose the next Boss Rush run to settle.</span>`;
+      _casinoModal.insertBefore(warn, emberWrap.nextSibling);
+    }
+
+    const selected = new Set();
+    const chipRow = document.createElement('div');
+    chipRow.style.cssText = 'display:flex; gap:14px; margin-bottom:18px; flex-wrap:wrap; justify-content:center;';
+    function renderChips() {
+      chipRow.innerHTML = '';
+      for (const mut of CASINO.BOSS_RUSH_MUTATORS) {
+        const on = selected.has(mut.id);
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.style.cssText = `padding:12px 18px; cursor:pointer;
+          background: linear-gradient(180deg, ${on ? 'rgba(60,16,16,0.96)' : 'rgba(20,16,12,0.88)'}, rgba(8,6,4,0.95));
+          border: 1px solid ${on ? mut.accent : 'rgba(80,80,80,0.55)'};
+          border-radius: 10px;
+          color: ${on ? mut.accent : C.text};
+          font-family:${F.body};
+          letter-spacing:0.12em;
+          min-width: 168px;
+          box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 10px 22px rgba(0,0,0,0.55) ${on ? `, 0 0 18px ${mut.accent}44` : ''};
+          transition: transform 0.12s ease, border-color 0.12s ease;`;
+        chip.innerHTML = `
+          <div style="font-family:${F.display};font-size:calc(var(--kk-font-scale,1) * 14px);font-weight:700;letter-spacing:0.22em;margin-bottom:4px;">${escapeHtml(mut.label)}</div>
+          <div style="font-size:calc(var(--kk-font-scale,1) * 11.5px); opacity:${on ? 0.95 : 0.75};">${escapeHtml(mut.desc)}</div>
+          <div style="margin-top:6px; font-size:calc(var(--kk-font-scale,1) * 10px); letter-spacing:0.28em; text-transform:uppercase; color:${on ? mut.accent : 'rgba(245,239,225,0.45)'};">${on ? '◆ ARMED' : 'Tap to arm'}</div>
+        `;
+        chip.addEventListener('click', () => {
+          try { sfx.uiClick(); } catch (_) {}
+          if (selected.has(mut.id)) selected.delete(mut.id); else selected.add(mut.id);
+          renderChips();
+          repaintPayout();
+        });
+        chipRow.appendChild(chip);
+      }
+    }
+    renderChips();
+    _casinoModal.appendChild(chipRow);
+
+    // Wager slider
+    const sliderWrap = document.createElement('div');
+    sliderWrap.style.cssText = 'max-width: 560px; width:100%; margin-bottom: 18px;';
+    const sliderLabel = document.createElement('div');
+    sliderLabel.style.cssText = `font-family:${F.display}; font-size:calc(var(--kk-font-scale,1) * 14px); font-weight:700;
+      letter-spacing:0.22em; color:${C.amber}; text-align:center; margin-bottom: 6px;`;
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.min = '100';
+    slider.max = '1000';
+    slider.step = '50';
+    slider.value = '200';
+    slider.style.cssText = 'width: 100%; accent-color: #ffae6a;';
+    const payoutLine = document.createElement('div');
+    payoutLine.style.cssText = `font-family:${F.body}; font-size:calc(var(--kk-font-scale,1) * 12.5px); letter-spacing:0.16em;
+      color:rgba(245,239,225,0.72); text-align:center; margin-top:8px;`;
+    function repaintPayout() {
+      const stacks = selected.size;
+      const mul = CASINO.payoutMulForStacks(stacks);
+      const amt = parseInt(slider.value, 10) || 0;
+      const cap = _embers();
+      // Clamp slider's max to current balance (don't let player offer-stake
+      // more than they have).
+      slider.max = String(Math.max(100, Math.min(1000, cap)));
+      if (parseInt(slider.value, 10) > parseInt(slider.max, 10)) slider.value = slider.max;
+      sliderLabel.textContent = `Stake  ${parseInt(slider.value, 10).toLocaleString()} 🔥`;
+      if (stacks === 0) {
+        payoutLine.innerHTML = `Pick at least one mutator to arm the wager.`;
+        commitBtn.disabled = true;
+        commitBtn.style.opacity = '0.55';
+        commitBtn.style.cursor = 'not-allowed';
+      } else {
+        const payout = amt * mul;
+        payoutLine.innerHTML = `<span style="color:${C.amber};">${stacks} stack${stacks > 1 ? 's' : ''}</span> · payout ×${mul} → <span style="color:${C.amber};">${payout.toLocaleString()} 🔥</span> on victory · forfeit ${amt.toLocaleString()} 🔥 on death`;
+        commitBtn.disabled = cap < amt;
+        commitBtn.style.opacity = cap < amt ? '0.55' : '1';
+        commitBtn.style.cursor = cap < amt ? 'not-allowed' : 'pointer';
+      }
+    }
+    slider.addEventListener('input', repaintPayout);
+
+    sliderWrap.appendChild(sliderLabel);
+    sliderWrap.appendChild(slider);
+    sliderWrap.appendChild(payoutLine);
+    _casinoModal.appendChild(sliderWrap);
+
+    // GO button + footer
+    const commitBtn = document.createElement('button');
+    commitBtn.type = 'button';
+    commitBtn.textContent = '⚔ COMMIT & GO';
+    commitBtn.style.cssText = `padding: 14px 36px; cursor:pointer;
+      background: linear-gradient(180deg, rgba(60,16,16,0.96), rgba(28,8,8,0.98));
+      border: 1px solid ${CASINO_RED}; border-radius: 10px;
+      color: ${CASINO_RED}; font-family:${F.display}; font-size:calc(var(--kk-font-scale,1) * 16px); font-weight:900;
+      letter-spacing:0.28em; margin-bottom: 14px;
+      box-shadow: 0 1px 0 rgba(255,255,255,0.05) inset, 0 14px 28px rgba(0,0,0,0.6), 0 0 22px rgba(255,80,80,0.25);`;
+    commitBtn.addEventListener('click', () => {
+      if (commitBtn.disabled) return;
+      const amt = parseInt(slider.value, 10) || 0;
+      const stacks = selected.size;
+      const muts = CASINO.BOSS_RUSH_MUTATORS.filter(m => selected.has(m.id));
+      const res = CASINO.startBossRushWager({ wagerAmount: amt, stacks, mutators: muts });
+      if (!res.ok) {
+        try { sfx.uiError(); } catch (_) {}
+        // Reuse the micro toast for a clear error message.
+        const reasonText = {
+          unlocked: 'Casino not unlocked.',
+          already_active: 'A wager is already pending — complete it first.',
+          bad_amount: 'Wager must be 100–1000 🔥.',
+          bad_stacks: 'Stack count mismatch.',
+          insufficient: 'Not enough Embers.',
+          no_mutators: 'Pick at least one mutator.',
+        }[res.reason] || 'Wager rejected.';
+        _kkShowMicroToast(reasonText, C.red);
+        return;
+      }
+      try { sfx.bossWarn && sfx.bossWarn(); } catch (_) {}
+      _closeCasino();
+      showBanner('⚔ WAGER COMMITTED · WALK TO THE GATE', 3.6, CASINO_RED);
+    });
+    _casinoModal.appendChild(commitBtn);
+
+    repaintPayout();
+  });
+
+  const footRow = document.createElement('div');
+  footRow.style.cssText = 'display:flex; gap:12px;';
+  const backBtn = document.createElement('button');
+  backBtn.type = 'button';
+  backBtn.textContent = 'Back to Menu';
+  backBtn.style.cssText = `padding: 9px 22px; cursor:pointer;
+    background: linear-gradient(180deg, rgba(20,28,22,0.78), rgba(8,14,12,0.86));
+    border: 1px solid ${C.edge}; border-radius: 8px;
+    color: ${C.magenta}; font-family:${F.display}; font-size: calc(var(--kk-font-scale,1) * 12px); font-weight:700;
+    letter-spacing:0.26em;`;
+  backBtn.onclick = () => { _closeCasino(); showCasinoMenu(); };
+  footRow.appendChild(backBtn);
+  const leaveBtn = document.createElement('button');
+  leaveBtn.type = 'button';
+  leaveBtn.textContent = 'Leave · Esc';
+  leaveBtn.style.cssText = backBtn.style.cssText;
+  leaveBtn.onclick = _closeCasino;
+  footRow.appendChild(leaveBtn);
+  _casinoModal.appendChild(footRow);
+  _root.appendChild(_casinoModal);
+
+  _casinoKey = (e) => { if (e.code === 'Escape') _closeCasino(); };
+  window.addEventListener('keydown', _casinoKey);
+}
+
 // ── Grimoire modal (evolution discoveries) ───────────────────────────────────
 let _grimModal = null;
 export function showGrimoire() {

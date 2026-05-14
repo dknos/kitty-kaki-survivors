@@ -201,6 +201,10 @@ export function startBossRushWager({ wagerAmount, stacks, mutators } = {}) {
     mutators: muts.map(m => ({ id: m.id, label: m.label })),
     startedAt: Date.now(),
     clearsSnapshot: meta.casinoBossRushClears || 0,
+    // Snapshot meta.optBossRush so settlement can restore the player's
+    // pre-wager preference. Without this the wager would silently leave
+    // Boss Rush flipped on for every subsequent run.
+    prevOptBossRush: !!meta.optBossRush,
   };
   try { localStorage.setItem(WAGER_KEY, JSON.stringify(record)); } catch (_) {}
   // Set state.modes flags. We force Boss Rush ON for the next run; the rest
@@ -242,6 +246,12 @@ export function settlePendingWager() {
   const won = currentClears > (record.clearsSnapshot || 0);
   try { localStorage.removeItem(WAGER_KEY); } catch (_) {}
   if (state.modes) state.modes.casinoWager = null;
+  // Restore the player's pre-wager Boss Rush preference. startBossRushWager
+  // force-flipped meta.optBossRush=true so applyMetaUpgrades would arm the
+  // wager run; without this restore the toggle leaks into every future run.
+  if (typeof record.prevOptBossRush === 'boolean') {
+    meta.optBossRush = record.prevOptBossRush;
+  }
   if (won) {
     const payout = Math.floor((record.wagerAmount || 0) * (record.payoutMul || 0));
     meta.embers = (meta.embers || 0) + payout;
@@ -266,6 +276,10 @@ export function cancelPendingWager() {
   if (!record) return false;
   const meta = getMeta();
   meta.embers = (meta.embers || 0) + (record.wagerAmount || 0);
+  // Restore pre-wager Boss Rush preference (mirrors settlePendingWager).
+  if (typeof record.prevOptBossRush === 'boolean') {
+    meta.optBossRush = record.prevOptBossRush;
+  }
   saveMeta();
   try { localStorage.removeItem(WAGER_KEY); } catch (_) {}
   if (state.modes) state.modes.casinoWager = null;
