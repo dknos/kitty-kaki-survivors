@@ -418,11 +418,20 @@ export function updateHero(dt) {
   // Mirror Step: tick the ghost-twin visuals (fade/scale out).
   _tickMirrorGhosts(dt);
 
-  // Level-up check (loop to handle multi-level XP gains)
-  while (h.xp >= h.xpNext && !state.pendingLevelUp) {
+  // Level-up check — Iter 32i batching.
+  // Drain ALL levels in one go, count them into pendingLevelCount, then
+  // open a single modal that the player walks through. Was: each iteration
+  // showed a separate modal, recurring after applyLevelUpChoice, causing
+  // the "click click click" cascade.
+  let didLevel = false;
+  while (h.xp >= h.xpNext) {
     h.xp -= h.xpNext;
     h.level += 1;
     h.xpNext = xpForLevel(h.level);
+    state.pendingLevelCount = (state.pendingLevelCount || 0) + 1;
+    didLevel = true;
+  }
+  if (didLevel && !state.pendingLevelUp) {
     state.pendingLevelUp = true;
     state.levelUpChoices = weaponChoices(3);
     showLevelUpModal(state.levelUpChoices);

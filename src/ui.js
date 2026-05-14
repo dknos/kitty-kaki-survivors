@@ -60,7 +60,7 @@ const F = {
 // ── Build version ────────────────────────────────────────────────────────────
 // Flipped to '1.0.0' on the iter-11 ship commit (Shop Tree Live Wires —
 // the broken-tier-1-3-consumers gap was the last v1.0 blocker).
-export const KK_VERSION = '1.4.12';
+export const KK_VERSION = '1.4.13';
 
 // ── Module-local DOM refs ────────────────────────────────────────────────────
 let _root = null;
@@ -993,12 +993,15 @@ export function showLevelUpModal(choices) {
 
   const title = document.createElement('div');
   title.className = 'kk-modal-title';
-  title.textContent = 'Level Up';
+  // Iter 32i — show queue count when multiple levels are pending so the
+  // player understands the cascade ("Level Up · 3 more after this").
+  const remaining = state && state.pendingLevelCount ? state.pendingLevelCount : 1;
+  title.textContent = remaining > 1 ? `Level Up · +${remaining - 1} more` : 'Level Up';
   _modal.appendChild(title);
   const sub = document.createElement('div');
   sub.style.cssText = `font-family: ${F.body}; font-size: calc(var(--kk-font-scale, 1) * 12px); letter-spacing: 0.34em;
     color: rgba(245,239,225,0.62); text-transform: uppercase; margin: -22px 0 28px;`;
-  sub.textContent = 'Choose your path';
+  sub.textContent = remaining > 1 ? `Cascade — pick to continue` : 'Choose your path';
   _modal.appendChild(sub);
 
   const row = document.createElement('div');
@@ -1052,10 +1055,20 @@ export function showLevelUpModal(choices) {
   function doSkip() {
     if (state.hero.skips <= 0) return;
     state.hero.skips -= 1;
-    // Close modal without applying; resume gameplay.
-    state.pendingLevelUp = false;
+    // Iter 32i — Skip burns one queued level too. If more queued, re-open
+    // with a fresh roll; else close.
+    state.pendingLevelCount = Math.max(0, (state.pendingLevelCount || 1) - 1);
     state.levelUpChoices.length = 0;
     hideLevelUpModal();
+    if (state.pendingLevelCount > 0) {
+      import('./weapons/index.js').then(({ weaponChoices }) => {
+        state.pendingLevelUp = true;
+        state.levelUpChoices = weaponChoices(3);
+        showLevelUpModal(state.levelUpChoices);
+      });
+    } else {
+      state.pendingLevelUp = false;
+    }
   }
   _modal.appendChild(qolRow);
   rebuildQol();

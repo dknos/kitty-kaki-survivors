@@ -289,25 +289,32 @@ export function updateGems(dt) {
     }
   }
 
-  // Level-up: if multiple thresholds crossed, only show one modal;
-  // applyLevelUpChoice re-checks for queued level-ups when the player picks.
-  if (anyPickup && !state.pendingLevelUp && hero.xp >= hero.xpNext) {
-    hero.xp -= hero.xpNext;
-    hero.level++;
-    hero.xpNext = xpForLevel(hero.level);
-    // Tutorial: stage 3 → 4 advance on first level-up.
-    import('./tutorial.js').then(({ notifyTutorialEvent }) => notifyTutorialEvent('levelUp'));
-    // Secret: Faster Than Light — reach level 10 in under 2 minutes
-    if (!state.run.speedrunChecked && hero.level >= 10 && state.time.game < 120) {
-      state.run.speedrunChecked = true;
-      import('./ui.js').then(({ trySecret }) => trySecret('speedrun_lv10'));
+  // Level-up — Iter 32i batching. Drain all levels in one frame, count
+  // them into pendingLevelCount, open a single modal sequence.
+  if (anyPickup && hero.xp >= hero.xpNext) {
+    let didLevel = false;
+    while (hero.xp >= hero.xpNext) {
+      hero.xp -= hero.xpNext;
+      hero.level++;
+      hero.xpNext = xpForLevel(hero.level);
+      state.pendingLevelCount = (state.pendingLevelCount || 0) + 1;
+      didLevel = true;
     }
-    // Vampire-Survivors-style vacuum: every gem still on the field rushes
-    // the hero on a level-up. Satisfying "ka-chunk" beat + clears the screen.
-    for (let i = 0; i < list.length; i++) {
-      if (list[i].active) list[i].magnetized = true;
+    if (didLevel) {
+      // Tutorial: stage 3 → 4 advance on first level-up.
+      import('./tutorial.js').then(({ notifyTutorialEvent }) => notifyTutorialEvent('levelUp'));
+      // Secret: Faster Than Light — reach level 10 in under 2 minutes
+      if (!state.run.speedrunChecked && hero.level >= 10 && state.time.game < 120) {
+        state.run.speedrunChecked = true;
+        import('./ui.js').then(({ trySecret }) => trySecret('speedrun_lv10'));
+      }
+      // Vampire-Survivors-style vacuum: every gem still on the field rushes
+      // the hero on a level-up. Satisfying "ka-chunk" beat + clears the screen.
+      for (let i = 0; i < list.length; i++) {
+        if (list[i].active) list[i].magnetized = true;
+      }
+      if (!state.pendingLevelUp) _triggerLevelUp();
     }
-    _triggerLevelUp();
   }
 
   if (_matrixDirty) {
@@ -334,17 +341,21 @@ export function applyLevelUpChoice(choice) {
     try { import('./codex.js').then(({ notifyPassivePicked }) => notifyPassivePicked(choice.id)); } catch (_) {}
   }
 
-  state.pendingLevelUp = false;
+  // Iter 32i — batch cascade. We already drained XP into pendingLevelCount
+  // when the level-up loop fired. Each applyLevelUpChoice consumes ONE of
+  // those queued levels. If more remain, immediately re-open the modal with
+  // a fresh weapon-choice roll. Game stays paused throughout (modal-style),
+  // no game-unpause between picks.
+  state.pendingLevelCount = Math.max(0, (state.pendingLevelCount || 1) - 1);
   state.levelUpChoices.length = 0;
   hideLevelUpModal();
 
-  // If another level is still pending, queue the next modal.
-  const hero = state.hero;
-  if (hero.xp >= hero.xpNext) {
-    hero.xp -= hero.xpNext;
-    hero.level++;
-    hero.xpNext = xpForLevel(hero.level);
-    import('./tutorial.js').then(({ notifyTutorialEvent }) => notifyTutorialEvent('levelUp'));
-    _triggerLevelUp();
+  if (state.pendingLevelCount > 0) {
+    // Still queued — re-roll + re-open in place.
+    state.pendingLevelUp = true;
+    state.levelUpChoices = weaponChoices(3);
+    showLevelUpModal(state.levelUpChoices);
+  } else {
+    state.pendingLevelUp = false;
   }
 }

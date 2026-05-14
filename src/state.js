@@ -169,6 +169,12 @@ export const state = {
 
   // ── UI / level-up ──
   pendingLevelUp: false,
+  // Iter 32i — cascade batching. When multiple levels queue from a single
+  // XP injection (elite drops + accumulated trash), they were popping
+  // modals back-to-back ("click click click"). Now levels accumulate here
+  // and the modal sequences them with a "Level X (i of N)" header. Game
+  // stays paused until pendingLevelCount === 0.
+  pendingLevelCount: 0,
   /** @type {Array<{kind:'weapon'|'passive', id:string, level:number}>} */
   levelUpChoices: [],
   gameOver: false,
@@ -330,7 +336,7 @@ export function resetState() {
   state.fx.chromaticPulse = 0; state.fx.bloomBoost = 0; state.fx.hitStop = 0; state.fx.shake = 0;
   state.fx._hitPauseNextEligible = 0;
   if (state.fx.pendingVolatile) state.fx.pendingVolatile.length = 0;
-  state.pendingLevelUp = false; state.levelUpChoices.length = 0; state.gameOver = false; state.victory = false; state.dyingUntil = 0;
+  state.pendingLevelUp = false; state.pendingLevelCount = 0; state.levelUpChoices.length = 0; state.gameOver = false; state.victory = false; state.dyingUntil = 0;
 }
 
 /** Compute XP required for next level after `lvl`. */
