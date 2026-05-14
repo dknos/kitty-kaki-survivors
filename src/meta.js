@@ -61,6 +61,20 @@ const DEFAULT = {
   // Twilight Hollow (hardest combination currently in-game). Flipped in
   // commitRunResults; read by isCharacterUnlocked() for the 'flag:...' form.
   unlockedClockwork: false,
+  // Iter 22B — Catacomb Void clear flag. Gates the Seedy Tent (casino) in
+  // town.js. Set in commitRunResults on first victory with stageId==='void'.
+  unlockedVoid: false,
+  // ── Casino (iter 22B) ───────────────────────────────────────────────
+  // Persisted gambling stats. The Seedy Tent reads casinoUnlocked through
+  // unlockedVoid; the lifetime fields drive a future "high roller" achievement
+  // and are surfaced in the casino menu header so the player can track ROI.
+  // casinoBossRushClears is the snapshot counter the wager settlement uses
+  // (compared against the clearsSnapshot stored in localStorage).
+  casinoUnlocked: false,
+  casinoLifetimeWagered: 0,
+  casinoLifetimeWon: 0,
+  casinoSlotsBigWins: 0,
+  casinoBossRushClears: 0,
   // Mode toggles for the next run
   optHyper: false,
   optEndless: false,
@@ -989,11 +1003,16 @@ export function commitRunResults({ timeSurvived, kills, dmgDealt, level, victory
   if (isBestTime) meta.bestTime = timeSurvived;
   if (isBestKills) meta.bestKills = kills;
   // Mode unlocks on first victory
-  let unlockedHyper = false, unlockedEndless = false, unlockedCinder = false, unlockedClockwork = false;
+  let unlockedHyper = false, unlockedEndless = false, unlockedCinder = false, unlockedClockwork = false, unlockedVoid = false;
   if (victory && !meta.unlockedHyper) { meta.unlockedHyper = true; unlockedHyper = true; }
   if (victory && !meta.unlockedEndless) { meta.unlockedEndless = true; unlockedEndless = true; }
   if (victory && stageId === 'twilight' && !meta.unlockedCinder) {
     meta.unlockedCinder = true; unlockedCinder = true;
+  }
+  // Iter 22B — Catacomb Void clear unlocks the Seedy Tent casino. Once set,
+  // tickTown repaints the interactable label on its next pass.
+  if (victory && stageId === 'void' && !meta.unlockedVoid) {
+    meta.unlockedVoid = true; unlockedVoid = true;
   }
   // Clockwork character unlock — Boss Rush victory on Twilight Hollow.
   // Hardest currently-shippable combo (compressed timer + 1.30× HP). Caller
@@ -1003,6 +1022,14 @@ export function commitRunResults({ timeSurvived, kills, dmgDealt, level, victory
   const inBossRush = (typeof bossRush === 'boolean') ? bossRush : !!meta.optBossRush;
   if (victory && inBossRush && stageId === 'twilight' && !meta.unlockedClockwork) {
     meta.unlockedClockwork = true; unlockedClockwork = true;
+  }
+  // Iter 22B — every Boss Rush victory bumps the casino's settlement counter.
+  // The casino wager record stashes a snapshot of this value at wager start;
+  // on town entry, settlePendingWager() compares the current value to decide
+  // payout vs forfeit. Bumps regardless of stage so a Cinder/Void Boss Rush
+  // also settles a wager.
+  if (victory && inBossRush) {
+    meta.casinoBossRushClears = (meta.casinoBossRushClears || 0) + 1;
   }
   // Iter 9: full-mini-boss-sweep tally. Caller passes `fullSweep: true` when
   // all 3 mini-bosses fell in this run. Drives the triple_x3 tier-2 chain.
@@ -1026,6 +1053,7 @@ export function commitRunResults({ timeSurvived, kills, dmgDealt, level, victory
   return {
     coinsEarned, embersEarned, sigilsEarned, isBestTime, isBestKills,
     unlockedHyper, unlockedEndless, unlockedCinder, unlockedClockwork,
+    unlockedVoid,
     weeklyResult,
   };
 }
