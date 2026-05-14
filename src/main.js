@@ -228,7 +228,7 @@ async function boot() {
   acquireWeapon(state.run.starterWeapon || 'orbitals');
   for (let i = 0; i < (state.run.cellarLv || 0); i++) acquireWeapon(state.run.starterWeapon || 'orbitals');
 
-  showStartScreen('Click or press SPACE to start');
+  showStartScreen('Press Play to begin');
   // ── Iter 10a — Apply saved options at boot ──
   const meta = getMeta();
   // Honor OS prefers-reduced-motion on FIRST boot only (sentinel:
@@ -325,19 +325,9 @@ async function boot() {
   };
   // Click/Space only triggers a run when on the start screen (menu mode).
   // In town mode they're no-ops — player uses E at the gate.
-  // Iter 32d — two-view start screen. Click/Space only triggers run from
-  // the select view; from the menu view, Space advances to select.
-  window.addEventListener('click', () => {
-    if (state.mode !== 'menu') return;
-    if (getStartView() === 'select') start();
-  });
-  window.addEventListener('keydown', e => {
-    if (e.code !== 'Space') return;
-    if (state.mode !== 'menu') return;
-    const v = getStartView();
-    if (v === 'menu')   setStartView('select');
-    else if (v === 'select') start();
-  });
+  // Iter 32e — explicit-button-only start. No Space hotkey, no window
+  // click-to-start: Play (menu) → Start Run (select) is the only path.
+  // Avoids accidental run starts and matches the redesigned UX.
   window.addEventListener('keydown', e => {
     if (e.code === 'Escape') {
       if (isQuestBoardOpen()) hideQuestBoard();
@@ -431,7 +421,7 @@ async function boot() {
     state._deathShown = false;
     state.time.paused = false;
     try { hideOptions(); } catch (_) {}
-    showStartScreen('Click or press SPACE to start');
+    showStartScreen('Press Play to begin');
   };
   window.__kkNextMiniBoss = secondsUntilNextMiniBoss;
   // Iter 17 — Helltide debug hook. Lets the player (and QA) force-trigger the
