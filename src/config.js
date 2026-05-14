@@ -251,24 +251,31 @@ export const CHARACTERS = [
       runState.signature_tempoBonus = 0;
     },
   },
+];
+
+/**
+ * Avatars — visual character identity, independent of gameplay archetype.
+ * Iter 32 split: CHARACTERS (above) now exclusively means archetype/profile
+ * (starter weapon, stat multipliers, signature). AVATARS defines which mesh
+ * + tint renders for the hero. The start screen presents both pickers:
+ * carousel for avatar, chip row for archetype.
+ *
+ * `glb` field is optional — null/undefined means use the shared HERO.glb
+ * donor model with optional tint. When set, preloadAll registers it as
+ * `hero_${id}` and hero.js pulls that key.
+ */
+export const AVATARS = [
   {
-    // Sote — second canonical character w/ his own GLB (Rodin-baked, 12.8 MB).
-    // Identity: heavy-hitter tank. Slow, durable, hits hard. Counterpoint to
-    // Phoenix's glass-cannon and Clockwork's slow-burn arcs.
-    id: 'sote',   name: 'Sote',       icon: '🐺',
-    desc: 'Heavy hitter. +25% damage, +20% HP, -15% speed.',
-    starter: 'orbitals',
-    statMul: { dmg: 1.25, moveSpeed: 0.85, magnet: 1.0 },
-    hpMax: 120,
-    unlock: null,   // playable from start (was: 'flag:unlockedSote')
-    glb: 'sote.glb',                    // per-char GLB override
-    tint: 0xffffff, scaleMul: 1.00,    // no tint — has own mesh
-    signatureName: 'Heavy Tread',
-    signatureDesc: 'Every 4th basic attack stuns nearby enemies for 0.5s.',
-    signature: (runState) => {
-      runState.signature_heavyTread = true;
-      runState.signature_heavyTreadCounter = 0;
-    },
+    id: 'kitty', name: 'Kitty Kaki', icon: '🐱',
+    desc: 'The original. Plush, pink-eared, ready for mayhem.',
+    glb: null,                          // donor model (tower-castle-plain)
+    tint: 0xffffff, scaleMul: 1.00,
+  },
+  {
+    id: 'sote',  name: 'Sote',       icon: '🐺',
+    desc: 'Heavy-built Rodin-baked silhouette. Same gameplay, new look.',
+    glb: 'sote.glb',
+    tint: 0xffffff, scaleMul: 1.00,
   },
 ];
 

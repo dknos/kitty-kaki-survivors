@@ -3,9 +3,9 @@
  */
 import * as THREE from 'three';
 import { state, xpForLevel } from './state.js';
-import { HERO, DASH, JUMP, CHARACTERS } from './config.js';
+import { HERO, DASH, JUMP, CHARACTERS, AVATARS } from './config.js';
 import { cloneCached, upgradeMaterials } from './assets.js';
-import { selectedCharacter } from './meta.js';
+import { selectedCharacter, selectedAvatar } from './meta.js';
 import { sfx } from './audio.js';
 import { showDeathScreen, showLevelUpModal, flashDamage, flashLevelUp } from './ui.js';
 import { weaponChoices } from './weapons/index.js';
@@ -91,11 +91,11 @@ export function initHero(scene) {
   // GLB-load fallback marker lives in the `else` branch below (cone @ y=1.1).
   // No unconditional ground disc — that was reading as a green ring/shadow
   // on top of the loaded GLB.
-  // Per-char GLB override: prefer hero_<id> (e.g., Sote ships his own mesh),
-  // fall back to shared 'hero' donor model for tinted placeholders.
-  const _charPreview = selectedCharacter(CHARACTERS);
-  const _charKey = _charPreview && _charPreview.glb ? `hero_${_charPreview.id}` : 'hero';
-  const mesh = cloneCached(_charKey) || cloneCached('hero');
+  // Iter 32: avatar (visual identity) is decoupled from character (archetype).
+  // Pick mesh by avatar.glb override; fall back to shared 'hero' donor.
+  const _avatar = selectedAvatar(AVATARS);
+  const _heroKey = _avatar && _avatar.glb ? `hero_${_avatar.id}` : 'hero';
+  const mesh = cloneCached(_heroKey) || cloneCached('hero');
   if (mesh) {
     // Hero is plush fabric — high roughness, no metalness sheen.
     upgradeMaterials(mesh, 0.55, 0.92);
@@ -104,12 +104,16 @@ export function initHero(scene) {
     const rawBox = new THREE.Box3().setFromObject(mesh);
     const rawSize = rawBox.getSize(new THREE.Vector3());
     const autoFit = rawSize.y > 1e-6 ? HERO.targetHeight / rawSize.y : 1;
-    // Per-character placeholder differentiation (tint + scale). Until each
-    // character gets a real model, we recolor the shared GLB.
+    // Iter 32: tint comes from the ARCHETYPE (selectedCharacter), but only
+    // when the avatar has no dedicated mesh — tinting a Sote-baked model
+    // would look wrong (his textures are already authored). Avatars w/ their
+    // own GLB render unaltered regardless of archetype color.
     const char = selectedCharacter(CHARACTERS);
+    const avatarScale = _avatar && _avatar.scaleMul ? _avatar.scaleMul : 1;
     const charScale = char && char.scaleMul ? char.scaleMul : 1;
-    const charTint = char && char.tint != null ? char.tint : 0xffffff;
-    mesh.scale.setScalar(autoFit * HERO.scale * charScale);
+    const applyArchetypeTint = !(_avatar && _avatar.glb);
+    const charTint = (applyArchetypeTint && char && char.tint != null) ? char.tint : 0xffffff;
+    mesh.scale.setScalar(autoFit * HERO.scale * charScale * avatarScale);
     mesh.position.set(0, HERO.yOffset, 0);
     let meshCount = 0;
     const _tint = new THREE.Color(charTint);

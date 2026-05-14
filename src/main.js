@@ -432,15 +432,6 @@ async function boot() {
   window.kkEndHelltide = () => {
     return import('./helltide.js').then(({ endHelltide }) => endHelltide());
   };
-  // Sote unlock helper — flips meta flag + persists. Char-select repaints
-  // on next render. Use `kkUnlockSote()` from devtools.
-  window.kkUnlockSote = () => {
-    return import('./meta.js').then(({ meta, saveMeta }) => {
-      meta.unlockedSote = true;
-      try { saveMeta(); } catch (_) {}
-      return true;
-    });
-  };
 }
 
 function _teardownActiveRun() {

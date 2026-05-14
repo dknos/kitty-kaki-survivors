@@ -24,7 +24,7 @@ import {
 // don't have to await a dynamic import on every drag event.
 import { applyAccessibilityOptions } from './postfx.js';
 import { setMasterVolume, setMusicVolume, setSfxVolume, sfx } from './audio.js';
-import { CHARACTERS, STAGES } from './config.js';
+import { CHARACTERS, STAGES, AVATARS } from './config.js';
 import { SLOT_SYMBOLS, rollReel, resolveOutcome, applyOutcome } from './slotMachine.js';
 import { pushFocusScope, popFocusScope } from './uiFocus.js';
 import { mountLegend as mountPromptLegend, formatPrompt } from './buttonPrompts.js';
@@ -60,7 +60,7 @@ const F = {
 // ── Build version ────────────────────────────────────────────────────────────
 // Flipped to '1.0.0' on the iter-11 ship commit (Shop Tree Live Wires —
 // the broken-tier-1-3-consumers gap was the last v1.0 blocker).
-export const KK_VERSION = '1.4.3';
+export const KK_VERSION = '1.4.4';
 
 // ── Module-local DOM refs ────────────────────────────────────────────────────
 let _root = null;
@@ -1557,11 +1557,11 @@ export function showStartScreen(text) {
         // Wipe loading placeholder
         _startCharRowRef.innerHTML = '';
         _charCarousel = createCharCarousel(_startCharRowRef, {
-          initialId: getMeta().selectedChar || 'kitty',
-          meta: getMeta(),
+          items: AVATARS,
+          initialId: getMeta().selectedAvatar || 'kitty',
           onSelect: (id) => {
-            setOption('selectedChar', id);
-            getMeta().selectedChar = id;
+            setOption('selectedAvatar', id);
+            getMeta().selectedAvatar = id;
             _refreshStartFocus();
           },
         });
@@ -1641,7 +1641,6 @@ export function showStartScreen(text) {
     if (unlock.startsWith('flag:')) {
       const flag = unlock.slice(5);
       if (flag === 'unlockedClockwork') return 'Clear Boss Rush on Twilight Hollow to unlock.';
-      if (flag === 'unlockedSote') return 'Hidden character — unlock condition TBD.';
       return `Unlock: ${flag}`;
     }
     return `Unlock: ${unlock}`;
@@ -1653,25 +1652,25 @@ export function showStartScreen(text) {
     return Number.isFinite(n) && n > 0 ? n : null;
   }
   function paintChars() {
-    // Iter 31: carousel owns its own rendering. External callers (preset
-    // apply, etc.) hit this to sync selection — forward to the carousel.
-    if (_charCarousel && meta && meta.selectedChar) {
-      try { _charCarousel.setSelection(meta.selectedChar); } catch (_) {}
+    // Iter 32: carousel = avatar; chip row = archetype. Preset-apply hits
+    // here to sync both. Carousel takes selectedAvatar; archRow repaints.
+    if (_charCarousel && meta && meta.selectedAvatar) {
+      try { _charCarousel.setSelection(meta.selectedAvatar); } catch (_) {}
     }
+    try { paintArchetypes(); } catch (_) {}
   }
-  // Mount carousel into charRow. Singleton — destroyed in hideStartScreen.
-  // Guard on cache readiness — preloadAll() hasn't resolved on the first
-  // showStartScreen('Loading…') call. Lazy-mount path in the
-  // _startScreen-exists guard handles the second call (post-preload).
+  // Iter 32: carousel = AVATAR picker (2 entries). Archetype picker is the
+  // chip row built immediately below. Carousel mounts only after preloadAll
+  // resolves (cache populated) — the lazy-mount path in the
+  // _startScreen-exists guard handles the first showStartScreen call.
   if (_charCarousel) { try { _charCarousel.destroy(); } catch (_) {} _charCarousel = null; }
   if (GLTF_CACHE && GLTF_CACHE.hero) {
     _charCarousel = createCharCarousel(charRow, {
-      initialId: meta.selectedChar || 'kitty',
-      meta,
+      items: AVATARS,
+      initialId: meta.selectedAvatar || 'kitty',
       onSelect: (id) => {
-        setOption('selectedChar', id);
-        meta.selectedChar = id;
-        // Don't recurse into paintChars — carousel already painted itself.
+        setOption('selectedAvatar', id);
+        meta.selectedAvatar = id;
         _refreshStartFocus();
       },
     });
@@ -1682,6 +1681,92 @@ export function showStartScreen(text) {
     ph.textContent = 'Loading characters…';
     charRow.appendChild(ph);
   }
+
+  // ── Archetype chip row — gameplay profile (starter weapon + stats + signature)
+  const archRow = document.createElement('div');
+  archRow.style.cssText = `
+    display:flex; gap:8px; margin-top:14px; pointer-events:auto;
+    flex-wrap:wrap; justify-content:center; max-width:760px;
+  `;
+  // Same guard as carousel wrap — main.js installs window click→start.
+  archRow.addEventListener('click', (e) => { e.stopPropagation(); });
+  function paintArchetypes() {
+    archRow.innerHTML = '';
+    const archTitle = document.createElement('div');
+    archTitle.style.cssText = `
+      width: 100%; text-align: center;
+      font-family: ${F.display}; font-size: calc(var(--kk-font-scale, 1) * 12px);
+      letter-spacing: 0.28em; color: rgba(245,239,225,0.55);
+      margin-bottom: 4px; text-transform: uppercase;
+    `;
+    archTitle.textContent = '— starter archetype —';
+    archRow.appendChild(archTitle);
+
+    for (const ch of CHARACTERS) {
+      const unlocked = isCharacterUnlocked(ch, meta);
+      const selected = ch.id === meta.selectedChar;
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.disabled = !unlocked;
+      const accent = selected ? C.amber : (unlocked ? C.cyan : 'rgba(120,120,120,0.5)');
+      chip.style.cssText = `
+        padding: 8px 14px;
+        background: ${selected ? 'rgba(255,210,127,0.14)' : 'linear-gradient(180deg, rgba(20,28,22,0.78), rgba(8,14,12,0.86))'};
+        border: 1px solid ${accent};
+        border-radius: 999px;
+        color: ${selected ? C.amber : (unlocked ? C.text : 'rgba(120,120,120,0.7)')};
+        font-family: ${F.body}; font-size: calc(var(--kk-font-scale, 1) * 12.5px);
+        letter-spacing: 0.16em; cursor: ${unlocked ? 'pointer' : 'not-allowed'};
+        display: inline-flex; align-items: center; gap: 6px;
+        transition: transform 0.15s ease, border-color 0.15s ease;
+      `;
+      const lockGlyph = unlocked ? '' : '🔒 ';
+      chip.innerHTML = `${unlocked ? (ch.icon || '◇') : ''}${lockGlyph}<span>${escapeHtml(ch.name)}</span>`;
+      if (unlocked) {
+        chip.addEventListener('click', (e) => {
+          e.stopPropagation();
+          setOption('selectedChar', ch.id);
+          meta.selectedChar = ch.id;
+          paintArchetypes();
+          _refreshStartFocus();
+        });
+        chip.addEventListener('mouseenter', () => { chip.style.transform = 'translateY(-1px)'; });
+        chip.addEventListener('mouseleave', () => { chip.style.transform = 'translateY(0)'; });
+      }
+      bindTooltip(chip, () => {
+        const b = characterBlurb(ch.id);
+        const statRows = [
+          { label: 'Starter', value: ch.starter },
+          { label: 'Max HP',  value: String(ch.hpMax) },
+        ];
+        if (ch.statMul) {
+          if (ch.statMul.dmg && ch.statMul.dmg !== 1)              statRows.push({ label: 'DMG',  value: `×${ch.statMul.dmg.toFixed(2)}` });
+          if (ch.statMul.moveSpeed && ch.statMul.moveSpeed !== 1)  statRows.push({ label: 'Move', value: `×${ch.statMul.moveSpeed.toFixed(2)}` });
+          if (ch.statMul.magnet && ch.statMul.magnet !== 1)        statRows.push({ label: 'Magnet', value: `×${ch.statMul.magnet.toFixed(2)}` });
+          if (ch.statMul.projSpeed && ch.statMul.projSpeed !== 1)  statRows.push({ label: 'Proj Spd', value: `×${ch.statMul.projSpeed.toFixed(2)}` });
+        }
+        if (ch.signatureName) statRows.unshift({ label: 'Signature', value: String(ch.signatureName) });
+        const bodyParts = [];
+        if (unlocked) {
+          bodyParts.push(b ? b.flavor : ch.desc);
+          if (ch.signatureDesc) bodyParts.push(`◆ ${ch.signatureName}: ${ch.signatureDesc}`);
+          bodyParts.push(`Starter weapon: ${ch.starter} (auto-equipped at run start).`);
+        } else {
+          bodyParts.push(formatUnlockHint(ch.unlock));
+        }
+        return {
+          title: unlocked ? ch.name : `${ch.name} (Locked)`,
+          icon: unlocked ? ch.icon : '🔒',
+          body: bodyParts.join('\n\n'),
+          tags: unlocked ? (b ? b.tags : ['Archetype']) : ['Locked'],
+          stats: unlocked ? statRows : undefined,
+          accent: selected ? '#ffd27f' : '#7fffe4',
+        };
+      });
+      archRow.appendChild(chip);
+    }
+  }
+  paintArchetypes();
 
   const btnRow = document.createElement('div');
   btnRow.style.cssText = 'display: flex; gap: 12px; margin-top: 22px; pointer-events: auto; flex-wrap: wrap; justify-content: center;';
@@ -2369,6 +2454,7 @@ export function showStartScreen(text) {
   _startPresetRowRef = presetRow;
 
   _startScreen.appendChild(charRow);
+  _startScreen.appendChild(archRow);
   _startScreen.appendChild(btnRow);
   _startCharRowRef = charRow;
   _startBtnRowRef = btnRow;

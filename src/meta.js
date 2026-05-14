@@ -61,9 +61,6 @@ const DEFAULT = {
   // Twilight Hollow (hardest combination currently in-game). Flipped in
   // commitRunResults; read by isCharacterUnlocked() for the 'flag:...' form.
   unlockedClockwork: false,
-  // Sote — 2nd canonical character w/ his own GLB. Unlock condition TBD;
-  // until then flip via console (kkUnlockAll/kkUnlockSote) or save-edit.
-  unlockedSote: false,
   // Iter 22B — Catacomb Void clear flag. Gates the Seedy Tent (casino) in
   // town.js. Set in commitRunResults on first victory with stageId==='void'.
   unlockedVoid: false,
@@ -95,8 +92,10 @@ const DEFAULT = {
   // Passive codex: high-water-mark level reached for each passive id, across runs.
   // Surfaced in the Grimoire so players see their cumulative mastery.
   passivesSeen: {},
-  // Selected character id for the next run
+  // Selected character id for the next run (archetype: kitty/boom/web/sniper/phoenix/clockwork)
   selectedChar: 'kitty',
+  // Selected avatar id for the next run (visual identity: kitty/sote)
+  selectedAvatar: 'kitty',
   // Selected stage id for the next run
   selectedStage: 'forest',
   // Secret unlocks (cryptic conditions): { id: timestamp }
@@ -949,6 +948,12 @@ export function loadMeta() {
         && (parsed.optMusicVolume  === undefined)
         && (parsed.optSfxVolume    === undefined);
       _data = { ...DEFAULT, ...parsed };
+      // Iter 32 migration: 'sote' was an archetype briefly; it's now an
+      // avatar. Move legacy saves over so they don't fall back to 'kitty'.
+      if (_data.selectedChar === 'sote') {
+        _data.selectedAvatar = 'sote';
+        _data.selectedChar = 'kitty';
+      }
       if (hasLegacy) {
         const v = Number(parsed.optVolume);
         if (Number.isFinite(v)) {
@@ -1229,6 +1234,12 @@ export function selectedStage(STAGES) {
 export function selectedCharacter(CHARACTERS) {
   const meta = getMeta();
   return CHARACTERS.find(c => c.id === meta.selectedChar) || CHARACTERS[0];
+}
+
+/** Iter 32: resolve the currently-selected avatar def. Falls back to kitty. */
+export function selectedAvatar(AVATARS) {
+  const meta = getMeta();
+  return AVATARS.find(a => a.id === meta.selectedAvatar) || AVATARS[0];
 }
 
 /**

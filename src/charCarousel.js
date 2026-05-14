@@ -16,8 +16,6 @@
  */
 import * as THREE from 'three';
 import { cloneCached } from './assets.js';
-import { CHARACTERS } from './config.js';
-import { isCharacterUnlocked } from './meta.js';
 
 const RAIL_SPACING   = 2.6;      // x distance between adjacent char slots
 const SLOT_SCALE     = 0.6;      // base scale of un-selected chars
@@ -40,13 +38,19 @@ const F_BODY  = '"Crimson Text", Georgia, serif';
  * @param {HTMLElement} host - container the carousel mounts into
  * @param {Object} opts
  * @param {(charId:string)=>void} opts.onSelect - fires when selection changes
- * @param {string} [opts.initialId] - which char to focus initially
- * @param {Object} opts.meta - meta save, for locked-state checks
+ * @param {string} [opts.initialId] - which item to focus initially
+ * @param {Array} opts.items - roster array: {id, name, icon, glb?, tint?, scaleMul?, desc?, signatureName?, signatureDesc?, unlock?}
+ * @param {(item:any)=>boolean} [opts.isUnlocked] - per-item lock predicate; defaults to all unlocked
+ * @param {(item:any)=>string} [opts.formatLockHint] - override lock-hint text
  */
 export function createCharCarousel(host, opts) {
   const onSelect = opts.onSelect || (() => {});
-  const meta = opts.meta || {};
-  const chars = CHARACTERS.slice();
+  const items = (opts.items || []).slice();
+  const isUnlocked = opts.isUnlocked || (() => true);
+  const formatLockHintFn = opts.formatLockHint || _formatLockHint;
+  if (items.length === 0) throw new Error('charCarousel: items must be non-empty');
+  // Keep `chars` alias to minimize diff against existing internal references.
+  const chars = items;
   let selectedIdx = Math.max(0, chars.findIndex(c => c.id === opts.initialId));
   if (selectedIdx < 0) selectedIdx = 0;
 
@@ -167,7 +171,7 @@ export function createCharCarousel(host, opts) {
 
   for (let i = 0; i < chars.length; i++) {
     const ch = chars[i];
-    const unlocked = isCharacterUnlocked(ch, meta);
+    const unlocked = !!isUnlocked(ch);
     const slot = new THREE.Group();
     slot.position.x = i * RAIL_SPACING;
 
@@ -300,7 +304,7 @@ export function createCharCarousel(host, opts) {
       : '';
     const descBlock = unlocked
       ? `<div style="margin-top:6px;opacity:0.82;font-size:13px;line-height:1.4;">${escapeHtml(ch.desc || '')}</div>`
-      : `<div style="margin-top:6px;opacity:0.7;font-size:13px;line-height:1.4;">${escapeHtml(_formatLockHint(ch.unlock))}</div>`;
+      : `<div style="margin-top:6px;opacity:0.7;font-size:13px;line-height:1.4;">${escapeHtml(formatLockHintFn(ch.unlock || ch))}</div>`;
     info.innerHTML = `
       <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;">
         <span style="font-size:22px;">${unlocked ? (ch.icon || '◇') : '🔒'}</span>
