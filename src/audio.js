@@ -1,19 +1,25 @@
 /**
- * Procedural audio via Web Audio API. Minimal: no audio files needed.
+ * Audio: CC0 sample playback for combat/UI SFX + procedural music bed.
  *
- * Layout (iter 10a):
+ * Layout (iter 16):
  *   _ctx ─► _master ─► destination
  *               ▲
- *       _musicBus (music + ambient bed)
- *       _sfxBus   (combat sfx submaster)
+ *       _musicBus (procedural music + ambient bed)
+ *       _sfxBus   (sample-based combat sfx)
  *
  * - `_master` is the master gain; `setMasterVolume` writes to it.
- * - `_musicBus` carries procedural music + menu/town/interior ambient bed.
+ * - `_musicBus` carries the still-procedural music + menu/town/interior bed.
  *   `setMusicVolume` writes to it.
- * - `_sfxBus` carries combat/UI SFX. `setSfxVolume` writes to it.
+ * - `_sfxBus` carries SFX. `setSfxVolume` writes to it.
  * - Legacy `setVolume(v)` is a deprecated shim mapping to `setMasterVolume`.
  * - Every sfx.* is throttled: a 30ms minimum gap per-method prevents layering
  *   when e.g. an orbital hits 5 enemies in one frame.
+ *
+ * Iter 16 (2026-05-14): replaced procedural tone synthesis with CC0 Kenney
+ * samples decoded into `SFX_BANK[bucket]`. Each public sfx.* method picks a
+ * random variant + ±3% playbackRate jitter so repeats don't feel robotic.
+ * Music + menu-bed remain procedural (they're working fine + Music submaster
+ * routes them; replacing them was out of iter 16 scope).
  */
 
 import { state } from './state.js';
@@ -42,6 +48,9 @@ function ensureCtx() {
   _sfxBus = _ctx.createGain();
   _sfxBus.gain.value = 0.7;
   _sfxBus.connect(_master);
+  // Kick off CC0 sample decoding once we have a ctx. Safe to call on a
+  // suspended context — decodeAudioData works regardless of run state.
+  _primeSamples();
   return _ctx;
 }
 
@@ -83,12 +92,12 @@ export function setVolume(v) {
 
 export function setEnabled(b) { _enabled = !!b; }
 
-// ─── Legacy helpers (kept for back-compat; route through _musicBus) ──────────
+// ─── Legacy procedural helpers (kept for back-compat; route through _musicBus) ─
 // These three were previously wired to _master. After the iter-10a split they
-// route through _musicBus so they participate in music-volume control. No
-// in-tree caller invokes them today (all SFX go through sxTone/sxNoiseBurst),
-// but keeping the helpers means future melodic ambient nudges land in the
-// music bus by default.
+// route through _musicBus so they participate in music-volume control. After
+// iter 16 (sample-based SFX) no in-tree caller invokes them, but keeping the
+// helpers means future melodic ambient nudges land in the music bus by
+// default and any external user-script callers don't break.
 
 /** Short tone — routes through _musicBus. */
 function tone(f, dur, type = 'square', vol = 0.5) {
@@ -146,65 +155,111 @@ function noiseBurst(dur, vol = 0.4, lowpass = 1200) {
   src.stop(t + dur + 0.02);
 }
 
-// ─── New synth library: routes through the SFX submaster ─────────────────────
+// ─── Sample bank: CC0 Kenney audio decoded into AudioBuffers ─────────────────
+// Each bucket maps to one or more decoded AudioBuffers. _play() picks a random
+// variant and applies ±3% pitch jitter so repeats don't feel robotic.
+//
+// Banks fill asynchronously from module init. _play() returns silently while
+// buckets are still decoding — first-shot is just inaudible, not crashed.
+// Decode is kicked off via _primeSamples() on the first ensureCtx() call so
+// AudioContext is ready (decodeAudioData works on a suspended ctx too, but
+// having the ctx in hand avoids constructor-during-decode races).
 
-/** Tone routed through the sfx submaster. dur in seconds. */
-function sxTone(freq, duration, type = 'triangle', vol = 1) {
-  if (!_enabled) return;
-  const ctx = ensureCtx();
-  if (ctx.state !== 'running') return;
-  const t = ctx.currentTime;
-  const osc = ctx.createOscillator();
-  const g = ctx.createGain();
-  osc.type = type;
-  osc.frequency.setValueAtTime(freq, t);
-  g.gain.setValueAtTime(0, t);
-  g.gain.linearRampToValueAtTime(vol, t + 0.004);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + duration);
-  osc.connect(g).connect(_sfxBus);
-  osc.start(t);
-  osc.stop(t + duration + 0.02);
+const SFX_MANIFEST = {
+  // hits — busiest bucket, 3 variants for enemy_hurt
+  enemyHurt:    ['audio/hit/enemy_hurt_a.ogg', 'audio/hit/enemy_hurt_b.ogg', 'audio/hit/enemy_hurt_c.ogg'],
+  hit:          ['audio/hit/hit_a.ogg', 'audio/hit/hit_b.ogg'],
+  enemyDeath:   ['audio/hit/enemy_death_a.ogg', 'audio/hit/enemy_death_b.ogg'],
+  eliteDeath:   ['audio/hit/elite_death.ogg'],
+  heroHit:      ['audio/hit/hero_hit.ogg'],
+  heroHurt:     ['audio/hit/hero_hurt.ogg'],
+  // pickups
+  pickup:       ['audio/pickup/xp_pickup_a.ogg', 'audio/pickup/xp_pickup_b.ogg', 'audio/pickup/xp_pickup_c.ogg'],
+  coinPickup:   ['audio/pickup/coin_pickup_a.ogg', 'audio/pickup/coin_pickup_b.ogg'],
+  heartPickup:  ['audio/pickup/heart_pickup.ogg'],
+  starPickup:   ['audio/pickup/star_pickup.ogg'],
+  chestOpen:    ['audio/pickup/chest_open.ogg'],
+  // level / win
+  levelUp:      ['audio/levelup/levelup.ogg'],
+  victory:      ['audio/levelup/victory.ogg'],
+  // death / boom
+  death:        ['audio/death/death.ogg'],
+  heroDeath:    ['audio/death/hero_death.ogg'],
+  explosion:    ['audio/death/explosion.ogg'],
+  // weapons / cast
+  shoot:        ['audio/cast/shoot.ogg'],
+  weaponBurger: ['audio/cast/weapon_burger_a.ogg', 'audio/cast/weapon_burger_b.ogg'],
+  weaponChain:  ['audio/cast/weapon_chain_a.ogg', 'audio/cast/weapon_chain_b.ogg'],
+  weaponAutoaim:['audio/cast/weapon_autoaim_a.ogg', 'audio/cast/weapon_autoaim_b.ogg'],
+  weaponBomb:   ['audio/cast/weapon_bomb.ogg'],
+  weaponWeb:    ['audio/cast/weapon_web_a.ogg', 'audio/cast/weapon_web_b.ogg'],
+  weaponDash:   ['audio/cast/weapon_dash.ogg'],
+  // boss
+  bossWarn:     ['audio/boss/boss_warn.ogg'],
+  bossSpawnBell:['audio/boss/boss_spawn_bell.ogg'],   // layered components — sfx.bossSpawn() plays both
+  bossSpawnRumble:['audio/boss/boss_spawn_rumble.ogg'],
+  bossShockwave:['audio/boss/boss_shockwave.ogg'],
+};
+
+const SFX_BANK = Object.fromEntries(Object.keys(SFX_MANIFEST).map(k => [k, []]));
+let _samplesPrimed = false;
+
+function _primeSamples() {
+  if (_samplesPrimed) return;
+  if (!_ctx) return;
+  _samplesPrimed = true;
+  // Resolve URLs relative to this module so GitHub Pages subpaths work.
+  // ../assets/audio/... because audio.js lives in src/ and assets/ is its sibling.
+  for (const [bucket, files] of Object.entries(SFX_MANIFEST)) {
+    files.forEach(rel => {
+      const url = new URL('../assets/' + rel, import.meta.url).href;
+      fetch(url)
+        .then(r => {
+          if (!r.ok) throw new Error('http ' + r.status);
+          return r.arrayBuffer();
+        })
+        .then(ab => _ctx.decodeAudioData(ab))
+        .then(buf => { SFX_BANK[bucket].push(buf); })
+        .catch(err => {
+          // Don't kill the rest of the bank if one file 404s.
+          console.warn('[audio] decode fail', rel, err && err.message);
+        });
+    });
+  }
 }
 
-/** Noise burst routed through the sfx submaster. */
-function sxNoiseBurst(duration, vol = 1, opts = {}) {
+/**
+ * Core sample player. Picks a random variant from the bucket, applies ±3%
+ * pitch jitter, routes through the sfx submaster. Silently no-ops if the
+ * bank is still decoding (first-shot tolerance).
+ *
+ *   _play(bucket, { gain: 0.6, rate: 1.0, delay: 0 })
+ *
+ *   gain  : per-call gain (the sfx submaster handles the master cut)
+ *   rate  : extra playbackRate multiplier (e.g. pitch-shift a hit on crit)
+ *   delay : scheduling offset in seconds (used by bossSpawn to layer the
+ *           bell and rumble with a stagger)
+ */
+function _play(bucket, opts = {}) {
   if (!_enabled) return;
   const ctx = ensureCtx();
   if (ctx.state !== 'running') return;
-  const t = ctx.currentTime;
-  const buf = ctx.createBuffer(1, Math.max(1, ctx.sampleRate * duration), ctx.sampleRate);
-  const d = buf.getChannelData(0);
-  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * 0.7;
-  const src = ctx.createBufferSource(); src.buffer = buf;
-  const filt = ctx.createBiquadFilter();
-  filt.type = opts.filterType || 'lowpass';
-  filt.frequency.value = opts.cutoff || 1200;
-  if (opts.q != null) filt.Q.value = opts.q;
+  const bank = SFX_BANK[bucket];
+  if (!bank || !bank.length) return;          // still decoding — drop, don't crash
+  const buf = bank.length === 1 ? bank[0] : bank[Math.floor(Math.random() * bank.length)];
+  const t = ctx.currentTime + Math.max(0, opts.delay || 0);
+  const src = ctx.createBufferSource();
+  src.buffer = buf;
+  // ±3% pitch jitter keeps rapid-fire repeats from sounding identical.
+  src.playbackRate.value = (opts.rate != null ? opts.rate : 1) * (1 + (Math.random() - 0.5) * 0.06);
   const g = ctx.createGain();
-  g.gain.setValueAtTime(vol, t);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + duration);
-  src.connect(filt).connect(g).connect(_sfxBus);
+  g.gain.value = (opts.gain != null ? opts.gain : 1);
+  src.connect(g).connect(_sfxBus);
   src.start(t);
-  src.stop(t + duration + 0.02);
-}
-
-/** Pitch sweep routed through the sfx submaster. */
-function sxPitchSweep(fromHz, toHz, duration, vol = 1, type = 'square') {
-  if (!_enabled) return;
-  const ctx = ensureCtx();
-  if (ctx.state !== 'running') return;
-  const t = ctx.currentTime;
-  const osc = ctx.createOscillator();
-  const g = ctx.createGain();
-  osc.type = type;
-  osc.frequency.setValueAtTime(fromHz, t);
-  osc.frequency.exponentialRampToValueAtTime(Math.max(1, toHz), t + duration);
-  g.gain.setValueAtTime(0, t);
-  g.gain.linearRampToValueAtTime(vol, t + 0.004);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + duration);
-  osc.connect(g).connect(_sfxBus);
-  osc.start(t);
-  osc.stop(t + duration + 0.02);
+  // Auto-stop a generous window after buffer length to give Chrome a hint to
+  // release the source node (buffer.duration may be undefined in odd edge
+  // cases — Math.max guards it).
+  src.stop(t + Math.max(0.05, (buf.duration || 0) + 0.05));
 }
 
 // ─── Throttle wrapper ────────────────────────────────────────────────────────
@@ -225,137 +280,65 @@ function _throttled(key, fn) {
 
 // ─── Public sfx ──────────────────────────────────────────────────────────────
 // Volume design (relative loudness, all routed via the sfx submaster):
-//   loud peaks  ~0.55-0.70  (bomb, bossSpawn, heroDeath, eliteDeath)
-//   medium      ~0.30-0.45  (weapons, enemyDeath, chestOpen, heroHurt)
-//   pickups     ~0.16-0.22  (~−15 dB below the loud actions)
-//   chatter     ~0.10-0.18  (enemyHurt — also throttled by callers)
+//   loud peaks  ~0.55-0.75  (bomb, bossSpawn, heroDeath, eliteDeath, victory)
+//   medium      ~0.30-0.50  (weapons, enemyDeath, chestOpen, heroHurt)
+//   pickups     ~0.18-0.30  (~−10 dB below the loud actions)
+//   chatter     ~0.12-0.20  (enemyHurt — also throttled by callers)
+//
+// Bodies are one-liners over _play(bucket, {gain, rate}). Variants in the
+// bucket are chosen at random; ±3% pitch jitter is applied automatically.
+// Where audio.js used to layer multiple synth elements, we now either pre-
+// layered them in the manifest (e.g. weaponBomb is a single bigger sample)
+// OR sequence buffer plays here (bossSpawn = bell + rumble with stagger).
 export const sfx = {
   // Submaster — exposed so callers / debug can mute the SFX bus independently.
   get _gain() { return _sfxBus; },
 
-  // ── Legacy hooks (kept so existing call sites don't break) ─────────────────
-  shoot:    _throttled('shoot',    () => sxPitchSweep(880, 220, 0.10, 0.20, 'square')),
-  hit:      _throttled('hit',      () => { sxTone(180, 0.08, 'square', 0.30); sxNoiseBurst(0.06, 0.20, { cutoff: 800 }); }),
-  pickup:   _throttled('pickup',   () => sxPitchSweep(660, 1320, 0.08, 0.22, 'triangle')),
-  levelUp:  _throttled('levelUp',  () => { sxPitchSweep(330, 880, 0.18, 0.40, 'triangle'); setTimeout(() => sxPitchSweep(440, 1320, 0.18, 0.40, 'triangle'), 70); }),
-  heroHit:  _throttled('heroHit',  () => { sxPitchSweep(440, 110, 0.18, 0.40, 'sawtooth'); sxNoiseBurst(0.10, 0.25, { cutoff: 600 }); }),
-  death:    _throttled('death',    () => { sxPitchSweep(330, 60, 0.6, 0.50, 'sawtooth'); sxNoiseBurst(0.5, 0.30, { cutoff: 400 }); }),
-  explosion:_throttled('explosion',() => { sxNoiseBurst(0.25, 0.45, { cutoff: 500 }); sxPitchSweep(220, 60, 0.25, 0.38, 'sawtooth'); }),
-  victory:  () => {
-    // Not throttled — triumphant cadence is the whole point.
-    const notes = [392, 523, 659, 784, 1047];
-    notes.forEach((f, i) => setTimeout(() => sxPitchSweep(f * 0.5, f, 0.25, 0.45, 'triangle'), i * 100));
-    setTimeout(() => sxPitchSweep(1047, 1568, 0.6, 0.55, 'triangle'), 600);
-  },
-  bossWarn: _throttled('bossWarn', () => {
-    [220, 220, 220].forEach((f, i) => setTimeout(() => sxTone(f, 0.18, 'sawtooth', 0.35), i * 180));
-  }),
+  // ── Generic / legacy ───────────────────────────────────────────────────────
+  shoot:    _throttled('shoot',    () => _play('shoot',    { gain: 0.28 })),
+  hit:      _throttled('hit',      () => _play('hit',      { gain: 0.40 })),
+  pickup:   _throttled('pickup',   () => _play('pickup',   { gain: 0.26 })),
+  levelUp:  _throttled('levelUp',  () => _play('levelUp',  { gain: 0.55 })),
+  heroHit:  _throttled('heroHit',  () => _play('heroHit',  { gain: 0.45 })),
+  death:    _throttled('death',    () => _play('death',    { gain: 0.55 })),
+  explosion:_throttled('explosion',() => _play('explosion',{ gain: 0.55 })),
+  // Not throttled — triumphant cadence is the whole point. One-shot sample.
+  victory:  () => _play('victory', { gain: 0.70 }),
+  // Single warning bell (audio.js used to triple-tap a sawtooth; the new
+  // bell sample carries the urgency on its own).
+  bossWarn: _throttled('bossWarn', () => _play('bossWarn', { gain: 0.45 })),
 
   // ── Weapon hooks ───────────────────────────────────────────────────────────
-  weaponBurger: _throttled('weaponBurger', () => {
-    // Soft thud — orbital body-check
-    sxTone(140, 0.06, 'sine', 0.28);
-    sxNoiseBurst(0.05, 0.10, { cutoff: 500 });
-  }),
-  weaponChain: _throttled('weaponChain', () => {
-    // Quick zap, two stacked tones for that electric "shing"
-    sxPitchSweep(1400, 700, 0.10, 0.18, 'square');
-    sxPitchSweep(2100, 1050, 0.10, 0.12, 'sawtooth');
-  }),
-  weaponAutoaim: _throttled('weaponAutoaim', () => {
-    // Pop + sweep
-    sxTone(900, 0.02, 'square', 0.22);
-    sxPitchSweep(700, 1400, 0.08, 0.18, 'triangle');
-  }),
-  weaponBomb: _throttled('weaponBomb', () => {
-    // Big low boom, noise + low sweep
-    sxNoiseBurst(0.55, 0.55, { cutoff: 380 });
-    sxPitchSweep(180, 40, 0.60, 0.55, 'sawtooth');
-    sxTone(60, 0.40, 'sine', 0.45);
-  }),
-  weaponWeb: _throttled('weaponWeb', () => {
-    // Slow pluck
-    sxPitchSweep(420, 220, 0.14, 0.24, 'triangle');
-  }),
-  weaponDash: _throttled('weaponDash', () => {
-    // Whoosh — band-pass-like noise sweep via two filtered bursts
-    sxNoiseBurst(0.20, 0.35, { filterType: 'bandpass', cutoff: 1400, q: 1.2 });
-    sxPitchSweep(900, 240, 0.20, 0.10, 'sawtooth');
-  }),
+  weaponBurger:  _throttled('weaponBurger',  () => _play('weaponBurger',  { gain: 0.38 })),
+  weaponChain:   _throttled('weaponChain',   () => _play('weaponChain',   { gain: 0.28 })),
+  weaponAutoaim: _throttled('weaponAutoaim', () => _play('weaponAutoaim', { gain: 0.30 })),
+  weaponBomb:    _throttled('weaponBomb',    () => _play('weaponBomb',    { gain: 0.65 })),
+  weaponWeb:     _throttled('weaponWeb',     () => _play('weaponWeb',     { gain: 0.32 })),
+  weaponDash:    _throttled('weaponDash',    () => _play('weaponDash',    { gain: 0.40 })),
 
   // ── Enemy reactions ────────────────────────────────────────────────────────
-  enemyHurt: _throttled('enemyHurt', () => {
-    // Thin crit-like tone
-    sxTone(1600, 0.05, 'square', 0.14);
-  }),
-  enemyDeath: _throttled('enemyDeath', () => {
-    // Short noise + thud
-    sxNoiseBurst(0.10, 0.30, { cutoff: 900 });
-    sxTone(200, 0.10, 'square', 0.28);
-  }),
-  eliteDeath: _throttled('eliteDeath', () => {
-    // Bigger, glittery
-    sxNoiseBurst(0.20, 0.40, { cutoff: 1100 });
-    sxPitchSweep(220, 80, 0.40, 0.45, 'sawtooth');
-    setTimeout(() => sxPitchSweep(1200, 2400, 0.18, 0.20, 'triangle'), 60);
-    setTimeout(() => sxPitchSweep(1600, 2800, 0.14, 0.16, 'triangle'), 140);
-  }),
+  enemyHurt:  _throttled('enemyHurt',  () => _play('enemyHurt',  { gain: 0.20 })),
+  enemyDeath: _throttled('enemyDeath', () => _play('enemyDeath', { gain: 0.40 })),
+  eliteDeath: _throttled('eliteDeath', () => _play('eliteDeath', { gain: 0.55 })),
 
   // ── Hero reactions ─────────────────────────────────────────────────────────
-  heroHurt: _throttled('heroHurt', () => {
-    // Low buzz
-    sxTone(180, 0.18, 'sawtooth', 0.40);
-    sxNoiseBurst(0.10, 0.22, { cutoff: 700 });
-  }),
-  heroDeath: _throttled('heroDeath', () => {
-    // Long descending sweep
-    sxPitchSweep(440, 50, 1.20, 0.55, 'sawtooth');
-    sxNoiseBurst(0.80, 0.30, { cutoff: 400 });
-    setTimeout(() => sxPitchSweep(220, 30, 0.60, 0.40, 'sawtooth'), 400);
-  }),
+  heroHurt:  _throttled('heroHurt',  () => _play('heroHurt',  { gain: 0.50 })),
+  heroDeath: _throttled('heroDeath', () => _play('heroDeath', { gain: 0.70 })),
 
-  // ── Pickups (sit ~−15 dB below loud actions) ───────────────────────────────
-  coinPickup: _throttled('coinPickup', () => {
-    // Bright ding
-    sxTone(1320, 0.05, 'triangle', 0.20);
-    setTimeout(() => sxTone(1760, 0.08, 'triangle', 0.18), 25);
-  }),
-  heartPickup: _throttled('heartPickup', () => {
-    // Warm two-note arpeggio
-    sxTone(523, 0.12, 'triangle', 0.22);
-    setTimeout(() => sxTone(784, 0.18, 'triangle', 0.22), 70);
-  }),
-  starPickup: _throttled('starPickup', () => {
-    // Sparkle: noise + high tone + glitter
-    sxNoiseBurst(0.06, 0.12, { filterType: 'highpass', cutoff: 4000 });
-    sxTone(1760, 0.10, 'triangle', 0.20);
-    setTimeout(() => sxTone(2349, 0.10, 'triangle', 0.18), 60);
-  }),
-  chestOpen: _throttled('chestOpen', () => {
-    // Wood thunk + sparkle
-    sxTone(180, 0.10, 'square', 0.35);
-    sxNoiseBurst(0.08, 0.20, { cutoff: 700 });
-    setTimeout(() => {
-      sxTone(1568, 0.12, 'triangle', 0.22);
-      sxTone(2093, 0.14, 'triangle', 0.18);
-    }, 90);
-  }),
+  // ── Pickups (sit ~−10 dB below loud actions; runtime gain is the budget) ───
+  coinPickup:  _throttled('coinPickup',  () => _play('coinPickup',  { gain: 0.26 })),
+  heartPickup: _throttled('heartPickup', () => _play('heartPickup', { gain: 0.30 })),
+  starPickup:  _throttled('starPickup',  () => _play('starPickup',  { gain: 0.30 })),
+  chestOpen:   _throttled('chestOpen',   () => _play('chestOpen',   { gain: 0.42 })),
 
   // ── Boss ───────────────────────────────────────────────────────────────────
+  // Layered: bell on impact + rumble underneath. Web Audio handles the mixing
+  // through the sfx submaster.
   bossSpawn: _throttled('bossSpawn', () => {
-    // Low rumble + scary stab
-    sxNoiseBurst(0.90, 0.45, { cutoff: 220 });
-    sxPitchSweep(80, 40, 0.90, 0.55, 'sawtooth');
-    setTimeout(() => {
-      sxTone(110, 0.25, 'sawtooth', 0.50);
-      sxTone(146, 0.25, 'sawtooth', 0.40);
-    }, 250);
+    _play('bossSpawnBell',   { gain: 0.65 });
+    _play('bossSpawnRumble', { gain: 0.55, delay: 0.08 });
   }),
-  bossShockwave: _throttled('bossShockwave', () => {
-    // Fast low whoosh
-    sxNoiseBurst(0.18, 0.45, { filterType: 'bandpass', cutoff: 600, q: 0.8 });
-    sxPitchSweep(320, 80, 0.20, 0.35, 'sawtooth');
-  }),
+  bossShockwave: _throttled('bossShockwave', () => _play('bossShockwave', { gain: 0.55 })),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
