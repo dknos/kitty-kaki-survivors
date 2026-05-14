@@ -144,10 +144,17 @@ export const state = {
   },
 
   // ── FX ──
+  // Iter 24b: hitStop is *consumed* by main.js (frame loop at ~L1069 and the
+  // catacomb branch at ~L927) — when > 0, logicDt is forced to 0 so the world
+  // freezes while damage numbers + shake still tick on realDt. No main.js
+  // change is needed to trigger hit-pause; damageEnemy just sets hitStop
+  // higher. _hitPauseNextEligible is a cross-frame gate so that orbitals
+  // hitting 5 enemies/frame can't re-trigger every frame and lock the loop.
   fx: {
     chromaticPulse: 0,   // 0..1, decays each frame
     bloomBoost: 0,       // 0..1, decays each frame
     hitStop: 0,          // seconds of remaining time-freeze (drained each frame)
+    _hitPauseNextEligible: 0,  // state.time.real value before which heavy-hit pause is skipped
     shake: 0,            // 0..1 screen-shake magnitude, decays each frame
     // Iter 8: queued Volatile-affix explosions. Each entry {x,z,t}. Drained
     // at the top of updateEnemies when t <= state.time.game.
@@ -321,6 +328,7 @@ export function resetState() {
   state.modes.endless = false;
   state.run.startedAt = performance.now();
   state.fx.chromaticPulse = 0; state.fx.bloomBoost = 0; state.fx.hitStop = 0; state.fx.shake = 0;
+  state.fx._hitPauseNextEligible = 0;
   if (state.fx.pendingVolatile) state.fx.pendingVolatile.length = 0;
   state.pendingLevelUp = false; state.levelUpChoices.length = 0; state.gameOver = false; state.victory = false; state.dyingUntil = 0;
 }

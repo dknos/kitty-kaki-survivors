@@ -38,7 +38,9 @@ const TIERS = {
     bob: false, critPop: false, life: LIFETIME,
   },
   normal: {
-    color: '#d99b54', fontSize: 15, weight: 'bold',
+    // Iter 24c: 15→18 so mid-range damage reads at a glance during swarm combat.
+    // Crit/heavy still tower over it; the gap is preserved (18 vs 20 vs 26).
+    color: '#d99b54', fontSize: 18, weight: 'bold',
     shadow: '1px 1px 0 #231a14',
     riseUnits: 28,     // ~1.2u/s
     driftX: 0,

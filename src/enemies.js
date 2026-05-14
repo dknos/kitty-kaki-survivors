@@ -16,6 +16,7 @@ import { takeDamage as heroTakeDamage } from './hero.js';
 import { dropGem } from './xp.js';
 import { spawnDamageNumber } from './damageNumbers.js';
 import { spawnKillRing } from './fx.js';
+import { spawnImpactBurst } from './vfxBurst.js';
 import { spawnEnemyProjectile } from './enemyProjectiles.js';
 import { spawnChest } from './chest.js';
 import { spawnHeart, spawnStar, spawnBomb, spawnFreeze, spawnChicken } from './pickups.js';
@@ -745,15 +746,144 @@ export function damageEnemy(enemy, dmg, source) {
   if (!state.run.dmgByWeapon) state.run.dmgByWeapon = {};
   state.run.dmgByWeapon[src] = (state.run.dmgByWeapon[src] || 0) + finalDmg;
   spawnDamageNumber(enemy.mesh.position, finalDmg, isCrit);
-  enemy._flashUntil = state.time.game + (isCrit ? 0.14 : 0.08);
-  // Light "ow" tick — heavy 1-in-4 throttle on top of audio.js's per-method gap.
-  if ((++_enemyHurtCounter & 3) === 0 && sfx && sfx.enemyHurt) sfx.enemyHurt();
-  if (isCrit) state.fx.shake = Math.max(state.fx.shake || 0, 0.20);
+
+  // ── Iter 24a/b/c: hit-feel pipeline ──
+  //
+  // Goal: every hit should READ — flash, spark, knock, sound. The intent
+  // is to make level-1 trash combat feel like contact, not "stuff dissolving
+  // near my character". Weighting:
+  //   • dmgFrac = finalDmg / hpMax (0..1+) → how much this hit MATTERS
+  //   • heavy   = dmgFrac >= 0.10 (10% maxHP) OR isCrit
+  //   • huge    = dmgFrac >= 0.40 (40% maxHP)
+  //
+  // Per-tick continuous sources (orbitals, DoT, web, volatile chain) are
+  // gated OUT of the heavy pipeline so they don't strobe/lock the screen.
+  const hpFrac = enemy.hpMax > 0 ? finalDmg / enemy.hpMax : 0;
+  const dmgFracClamped = Math.min(1.5, hpFrac);
+  const willKill = enemy.hp <= 0;
+  const heavy = (isCrit || dmgFracClamped >= 0.10);
+  const huge = dmgFracClamped >= 0.40;
+  // Continuous per-tick damage sources — skip the per-hit pipeline since they
+  // resolve every frame and would saturate. They still spawn damage numbers
+  // and apply hp, just without flash extension / knock / hit-pause / burst.
+  //   • 'orbitals'   — base orbital burger ticking at hit cooldown
+  //   • 'toxic_halo' — evolved orbitals poison DoT (per-frame in enemies.js:930)
+  //   • 'sanctum'    — Sticky Web burning patch DoT (weapons/web.js:129)
+  //   • 'web'        — generic web slow contact damage (defensive — current
+  //                    web slow is non-damaging, but reserved)
+  //   • 'volatile'   — Volatile-affix chain explosion (already AoE'd)
+  //   • 'phoenix'    — Ember Burst self-damage AoE (one-shot, fine)
+  //   • 'dash'       — hero dash hits, already self-juiced by dash impulse
+  const isTickSource = (source === 'orbitals' || source === 'toxic_halo' ||
+                       source === 'sanctum'  || source === 'web' ||
+                       source === 'volatile' || source === 'phoenix' ||
+                       source === 'dash');
+
+  // Hit-flash duration: scales modestly with damage. Crit gets the longest
+  // window so the player can SEE the crit landed even mid-swarm. Capped so a
+  // huge oneshot doesn't leave the body glowing for half a second.
+  const flashDur = isCrit ? 0.18 : (heavy ? 0.14 : 0.09);
+  // Extend (never shorten) the flash window — multi-source hits stack readably.
+  const flashEndCandidate = state.time.game + flashDur;
+  if (flashEndCandidate > (enemy._flashUntil || 0)) enemy._flashUntil = flashEndCandidate;
+
+  // Knockback: only for "heavy" non-tick hits. Direction = from hero outward
+  // (most weapons fire from the hero). Additive (`+=`) so a dash impulse on
+  // the same frame doesn't get overwritten by a damage tick. Cap final knock
+  // velocity so a flurry of crits doesn't fling enemies into next zip code.
+  if (heavy && !isTickSource) {
+    const hp = state.hero && state.hero.pos;
+    if (hp) {
+      let dx = enemy.mesh.position.x - hp.x;
+      let dz = enemy.mesh.position.z - hp.z;
+      const len = Math.sqrt(dx * dx + dz * dz);
+      if (len > 1e-3) {
+        const inv = 1 / len;
+        dx *= inv; dz *= inv;
+        // Impulse magnitude scales with dmg fraction (clamped 0.10..1.0).
+        // Range: 2.5..7.5 u/s. Iter 13 decay loop (line ~1005) kills these
+        // off in ~3-4 frames — reads as a jolt, not a punt.
+        const impulse = 2.5 + Math.min(1.0, dmgFracClamped) * 5.0;
+        enemy.knockVx += dx * impulse;
+        enemy.knockVz += dz * impulse;
+        // Cap so layered hits don't unboundedly accumulate
+        const KCAP = 12;
+        if (enemy.knockVx >  KCAP) enemy.knockVx =  KCAP;
+        if (enemy.knockVx < -KCAP) enemy.knockVx = -KCAP;
+        if (enemy.knockVz >  KCAP) enemy.knockVz =  KCAP;
+        if (enemy.knockVz < -KCAP) enemy.knockVz = -KCAP;
+      }
+    }
+  }
+
+  // Impact sparks — heavy hits get a small burst at the contact point.
+  // Color follows damage type (crit = pink, huge = warm-red, normal = ember).
+  // Skip tick sources (would strobe). Skip on kill (kill ring handles it).
+  if (heavy && !isTickSource && !willKill) {
+    const burstColor = isCrit ? 0xff9ad6 : (huge ? 0xff7544 : 0xffb14a);
+    const burstY = (enemy.mesh.position.y || 0) + 0.6;
+    try {
+      spawnImpactBurst(
+        enemy.mesh.position.x, burstY, enemy.mesh.position.z,
+        burstColor,
+        Math.min(1, 0.4 + dmgFracClamped),
+      );
+    } catch (_) {}
+  }
+
+  // SFX with damage-scaled gain. Throttle still drops layered calls inside
+  // the 30ms window — the gain that lands is whichever call won the race.
+  // Heavy hits piggyback on `sfx.hit` (the meatier sample) so they stand out
+  // from the ambient enemyHurt stream.
+  if (sfx) {
+    // The light enemyHurt chatter still runs on its 1-in-4 counter to avoid
+    // swarm machine-gunning. Gain scales 0.18..0.45 across the dmg range.
+    if ((++_enemyHurtCounter & 3) === 0 && sfx.enemyHurt) {
+      const g = 0.18 + Math.min(0.27, dmgFracClamped * 0.5);
+      sfx.enemyHurt({ gain: g });
+    }
+    // Heavy / crit gets the punchier `hit` bucket on top so the player HEARS
+    // big hits land. Bypasses the enemyHurt counter — heavy hits are rarer.
+    // Skip on the kill blow — enemyDeath/eliteDeath play below and stacking
+    // hit + death same-frame muddles the death moment.
+    if (heavy && sfx.hit && !isTickSource && !willKill) {
+      const g = 0.32 + Math.min(0.40, dmgFracClamped * 0.55);
+      // Slight pitch drop on huge hits so they feel weighty (rate=0.92 == ~-1.5 semitones).
+      const rate = huge ? 0.92 : 1.0;
+      sfx.hit({ gain: g, rate });
+    }
+  }
+
+  // Shake — scales with damage. Per-frame cap (0.45) keeps swarm hits from
+  // saturating the camera. Crit floor preserved from prior behavior.
+  if (heavy) {
+    const shakeAmt = 0.10 + Math.min(0.35, dmgFracClamped * 0.45);
+    if (state.fx.shake < shakeAmt) state.fx.shake = shakeAmt;
+  } else if (isCrit) {
+    if (state.fx.shake < 0.20) state.fx.shake = 0.20;
+  }
+
+  // Hit-pause — micro-freeze on huge non-tick hits. Cross-frame eligibility
+  // gate prevents orbitals/autoaim from re-triggering every frame and locking
+  // the world. Only consumes the existing `state.fx.hitStop` field which
+  // main.js already reads at L927 and L1069 — NO main.js change required.
+  if (huge && !isTickSource && !willKill) {
+    const now = state.time.real;
+    if (now >= (state.fx._hitPauseNextEligible || 0)) {
+      const dur = 0.05 + Math.min(0.04, dmgFracClamped * 0.04);   // 50..90ms
+      if (state.fx.hitStop < dur) state.fx.hitStop = dur;
+      state.fx._hitPauseNextEligible = now + 0.22;   // 220ms gap floor
+    }
+  }
+
   if (enemy.hp <= 0) {
-    // Hit-stop + shake: bigger for elites. Normal kills get only hit-stop —
-    // shake on every kill made the camera vibrate constantly mid-swarm.
-    const stopDur = enemy.elite ? 0.10 : 0.03;
-    const shakeAmt = enemy.elite ? 0.35 : 0.00;
+    // Kill — bigger hit-stop. Shake on trash kills is intentionally OMITTED:
+    // a prior fix found that per-trash-kill shake makes the camera vibrate
+    // continuously during swarm clears. The per-heavy-hit shake above already
+    // fired on the killing blow itself (most kill shots are >=10% maxHP), so
+    // adding more shake here is redundant for the player.
+    const stopDur = enemy.elite ? 0.12 : 0.04;
+    const shakeAmt = enemy.elite ? 0.40 : 0.0;
     if (state.fx.hitStop < stopDur) state.fx.hitStop = stopDur;
     if (shakeAmt > 0 && state.fx.shake < shakeAmt) state.fx.shake = shakeAmt;
     killEnemy(enemy);

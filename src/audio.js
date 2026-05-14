@@ -278,12 +278,12 @@ const _lastCallAt = Object.create(null);
 const THROTTLE_MS = 30;
 
 function _throttled(key, fn) {
-  return function () {
+  return function (opts) {
     const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
     const last = _lastCallAt[key] || 0;
     if (now - last < THROTTLE_MS) return;
     _lastCallAt[key] = now;
-    try { fn(); } catch (_) {}
+    try { fn(opts); } catch (_) {}
   };
 }
 
@@ -326,12 +326,15 @@ export const sfx = {
   weaponDash:    _throttled('weaponDash',    () => _play('weaponDash',    { gain: 0.40 })),
 
   // ── Enemy reactions ────────────────────────────────────────────────────────
-  enemyHurt:  _throttled('enemyHurt',  () => _play('enemyHurt',  { gain: 0.20 })),
-  enemyDeath: _throttled('enemyDeath', () => _play('enemyDeath', { gain: 0.40 })),
-  eliteDeath: _throttled('eliteDeath', () => _play('eliteDeath', { gain: 0.55 })),
+  // Iter 24a: gain + rate threadable via opts so damageEnemy can pass dmg-scaled
+  // values. Throttle is preserved — the gain that lands is whichever call won
+  // the 30ms throttle race, which is close enough for swarm combat.
+  enemyHurt:  _throttled('enemyHurt',  (o) => _play('enemyHurt',  { gain: 0.20, ...(o || {}) })),
+  enemyDeath: _throttled('enemyDeath', (o) => _play('enemyDeath', { gain: 0.40, ...(o || {}) })),
+  eliteDeath: _throttled('eliteDeath', (o) => _play('eliteDeath', { gain: 0.55, ...(o || {}) })),
 
   // ── Hero reactions ─────────────────────────────────────────────────────────
-  heroHurt:  _throttled('heroHurt',  () => _play('heroHurt',  { gain: 0.50 })),
+  heroHurt:  _throttled('heroHurt',  (o) => _play('heroHurt',  { gain: 0.50, ...(o || {}) })),
   heroDeath: _throttled('heroDeath', () => _play('heroDeath', { gain: 0.70 })),
 
   // ── Pickups (sit ~−10 dB below loud actions; runtime gain is the budget) ───

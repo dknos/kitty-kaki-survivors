@@ -138,6 +138,40 @@ function _spawnEmber(x, y, z, vx, vy, vz, color) {
 }
 
 /**
+ * Iter 24c — small contact-point spark burst for per-hit feedback.
+ * Reuses the ember pool (ballistic + gravity + per-instance color), plus a
+ * tiny flash if intensity warrants it. ~4 embers for light hits, up to 8 for
+ * heavy hits. Color hints come from the caller (defaults to warm ember).
+ *
+ *   intensity   0..1 — drives flash visibility + ember count
+ *   color       hex color for the embers (e.g. 0xffb14a, 0xff5544, 0x88ddff)
+ *
+ * Note: state._optReduceMotion suppresses the flash via _spawnFlash; embers
+ * still fire so the hit reads kinetically without screen-punch.
+ */
+export function spawnImpactBurst(x, y, z, color = 0xffb14a, intensity = 0.5) {
+  const n = 4 + Math.floor(intensity * 4);   // 4..8 embers
+  // Embers fly outward in a flat cone with mild upward lift — reads as a hit,
+  // not an explosion. Lower speed than burstExplosion so they land within ~0.5s
+  // (which matches the hit-flash duration on the enemy mesh).
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const sp = 2.2 + Math.random() * 2.6 * intensity;
+    _spawnEmber(x, Math.max(0.4, y), z,
+      Math.cos(a) * sp,
+      1.6 + Math.random() * 1.4,
+      Math.sin(a) * sp,
+      color);
+  }
+  // Heavy hits add a brief contact flash so the screen reads "this one landed".
+  // Skip on light hits — the embers carry it, and a flash on every hit would
+  // strobe in swarms.
+  if (intensity >= 0.45) {
+    _spawnFlash(x, z, 0.28 * (0.7 + intensity * 0.6), color);
+  }
+}
+
+/**
  * One-call layered burst. `radius` ≈ how far embers travel.
  * Colors: warmTint applied to flash/shock; smoke/ember stay on their atlases.
  * Iter 10a — when state._optReduceMotion is set, the flash + shock layers
