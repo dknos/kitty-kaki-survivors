@@ -50,8 +50,8 @@ export const DASH = {
 };
 
 export const XP = {
-  base: 5,                  // xp needed for level 2
-  growth: 1.18,             // xpNext = base * growth^(level-1)
+  base: 9,                  // xp needed for level 2 (iter 33d — was 5, too fast)
+  growth: 1.22,             // xpNext = base * growth^(level-1)  (was 1.18)
   gemValue: 1,              // default
   gemSize: 0.35,
   gemMagnetMaxSpeed: 42,

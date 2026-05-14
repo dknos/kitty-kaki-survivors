@@ -321,14 +321,20 @@ export function spawnEnemy(tierConfig, x, z) {
   const stageHp  = state.run && state.run.stageHpMul ? state.run.stageHpMul : 1;
   const weeklyHp = state.run && state.run.weeklyEnemyHpMul ? state.run.weeklyEnemyHpMul : 1;
   const weeklyDg = state.run && state.run.weeklyEnemyDmgMul ? state.run.weeklyEnemyDmgMul : 1;
-  const hpMul    = hyper * dailyHp * stageHp * weeklyHp;
+  // Iter 33d — time-based scaling so the hero stops one-shotting at 3 min.
+  // D ramps 0→1 over first 60 s, then 1→10 by 20 min. HP and damage both
+  // ride that curve (HP harder, damage softer) on top of all other multipliers.
+  const _D       = _computeDifficulty(state.time && state.time.game ? state.time.game : 0);
+  const rampHp   = 1 + 0.6 * _D;
+  const rampDmg  = 1 + 0.3 * _D;
+  const hpMul    = hyper * dailyHp * stageHp * weeklyHp * rampHp;
   const enemy = {
     mesh,
     glbKey: key,
     hp: tierConfig.hp * hpMul,
     hpMax: tierConfig.hp * hpMul,
     spd: tierConfig.spd * hyper,
-    dmg: tierConfig.dmg * hyper * weeklyDg,
+    dmg: tierConfig.dmg * hyper * weeklyDg * rampDmg,
     contactCooldown: 0,
     elite: !!tierConfig.elite,
     isFinalBoss: !!tierConfig.isFinalBoss,
