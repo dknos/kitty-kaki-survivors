@@ -23,6 +23,7 @@ import { grantEmbers } from './meta.js';
 import { makeRuneRingTexture } from './enemyTells.js';
 import { tex } from './particleTextures.js';
 import { spawnTellMote } from './bossTelegraphs.js';
+import { initHelltide, tickHelltide, teardownHelltide, isHelltideActive } from './helltide.js';
 
 let _miniEventRuneTex = null;
 function _getMiniRuneTex() { return _miniEventRuneTex || (_miniEventRuneTex = makeRuneRingTexture()); }
@@ -64,6 +65,9 @@ let _eliteState  = null;       // { members: [enemyRefs], deadlineAt }
 export function initMiniEvents(scene) {
   _scene = scene;
   resetMiniEvents();
+  // Iter 17: helltide owns its own pools (ember rain + chest meshes) attached
+  // to the same scene. Single init = scene wire-up + schedule first trigger.
+  try { initHelltide(scene); } catch (_) {}
 }
 
 export function resetMiniEvents() {
@@ -74,6 +78,9 @@ export function resetMiniEvents() {
   _clearMeteor();
   _clearElite();
   _activeEvent = null;
+  // Iter 17 — re-arm helltide auto-trigger for this run so the schedule
+  // restarts cleanly on Run Again / Return to Town.
+  try { initHelltide(_scene); } catch (_) {}
 }
 
 function _meteorIntervalReset() {
@@ -92,13 +99,22 @@ export function tickMiniEvents(dt) {
   const t = state.time.game;
   if (!_scene) return;
 
-  // Update active event
+  // Iter 17 — Helltide overlay ticks first (owns its own scheduler + pools).
+  try { tickHelltide(dt); } catch (_) {}
+  const helltide = isHelltideActive();
+
+  // Update active event (existing mini-events still resolve to completion
+  // even if a helltide kicks in mid-event — abandoning them mid-pack would
+  // strand the rewards.)
   if (_activeEvent === 'goblin') _tickGoblin(dt, t);
   else if (_activeEvent === 'meteor') _tickMeteor(dt, t);
   else if (_activeEvent === 'elite')  _tickElite(dt, t);
 
-  // Schedule new events (only if nothing active — single-slot)
-  if (!_activeEvent) {
+  // Schedule new events (only if nothing active — single-slot). Helltide
+  // suppresses NEW mini-event starts (too many things happening already);
+  // the timers are bumped so they don't immediately fire when the helltide
+  // ends.
+  if (!_activeEvent && !helltide) {
     if (t >= _nextGoblinAt) {
       _startGoblin();
       _nextGoblinAt = t + GOBLIN_INTERVAL;
@@ -110,8 +126,8 @@ export function tickMiniEvents(dt) {
       _nextEliteAt = t + ELITE_INTERVAL;
     }
   } else {
-    // While an event is active, bump pending timers forward so they don't
-    // immediately fire on completion. (Soft queue: skip-overlap behavior.)
+    // While an event is active OR a helltide is running, bump pending timers
+    // forward so they don't immediately fire on completion.
     if (t >= _nextGoblinAt) _nextGoblinAt = t + 5;
     if (t >= _nextMeteorAt) _nextMeteorAt = t + 5;
     if (t >= _nextEliteAt)  _nextEliteAt  = t + 5;
@@ -649,4 +665,7 @@ export function teardownMiniEvents() {
     if (c.group && c.group.parent) c.group.parent.remove(c.group);
   }
   _caches.length = 0;
+  // Iter 17: helltide pools (chest meshes, ember rain, banked counter) reset
+  // alongside mini-events so the next run starts clean.
+  try { teardownHelltide(); } catch (_) {}
 }
