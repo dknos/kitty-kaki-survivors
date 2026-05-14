@@ -60,7 +60,7 @@ const F = {
 // ── Build version ────────────────────────────────────────────────────────────
 // Flipped to '1.0.0' on the iter-11 ship commit (Shop Tree Live Wires —
 // the broken-tier-1-3-consumers gap was the last v1.0 blocker).
-export const KK_VERSION = '1.4.7';
+export const KK_VERSION = '1.4.8';
 
 // ── Module-local DOM refs ────────────────────────────────────────────────────
 let _root = null;
@@ -87,6 +87,23 @@ let _startCharRowRef = null;
 let _startBtnRowRef = null;
 let _startPresetRowRef = null;
 let _charCarousel = null;
+// Iter 32d — two-view start screen. 'menu' = title + meta buttons + Play.
+// 'select' = carousel + archetype + stage + preset + Start Run + Back.
+// main.js gates click/Space → start by reading getStartView() === 'select'.
+let _startView = 'menu';
+let _menuPanel = null;
+let _selectPanel = null;
+export function getStartView() {
+  return _startScreen ? _startView : null;
+}
+function _setStartView(view) {
+  if (!_startScreen || !_menuPanel || !_selectPanel) return;
+  _startView = view;
+  _menuPanel.style.display   = view === 'menu'   ? 'flex' : 'none';
+  _selectPanel.style.display = view === 'select' ? 'flex' : 'none';
+  try { _refreshStartFocus(); } catch (_) {}
+}
+export function setStartView(view) { _setStartView(view); }
 function _refreshStartFocus() {
   if (!_startScreen) return;
   if (_startFocusScope) { popFocusScope(_startFocusScope); _startFocusScope = null; }
@@ -1550,6 +1567,10 @@ export function showStartScreen(text) {
     // Update subtitle in place
     const sub = _startScreen.querySelector('.kk-start-sub');
     if (sub) sub.textContent = text || '';
+    // Iter 32d — every showStartScreen returns the player to the main menu
+    // (death + return-to-menu reuses the same _startScreen DOM, so without
+    // this reset they'd land on whatever view they were in last).
+    _setStartView('menu');
     // Lazy-mount carousel: first call fires before preloadAll resolves, so the
     // cache is empty. Once 'hero' is in the cache, mount on the next call.
     if (!_charCarousel && GLTF_CACHE && GLTF_CACHE.hero && _startCharRowRef) {
@@ -2052,11 +2073,18 @@ export function showStartScreen(text) {
   btnRow.appendChild(codexBtn);
   btnRow.appendChild(historyBtn);
   btnRow.appendChild(recordsBtn);
-  btnRow.appendChild(dailyBtn);
-  btnRow.appendChild(weeklyBtn);
   btnRow.appendChild(howToBtn);
   btnRow.appendChild(creditsBtn);
   btnRow.appendChild(optsBtn);
+
+  // Iter 32d — Daily/Weekly are run-mode toggles. Move them off the main
+  // menu and onto a dedicated row inside the select panel (player only
+  // tunes a run after clicking Play).
+  const modeRow = document.createElement('div');
+  modeRow.style.cssText = 'display:flex; gap:10px; margin-top:10px; pointer-events:auto; flex-wrap:wrap; justify-content:center;';
+  modeRow.addEventListener('click', (e) => { e.stopPropagation(); });
+  modeRow.appendChild(dailyBtn);
+  modeRow.appendChild(weeklyBtn);
 
   // URL-replay header — appended first so it floats above the title when
   // state.replaySeed is set by 9b's boot-time URL parser. Pure display tag;
@@ -2091,6 +2119,21 @@ export function showStartScreen(text) {
   _startScreen.appendChild(ornamentBot);
   _startScreen.appendChild(sub);
   _startScreen.appendChild(metaLine);
+
+  // Iter 32d — two-view container. Menu shows first (Play + meta buttons).
+  // Click Play → Select panel (avatar carousel, archetype, stage, preset, Start Run).
+  _menuPanel = document.createElement('div');
+  _menuPanel.style.cssText = `
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+    margin-top: 18px; pointer-events: auto; width: 100%; max-width: 760px;
+  `;
+  _selectPanel = document.createElement('div');
+  _selectPanel.style.cssText = `
+    display: none; flex-direction: column; align-items: center; gap: 6px;
+    margin-top: 18px; pointer-events: auto; width: 100%; max-width: 760px;
+  `;
+  _startScreen.appendChild(_menuPanel);
+  _startScreen.appendChild(_selectPanel);
 
   // Equipped relic chip — small inline badge under the meta line.
   const relic = equippedRelic();
@@ -2171,7 +2214,7 @@ export function showStartScreen(text) {
       }
     }
     paintStages();
-    _startScreen.appendChild(stageRow);
+    _selectPanel.appendChild(stageRow);
     _startStageRowRef = stageRow;
   }
 
@@ -2450,14 +2493,86 @@ export function showStartScreen(text) {
   presetRow.appendChild(presetSubtitle);
   presetRow.appendChild(presetChips);
   presetRow.appendChild(presetPrompt);
-  _startScreen.appendChild(presetRow);
+  _selectPanel.appendChild(presetRow);
   _startPresetRowRef = presetRow;
 
-  _startScreen.appendChild(charRow);
-  _startScreen.appendChild(archRow);
-  _startScreen.appendChild(btnRow);
+  _selectPanel.appendChild(charRow);
+  _selectPanel.appendChild(archRow);
+  _selectPanel.appendChild(modeRow);
+
+  // ── Select panel footer: Start Run + Back to Menu ──
+  const selectFooter = document.createElement('div');
+  selectFooter.style.cssText = 'display:flex; gap:14px; margin-top:18px; pointer-events:auto; flex-wrap:wrap; justify-content:center;';
+  selectFooter.addEventListener('click', (e) => { e.stopPropagation(); });
+
+  const startRunBtn = document.createElement('button');
+  startRunBtn.type = 'button';
+  startRunBtn.textContent = '▶  START RUN';
+  startRunBtn.className = 'kk-btn-primary';
+  startRunBtn.style.cssText = `
+    padding: 14px 38px; cursor: pointer;
+    background: linear-gradient(180deg, rgba(255,210,127,0.18), rgba(180,130,40,0.22));
+    border: 1px solid ${C.amber};
+    border-radius: 10px;
+    color: ${C.amber};
+    font-family: ${F.display}; font-size: calc(var(--kk-font-scale, 1) * 16px); font-weight: 700;
+    letter-spacing: 0.28em;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.08) inset, 0 12px 24px rgba(0,0,0,0.55), 0 0 18px rgba(255,210,127,0.16);
+  `;
+  startRunBtn.addEventListener('mouseenter', () => { try { sfx.uiHover(); } catch (_) {} });
+  startRunBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    try { sfx.uiClick(); } catch (_) {}
+    if (typeof window !== 'undefined' && typeof window.kkStartRun === 'function') window.kkStartRun();
+  });
+
+  const backBtn = document.createElement('button');
+  backBtn.type = 'button';
+  backBtn.textContent = '‹  BACK';
+  backBtn.style.cssText = `
+    padding: 14px 26px; cursor: pointer;
+    background: linear-gradient(180deg, rgba(20,28,22,0.78), rgba(8,14,12,0.86));
+    border: 1px solid ${C.edge};
+    border-radius: 10px;
+    color: ${C.text};
+    font-family: ${F.display}; font-size: calc(var(--kk-font-scale, 1) * 13px); font-weight: 700;
+    letter-spacing: 0.28em;
+  `;
+  backBtn.addEventListener('mouseenter', () => { try { sfx.uiHover(); } catch (_) {} });
+  backBtn.addEventListener('click', (e) => { e.stopPropagation(); _setStartView('menu'); });
+
+  selectFooter.appendChild(backBtn);
+  selectFooter.appendChild(startRunBtn);
+  _selectPanel.appendChild(selectFooter);
+
+  // ── Menu panel: big Play button + existing btnRow (meta buttons + mode toggles) ──
+  const playBtn = document.createElement('button');
+  playBtn.type = 'button';
+  playBtn.textContent = '▶  PLAY';
+  playBtn.style.cssText = `
+    padding: 18px 60px; cursor: pointer;
+    background: linear-gradient(180deg, rgba(255,210,127,0.22), rgba(180,130,40,0.26));
+    border: 1px solid ${C.amber};
+    border-radius: 12px;
+    color: ${C.amber};
+    font-family: ${F.display}; font-size: calc(var(--kk-font-scale, 1) * 22px); font-weight: 800;
+    letter-spacing: 0.32em;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.08) inset, 0 14px 28px rgba(0,0,0,0.6), 0 0 24px rgba(255,210,127,0.22);
+  `;
+  playBtn.addEventListener('mouseenter', () => { try { sfx.uiHover(); } catch (_) {} });
+  playBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    try { sfx.uiClick(); } catch (_) {}
+    _setStartView('select');
+  });
+  _menuPanel.appendChild(playBtn);
+  _menuPanel.appendChild(btnRow);
+
   _startCharRowRef = charRow;
   _startBtnRowRef = btnRow;
+  _startView = 'menu';
+  _menuPanel.style.display = 'flex';
+  _selectPanel.style.display = 'none';
   _root.appendChild(_startScreen);
   _refreshStartFocus();
   // Surface the build version in the bottom-right corner. Attached to body so
@@ -2468,6 +2583,9 @@ export function showStartScreen(text) {
 export function hideStartScreen() {
   if (_startFocusScope) { popFocusScope(_startFocusScope); _startFocusScope = null; }
   if (_charCarousel) { try { _charCarousel.destroy(); } catch (_) {} _charCarousel = null; }
+  _menuPanel = null;
+  _selectPanel = null;
+  _startView = 'menu';
   _startStageRowRef = null;
   _startCharRowRef = null;
   _startBtnRowRef = null;

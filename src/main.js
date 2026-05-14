@@ -21,7 +21,7 @@ import { initEnemies, updateEnemies, prewarmPools } from './enemies.js';
 import { initWeapons, tickWeapons, acquireWeapon, weaponChoices, _resetEvoAnnouncements } from './weapons/index.js';
 import { initXP, updateGems, dropGem, applyLevelUpChoice } from './xp.js';
 import { initSpawnDirector, tickSpawnDirector, secondsUntilNextMiniBoss } from './spawnDirector.js';
-import { initUI, updateUI, showLevelUpModal, hideLevelUpModal, showDeathScreen, showStartScreen, hideStartScreen, showOptions, hideOptions, isOptionsOpen, showTutorial, showBanner, hideShop, isShopOpen, hideGrimoire, isGrimoireOpen, showHouse, hideHouse, isHouseOpen, showQuestBoard, hideQuestBoard, isQuestBoardOpen, showCredits, hideCredits, isCreditsOpen, showContextLossModal, hideContextLossModal } from './ui.js';
+import { initUI, updateUI, showLevelUpModal, hideLevelUpModal, showDeathScreen, showStartScreen, hideStartScreen, showOptions, hideOptions, isOptionsOpen, showTutorial, showBanner, hideShop, isShopOpen, hideGrimoire, isGrimoireOpen, showHouse, hideHouse, isHouseOpen, showQuestBoard, hideQuestBoard, isQuestBoardOpen, showCredits, hideCredits, isCreditsOpen, showContextLossModal, hideContextLossModal, getStartView, setStartView } from './ui.js';
 import { showCodex, hideCodex, isCodexOpen } from './codex.js';
 import { initDamageNumbers, updateDamageNumbers } from './damageNumbers.js';
 import { initFX, updateFX, updatePickupRing } from './fx.js';
@@ -325,8 +325,19 @@ async function boot() {
   };
   // Click/Space only triggers a run when on the start screen (menu mode).
   // In town mode they're no-ops — player uses E at the gate.
-  window.addEventListener('click', () => { if (state.mode === 'menu') start(); });
-  window.addEventListener('keydown', e => { if (e.code === 'Space' && state.mode === 'menu') start(); });
+  // Iter 32d — two-view start screen. Click/Space only triggers run from
+  // the select view; from the menu view, Space advances to select.
+  window.addEventListener('click', () => {
+    if (state.mode !== 'menu') return;
+    if (getStartView() === 'select') start();
+  });
+  window.addEventListener('keydown', e => {
+    if (e.code !== 'Space') return;
+    if (state.mode !== 'menu') return;
+    const v = getStartView();
+    if (v === 'menu')   setStartView('select');
+    else if (v === 'select') start();
+  });
   window.addEventListener('keydown', e => {
     if (e.code === 'Escape') {
       if (isQuestBoardOpen()) hideQuestBoard();
