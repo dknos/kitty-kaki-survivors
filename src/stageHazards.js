@@ -23,6 +23,7 @@ import { state } from './state.js';
 import { takeDamage as heroTakeDamage } from './hero.js';
 import { BLOOM_LAYER } from './postfx.js';
 import { tex } from './particleTextures.js';
+import { spawnMagnetSpark } from './fx.js';
 
 const POLLEN_CAP = 32;
 const LAVA_CAP = 18;
@@ -128,6 +129,22 @@ function _writeMatrix(inst, i, x, y, z, scale, color) {
   if (color !== undefined) inst.setColorAt(i, _color.setHex(color));
 }
 
+// V2: variant of _writeMatrix that bakes a per-instance yaw rotation into the
+// composed matrix (around world Y). Used by pollen + lava so the sprites
+// don't all face the same UV orientation — sells "individual particles
+// drifting" rather than "stamped decals". Reuses the module-scope quat/vec.
+const _yawQuat = new THREE.Quaternion();
+const _yawAxis = new THREE.Vector3(0, 1, 0);
+const _composeQuat = new THREE.Quaternion();
+function _writeMatrixYaw(inst, i, x, y, z, scale, yaw, color) {
+  _v3.set(x, y, z);
+  _yawQuat.setFromAxisAngle(_yawAxis, yaw);
+  _composeQuat.multiplyQuaternions(_yawQuat, _flatX);
+  _m4.compose(_v3, _composeQuat, new THREE.Vector3(scale, scale, scale));
+  inst.setMatrixAt(i, _m4);
+  if (color !== undefined) inst.setColorAt(i, _color.setHex(color));
+}
+
 function _hide(inst, i) {
   _m4.compose(_v3.set(0, -1000, 0), _flatX, _zero);
   inst.setMatrixAt(i, _m4);
@@ -181,6 +198,10 @@ export function spawnLavaPuddle(x, z) {
 
 let _pollenCD = 0;
 let _lavaCD = 0;
+// V2: ambient ember emission accumulator. Each live (not arming) lava puddle
+// adds to this; when the bank hits the per-emit threshold, we spawn one spark
+// near a random puddle. Cheap, reuses fx.js spark pool — no new geometry.
+let _lavaEmberAcc = 0;
 
 export function tickStageHazards(dt) {
   if (state.mode !== 'run') {
@@ -212,7 +233,11 @@ export function tickStageHazards(dt) {
       const k = p.ttl / p.life;
       const alphaScale = Math.min(1, Math.min(k, 1 - k) * 4) || 0;
       const scale = 1.0 * (0.7 + 0.3 * Math.sin(state.time.real * 1.6 + i));
-      _writeMatrix(_pollenInst, i, p.x, 0.04, p.z, scale * alphaScale, 0xb0e0ff);
+      // V2: per-puff yaw drift so each pollen sprite reads as an
+      // independently-tumbling fluff rather than a stamped decal. Phase
+      // offset by index so neighbors don't lockstep.
+      const yaw = state.time.real * 0.30 + i * 1.37;
+      _writeMatrixYaw(_pollenInst, i, p.x, 0.04, p.z, scale * alphaScale, yaw, 0xb0e0ff);
       // Slow if hero is inside
       const dx = heroX - p.x, dz = heroZ - p.z;
       if (dx * dx + dz * dz < 1.2 * 1.2) pollenSlow = Math.min(pollenSlow, 0.8);
@@ -271,7 +296,11 @@ export function tickStageHazards(dt) {
       const k = lp.ttl / lp.life;
       const alphaScale = Math.min(1, Math.min(k, 1 - k) * 4) || 0;
       const pulse = 0.92 + 0.10 * Math.sin(state.time.real * 6 + i);
-      _writeMatrix(_lavaInst, i, lp.x, 0.04, lp.z, lp.radius * pulse * alphaScale, arming ? 0xffd24a : 0xff5522);
+      // V2: slow per-puddle yaw so the crack-vein bitmap pattern visually
+      // shifts on each puddle — sells "molten flow" without animating the
+      // texture. Phase by index so puddles don't lockstep.
+      const lavaYaw = state.time.real * 0.18 + i * 0.91;
+      _writeMatrixYaw(_lavaInst, i, lp.x, 0.04, lp.z, lp.radius * pulse * alphaScale, lavaYaw, arming ? 0xffd24a : 0xff5522);
       // Hero damage if standing inside live lava
       if (!arming) {
         const dx = heroX - lp.x, dz = heroZ - lp.z;
@@ -286,6 +315,34 @@ export function tickStageHazards(dt) {
     while (_lavas.length > 0 && _lavas[0].ttl <= 0) _lavas.shift();
     _lavaInst.instanceMatrix.needsUpdate = true;
     _lavaInst.instanceColor.needsUpdate = true;
+
+    // V2: ambient lava embers — one spark every ~0.35s from a random LIVE
+    // puddle (skip arming). Sells "molten" without per-puddle particle math
+    // or a dedicated InstancedMesh. Skip if reduce-motion is on.
+    if (!state._optReduceMotion && _lavas.length > 0) {
+      _lavaEmberAcc += dt;
+      if (_lavaEmberAcc >= 0.35) {
+        _lavaEmberAcc = 0;
+        // Pick a random live puddle (linear scan; counts are tiny — cap 18).
+        const liveIdxs = [];
+        for (let i = 0; i < _lavas.length; i++) {
+          const lp = _lavas[i];
+          if (lp.ttl > 0 && state.time.game >= lp.armingUntil) liveIdxs.push(i);
+        }
+        if (liveIdxs.length > 0) {
+          const lp = _lavas[liveIdxs[Math.floor(Math.random() * liveIdxs.length)]];
+          // Random point within the puddle radius
+          const a = Math.random() * Math.PI * 2;
+          const r = Math.random() * lp.radius * 0.7;
+          spawnMagnetSpark(
+            lp.x + Math.cos(a) * r,
+            0.4 + Math.random() * 0.8,
+            lp.z + Math.sin(a) * r,
+            0xff9a3a,
+          );
+        }
+      }
+    }
   } else {
     if (_lavas.length > 0) {
       for (let i = 0; i < LAVA_CAP; i++) _hide(_lavaInst, i);

@@ -22,6 +22,7 @@ import { sfx } from './audio.js';
 import { grantEmbers } from './meta.js';
 import { makeRuneRingTexture } from './enemyTells.js';
 import { tex } from './particleTextures.js';
+import { spawnTellMote } from './bossTelegraphs.js';
 
 let _miniEventRuneTex = null;
 function _getMiniRuneTex() { return _miniEventRuneTex || (_miniEventRuneTex = makeRuneRingTexture()); }
@@ -224,18 +225,58 @@ function _clearGoblin() {
 }
 
 function _spawnCache(x, z) {
-  // Persistent chest-like mesh — small gold cube with halo. Pickup grants
-  // embers + a reroll. Stored separately so it survives past the event.
+  // V2: persistent treasure-cache mesh — multi-mesh "faceted gem coffer"
+  // replacing the iter-10 BoxGeometry placeholder. Three layers:
+  //   1. Faceted gem body (OctahedronGeometry, scaled tall, gold emissive)
+  //   2. Four ribbon planes draped at cardinals (sakura-pink trim glow)
+  //   3. Inner sparkle billboard at the gem core (refractive feel)
+  // Halo + twinkle pip above stay from the iter-10 pass.
   if (!_scene) return;
   const g = new THREE.Group();
+  // 1. Faceted gem body — Octahedron rotated so a vertex points up,
+  // scaled in Y to read as a tall coffer/crystal hybrid. Emissive gold
+  // with subtle roughness so the iso camera still gets a clean facet read.
   const body = new THREE.Mesh(
-    new THREE.BoxGeometry(0.9, 0.7, 0.9),
+    new THREE.OctahedronGeometry(0.55, 0),
     new THREE.MeshStandardMaterial({
-      color: 0xffd24a, emissive: 0xffaa22, emissiveIntensity: 0.6, roughness: 0.4,
+      color: 0xffd24a, emissive: 0xffaa22, emissiveIntensity: 0.7, roughness: 0.32, metalness: 0.15,
     })
   );
-  body.position.y = 0.4;
+  body.position.y = 0.55;
+  body.scale.set(1.0, 1.35, 1.0);
   body.castShadow = true;
+  // 2. Four ribbon decal planes at cardinals — sakura pink emissive trim.
+  // Each is a thin upright plane glued to a face of the gem so the
+  // silhouette breaks up the octahedron's bare profile from any angle.
+  const ribbonMat = new THREE.MeshBasicMaterial({
+    map: tex('twinklePink'),
+    color: 0xe8a3c7,
+    transparent: true, opacity: 0.85,
+    depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+  });
+  for (let r = 0; r < 4; r++) {
+    const ribbon = new THREE.Mesh(new THREE.PlaneGeometry(0.36, 0.9), ribbonMat);
+    const a = (r / 4) * Math.PI * 2;
+    ribbon.position.set(Math.cos(a) * 0.45, 0.55, Math.sin(a) * 0.45);
+    ribbon.rotation.y = -a;
+    ribbon.layers.enable(BLOOM_LAYER);
+    g.add(ribbon);
+  }
+  // 3. Inner sparkle billboard — sits at the gem core so the gem reads as
+  // "powered" rather than "solid casting". Twinkle texture, additive, tiny.
+  const innerSpark = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.5, 0.5),
+    new THREE.MeshBasicMaterial({
+      map: tex('twinkleGold'),
+      transparent: true, opacity: 1.0,
+      depthWrite: false, blending: THREE.AdditiveBlending,
+    })
+  );
+  innerSpark.position.y = 0.55;
+  innerSpark.rotation.x = -Math.PI / 6; // angled toward iso camera
+  innerSpark.layers.enable(BLOOM_LAYER);
+  g.userData.innerSpark = innerSpark;
+  g.add(innerSpark);
   // Halo above cache — textured rune disc + sparkle overlay so the cache
   // pings the eye through any crowd as a "treasure goblin reward".
   const ring = new THREE.Mesh(
@@ -286,6 +327,12 @@ function _tickCachePickup() {
     if (c.group.userData.twinkle) {
       c.group.userData.twinkle.rotation.z += dt * 3.2;
       c.group.userData.twinkle.material.opacity = 0.6 + 0.35 * Math.abs(Math.sin(c.t * 6));
+    }
+    // V2: gem-body slow rotation (facets glint) + inner spark pulse.
+    c.group.rotation.y += dt * 0.6;
+    if (c.group.userData.innerSpark) {
+      c.group.userData.innerSpark.rotation.z += dt * 2.4;
+      c.group.userData.innerSpark.material.opacity = 0.75 + 0.25 * Math.sin(c.t * 8);
     }
     c.group.position.y = Math.sin(c.t * 2.0) * 0.08;
     const dx = c.x - hx, dz = c.z - hz;
@@ -503,6 +550,12 @@ function _startElite() {
     deadlineAt: state.time.game + ELITE_KILL_WINDOW,
     tellRing,
     cx, cz,
+    // V2: mote accumulator for converging-pack tell. Motes spawn from
+    // radius ~6u and lerp inward to the cluster center, sells "pack
+    // assembling at this spot". Runs only during the first 2.4s of the
+    // event so it reads as a one-shot announce, not ongoing background fx.
+    convergeStart: state.time.game,
+    moteAcc: 0,
   };
   _activeEvent = 'elite';
   showBanner('☠ ELITE PACK ☠', 2.5, '#ff44ff');
@@ -518,6 +571,29 @@ function _tickElite(dt, t) {
     es.tellRing.scale.set(pulse, pulse, pulse);
     es.tellRing.material.opacity = 0.7 + Math.abs(Math.sin(t * 4)) * 0.3;
     es.tellRing.rotation.y = (es.tellRing.userData.spinPhase || 0) + t * 0.9;
+  }
+  // V2: converging-pack motes during the first 2.4s of the event. Magenta,
+  // spawn at radius ~6u and travel toward (cx, cz). Reuses the shared
+  // boss-tell mote pool (one InstancedMesh, drop-safe if cap reached).
+  const convergeElapsed = t - es.convergeStart;
+  if (convergeElapsed < 2.4) {
+    es.moteAcc += dt;
+    const rate = 0.10; // ~10 motes/sec → ~24 total over 2.4s
+    while (es.moteAcc >= rate) {
+      es.moteAcc -= rate;
+      const a = Math.random() * Math.PI * 2;
+      const r = 5.5 + Math.random() * 1.5;
+      const sx = es.cx + Math.cos(a) * r;
+      const sz = es.cz + Math.sin(a) * r;
+      spawnTellMote(
+        sx, sz,
+        es.cx - sx, es.cz - sz,
+        0.55 + Math.random() * 0.15,
+        0xff9ee6,
+        0.35, 1.5,
+        0.20,
+      );
+    }
   }
   // Check pack status
   const allDead = es.members.every(e => !e || !e.alive);

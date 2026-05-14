@@ -14,6 +14,7 @@ import { damageEnemy, queryRadius } from '../enemies.js';
 import { BLOOM_LAYER } from '../postfx.js';
 import { sfx } from '../audio.js';
 import { makeRuneRingTexture } from '../enemyTells.js';
+import { spawnMagnetSpark } from '../fx.js';
 
 // ── Shared geometry + material (cached across all rings) ─────────────────────
 // Textured plane (1u radius equivalent) — uses the canonical rune ring art
@@ -121,6 +122,21 @@ export default {
             }
             e._frozenUntil = freezeUntil;
           }
+        }
+      }
+      // V2: crystal-pop sparkles distributed across the freeze AoE. 8 cyan
+      // sparks reuse the existing fx.js spark pool — no new geometry, no
+      // new draw call. Sells "everything inside this disc just froze
+      // brittle". Skipped if reduce-motion is on (sparkle layer is the
+      // motion-heaviest piece of frostbloom).
+      if (!state._optReduceMotion) {
+        const SPARK_N = 8;
+        for (let i = 0; i < SPARK_N; i++) {
+          const a = (i / SPARK_N) * Math.PI * 2 + Math.random() * 0.4;
+          const r = (0.3 + Math.random() * 0.6) * radius;
+          const sx = hero.x + Math.cos(a) * r;
+          const sz = hero.z + Math.sin(a) * r;
+          spawnMagnetSpark(sx, 0.25 + Math.random() * 0.6, sz, 0xbbf0ff);
         }
       }
       try { sfx.weaponWeb && sfx.weaponWeb(); } catch (_) {}

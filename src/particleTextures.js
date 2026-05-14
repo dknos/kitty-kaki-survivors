@@ -658,6 +658,50 @@ function _makeWizardBolt(color = '#ff66ee') {
   return _toTex(ctx);
 }
 
+/**
+ * Mote trail — soft elongated streak with bright head and trailing falloff.
+ * Designed for boss-telegraph particle motes (Engulf spiral, Sonic streak,
+ * Quake debris). Reads as motion-blur, not a dot. Drawn on its long axis
+ * via per-instance scale (length scale > width scale) at spawn time.
+ *
+ * Bitmap is built width-vs-length asymmetric: bright forward-leading head
+ * tapering back to alpha 0 along the long axis. Inks the head with the
+ * 4-px style-bible primary outline so the streak stays readable at scale.
+ */
+function _makeMoteTrail(color = '#ffffff') {
+  const ctx = _ctx();
+  ctx.clearRect(0, 0, SIZE, SIZE);
+  const cx = SIZE / 2, cy = SIZE / 2;
+  // Long-axis gradient (horizontal): bright head at left → fade to right
+  // Caller rotates the plane so the head points along motion vector.
+  const long = ctx.createLinearGradient(SIZE * 0.05, 0, SIZE * 0.95, 0);
+  long.addColorStop(0.00, color + 'ff');
+  long.addColorStop(0.18, color + 'cc');
+  long.addColorStop(0.55, color + '55');
+  long.addColorStop(1.00, color + '00');
+  // Cross-axis gradient (vertical): tight central band
+  ctx.fillStyle = long;
+  ctx.fillRect(0, cy - SIZE * 0.18, SIZE, SIZE * 0.36);
+  // Soft cross-fade so the band has feathered top/bottom
+  ctx.globalCompositeOperation = 'destination-in';
+  const cross = ctx.createRadialGradient(cx, cy, 0, cx, cy, SIZE * 0.35);
+  cross.addColorStop(0.00, 'rgba(255,255,255,1)');
+  cross.addColorStop(0.55, 'rgba(255,255,255,0.85)');
+  cross.addColorStop(1.00, 'rgba(255,255,255,0)');
+  ctx.fillStyle = cross;
+  ctx.fillRect(0, 0, SIZE, SIZE);
+  ctx.globalCompositeOperation = 'lighter';
+  // Bright pinpoint head at left edge so it reads as the leading particle
+  const head = ctx.createRadialGradient(SIZE * 0.12, cy, 0, SIZE * 0.12, cy, SIZE * 0.18);
+  head.addColorStop(0.00, '#ffffff');
+  head.addColorStop(0.50, color);
+  head.addColorStop(1.00, color + '00');
+  ctx.fillStyle = head;
+  ctx.fillRect(0, 0, SIZE, SIZE);
+  ctx.globalCompositeOperation = 'source-over';
+  return _toTex(ctx);
+}
+
 /** Woven web — radial spokes + concentric strands, slight noise jitter. */
 function _makeWeb(color = '#e8f4ff') {
   const ctx = _ctx();
@@ -738,6 +782,13 @@ export function initParticleTextures() {
   _cache.wizardBolt = _makeWizardBolt('#ff66ee');
   _cache.fireBolt   = _makeWizardBolt('#ff8855');
   _cache.iceBolt    = _makeWizardBolt('#88ddff');
+  // Mote trails — boss-telegraph particle layer (Engulf cyan, Sonic magenta,
+  // Quake amber). Single bitmap is direction-asymmetric (bright head, fading
+  // tail); per-instance rotation+scale at spawn picks the motion vector.
+  _cache.moteCyan    = _makeMoteTrail('#9eeeff');
+  _cache.moteMagenta = _makeMoteTrail('#ff9ee6');
+  _cache.moteAmber   = _makeMoteTrail('#ffd28a');
+  _cache.moteWhite   = _makeMoteTrail('#fff4d0');
 }
 
 export function tex(name) {

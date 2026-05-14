@@ -11,6 +11,10 @@ import { BLOOM_LAYER } from './postfx.js';
 
 const RING_CAP = 64;
 const SPARK_CAP = 64;
+// V2: kill-ring center twinkle pool — same cap as the rings, since each
+// kill ring also spawns a center pop. Smaller scale, shorter life so it
+// pops and vanishes while the ring is still expanding.
+const TWINKLE_CAP = 64;
 
 const _m4 = new THREE.Matrix4();
 const _v3 = new THREE.Vector3();
@@ -20,14 +24,18 @@ const _zeroScale = new THREE.Vector3(0, 0, 0);
 
 let _ringInst = null;
 let _sparkInst = null;
+let _ringTwinkleInst = null;
 let _pickupRing = null;
 const _sparkColor = new THREE.Color();
+const _twinkleColor = new THREE.Color();
 
 const _rings = []; // {x,z,t,life,baseScale, eliteColor}
+const _ringTwinkles = []; // {x,z,t,life, baseScale, color}
 const _sparks = []; // {x,y,z,t,life}
 
 let _ringDirty = false;
 let _sparkDirty = false;
+let _twinkleDirty = false;
 
 export function initFX(scene) {
   // Kill ring — textured plane, lying flat on the ground plane (rotated)
@@ -84,6 +92,36 @@ export function initFX(scene) {
   for (let i = 0; i < SPARK_CAP; i++) _sparkInst.setColorAt(i, defaultSparkColor);
   _sparkInst.instanceColor.needsUpdate = true;
 
+  // V2 — kill-ring center twinkle layer. Painted with twinkleGold tex,
+  // additive, per-instance color so elite kills get gold pop and trash
+  // kills get warm-bone white pop. Single draw call shared across all
+  // kill events. Sits at y just above the ring so the layered pop reads.
+  const twinkleGeo = new THREE.PlaneGeometry(1.0, 1.0);
+  const twinkleMat = new THREE.MeshBasicMaterial({
+    map: tex('twinkleGold'),
+    color: 0xffffff,
+    transparent: true,
+    opacity: 1.0,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  _ringTwinkleInst = new THREE.InstancedMesh(twinkleGeo, twinkleMat, TWINKLE_CAP);
+  _ringTwinkleInst.count = TWINKLE_CAP;
+  _ringTwinkleInst.frustumCulled = false;
+  _ringTwinkleInst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  for (let i = 0; i < TWINKLE_CAP; i++) {
+    _m4.compose(_v3.set(0, -1000, 0), _flatX, _zeroScale);
+    _ringTwinkleInst.setMatrixAt(i, _m4);
+  }
+  _ringTwinkleInst.instanceMatrix.needsUpdate = true;
+  _ringTwinkleInst.layers.enable(BLOOM_LAYER);
+  _ringTwinkleInst.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(TWINKLE_CAP * 3), 3);
+  _ringTwinkleInst.instanceColor.setUsage(THREE.DynamicDrawUsage);
+  const defaultTwinkleColor = new THREE.Color(0xfff9e6);
+  for (let i = 0; i < TWINKLE_CAP; i++) _ringTwinkleInst.setColorAt(i, defaultTwinkleColor);
+  _ringTwinkleInst.instanceColor.needsUpdate = true;
+  scene.add(_ringTwinkleInst);
+
   // Persistent pickup-radius ring under the hero — thin cyan ring on the ground.
   const pickupRingTex = tex('ringCyan');
   const pickupGeo = new THREE.PlaneGeometry(1, 1);
@@ -118,6 +156,16 @@ export function spawnKillRing(x, z, elite = false) {
     life: elite ? 0.55 : 0.35,
     baseScale: elite ? 1.6 : 0.9,
   });
+  // V2: paired center twinkle pop — shorter life, smaller scale. Gold for
+  // elites, warm-bone for trash so the eye gets immediate threat-tier
+  // feedback at the moment of kill (separate from XP gem feedback later).
+  if (_ringTwinkles.length >= TWINKLE_CAP) _ringTwinkles.shift();
+  _ringTwinkles.push({
+    x, z, t: 0,
+    life: elite ? 0.28 : 0.18,
+    baseScale: elite ? 1.4 : 0.85,
+    color: elite ? 0xffd24a : 0xfff9e6,
+  });
 }
 
 /** Pop a magnet spark at world position. `color` is hex; default cyan. */
@@ -147,6 +195,34 @@ export function updateFX(dt) {
   // Drop dead rings from front (rare, since we shift on add)
   while (_rings.length > 0 && _rings[0].t >= _rings[0].life) _rings.shift();
 
+  // V2: kill-ring center twinkle pop — life 0.18/0.28s, ease-out scale,
+  // additive fade. Paired 1:1 with kill rings (independent index — gallery
+  // arrays may not stay aligned after drops).
+  if (_ringTwinkleInst) {
+    for (let i = 0; i < _ringTwinkles.length; i++) {
+      const tw = _ringTwinkles[i];
+      tw.t += dt;
+      const k = tw.t / tw.life;
+      if (k >= 1) {
+        _m4.compose(_v3.set(0, -1000, 0), _flatX, _zeroScale);
+        _ringTwinkleInst.setMatrixAt(i, _m4);
+      } else {
+        // Ease-out scale: snap in fast, then slight grow as it fades.
+        const easeIn = Math.min(1, k * 4);             // 0 → 1 in first 25%
+        const s = tw.baseScale * (0.35 + 0.85 * easeIn) * (1 - 0.2 * k);
+        _v3.set(tw.x, 0.10, tw.z);
+        _m4.compose(_v3, _flatX, new THREE.Vector3(s, s, s));
+        _ringTwinkleInst.setMatrixAt(i, _m4);
+        // Color fade: hold full bright for first 40%, then linear fade.
+        const a = k < 0.4 ? 1 : 1 - (k - 0.4) / 0.6;
+        _twinkleColor.setHex(tw.color).multiplyScalar(a);
+        _ringTwinkleInst.setColorAt(i, _twinkleColor);
+      }
+      _twinkleDirty = true;
+    }
+    while (_ringTwinkles.length > 0 && _ringTwinkles[0].t >= _ringTwinkles[0].life) _ringTwinkles.shift();
+  }
+
   // Sparks
   for (let i = 0; i < _sparks.length; i++) {
     const sp = _sparks[i];
@@ -173,5 +249,10 @@ export function updateFX(dt) {
     _sparkInst.instanceMatrix.needsUpdate = true;
     if (_sparkInst.instanceColor) _sparkInst.instanceColor.needsUpdate = true;
     _sparkDirty = false;
+  }
+  if (_twinkleDirty && _ringTwinkleInst) {
+    _ringTwinkleInst.instanceMatrix.needsUpdate = true;
+    if (_ringTwinkleInst.instanceColor) _ringTwinkleInst.instanceColor.needsUpdate = true;
+    _twinkleDirty = false;
   }
 }

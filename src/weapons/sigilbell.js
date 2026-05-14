@@ -13,6 +13,8 @@ import { damageEnemy, queryRadius } from '../enemies.js';
 import { BLOOM_LAYER } from '../postfx.js';
 import { sfx } from '../audio.js';
 import { makeRuneRingTexture } from '../enemyTells.js';
+import { burstExplosion } from '../vfxBurst.js';
+import { spawnKillRing } from '../fx.js';
 
 // ── Shared geometry + material (cached across all sigils) ────────────────────
 // Disc + rune-textured plane. The textured plane carries the canonical
@@ -100,7 +102,15 @@ function _detonate(s, level, dmgMul, areaMul) {
       }
     }
   }
-  // Burst pop on FX channels
+  // V2: layered detonation burst — flash + shockwave + smoke + embers via
+  // the existing vfxBurst pool (5-layer atlas). The old visuals relied only
+  // on bloomBoost; this gives the moment of detonation the same visual
+  // density as a spider-web placement. Crimson-orange tint matches the
+  // red-hot ramp the sigil already shows in its final 0.4s. A kill-ring
+  // overlay caps the moment with a hard outline.
+  burstExplosion(s.x, s.z, radius * 1.3, 0xff5a33);
+  spawnKillRing(s.x, s.z, true);
+  // Burst pop on FX channels (unchanged — drives postFX bloom + shake).
   state.fx.bloomBoost = Math.max(state.fx.bloomBoost || 0, 0.6);
   state.fx.shake = Math.max(state.fx.shake || 0, 0.15);
   try { sfx.weaponBurger && sfx.weaponBurger(); } catch (_) {}

@@ -34,6 +34,7 @@ import { BLOOM_LAYER } from './postfx.js';
 import { takeDamage as heroTakeDamage } from './hero.js';
 import { sfx } from './audio.js';
 import { makeRuneRingTexture } from './enemyTells.js';
+import { tex } from './particleTextures.js';
 
 let _runeTex = null;
 function _getRuneTex() { return _runeTex || (_runeTex = makeRuneRingTexture()); }
@@ -98,6 +99,183 @@ function _getConePoolGeo() {
   return _conePoolGeo;
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// V2 (post-v1.0) — shared boss-tell mote pool.
+// The audit V2 brief: each boss pattern should layer a particle mote sub-
+// effect on top of the rune ring/cone/bars: Engulf gets cyan motes spiraling
+// INWARD (sells "drawn in"), Sonic gets magenta streaks racing along the
+// cone axis (sells "shrieker charging up"), Quake gets amber debris dust at
+// the bar edges (sells "ground cracking"). Elite-pack telegraph (in
+// miniEvents.js) imports `spawnTellMote` for converging-pack motes.
+//
+// All motes share one InstancedMesh (one draw call total) using the
+// per-color mote-trail texture from particleTextures.js. Per-instance
+// color/scale/rotation written each frame for live motes; dead slots
+// collapse to zero-scale + y=-1000 (same hide pattern as enemyTells.js).
+//
+// Each mote carries:
+//   {used, x, y, z, vx, vy, vz, life, age, color, scale, baseRot, ...}
+//
+// PERF: one InstancedMesh, ZERO per-frame allocations after init.
+// ──────────────────────────────────────────────────────────────────────────
+const MOTE_CAP = 96;  // 3 patterns × ~24 motes + ~12 for elite-pack + headroom
+const MOTE_Y   = 0.18;
+let _moteInst = null;
+let _moteColAttr = null;
+const _motes = new Array(MOTE_CAP);
+for (let i = 0; i < MOTE_CAP; i++) {
+  _motes[i] = {
+    used: false, x: 0, y: 0, z: 0,
+    vx: 0, vy: 0, vz: 0,
+    life: 0, age: 0,
+    baseScale: 1.0, lenScale: 1.0,
+    rot: 0,              // yaw around world Y (kept simple — motes are flat planes)
+    color: 0xffffff,
+    fadeIn: 0.1,         // fraction of life spent ramping in
+  };
+}
+const _moteMat4   = new THREE.Matrix4();
+const _motePos    = new THREE.Vector3();
+const _moteScl    = new THREE.Vector3();
+const _moteQuat   = new THREE.Quaternion();
+const _moteHidePos= new THREE.Vector3(0, -1000, 0);
+const _moteHideScl= new THREE.Vector3(0, 0, 0);
+const _moteFlatX  = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
+const _moteYawAxis= new THREE.Vector3(0, 1, 0);
+const _moteColTmp = new THREE.Color();
+// Compose hide matrix once.
+const _moteHideMat = new THREE.Matrix4();
+_moteHideMat.compose(_moteHidePos, _moteFlatX, _moteHideScl);
+
+function _ensureMoteInst() {
+  if (_moteInst || !_scene) return _moteInst;
+  // Plane geometry — 1u × 1u. Per-instance scale.x sets WIDTH, scale.z sets
+  // LENGTH (after flat rotation). The mote-trail texture's bright head is
+  // at x=0.12 in UV → with default flat rotation, that becomes -Z (north).
+  // We then yaw each mote so the head points along its velocity vector.
+  const g = new THREE.PlaneGeometry(1.0, 1.0);
+  // moteMagenta has the most balanced canvas; per-instance color tints it.
+  const m = new THREE.MeshBasicMaterial({
+    map: tex('moteWhite') || tex('moteCyan'),
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.95,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+  });
+  _moteInst = new THREE.InstancedMesh(g, m, MOTE_CAP);
+  _moteInst.count = MOTE_CAP;
+  _moteInst.frustumCulled = false;
+  _moteInst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  _moteInst.renderOrder = 5;
+  _moteInst.layers.enable(BLOOM_LAYER);
+  // Per-instance color so cyan/magenta/amber motes coexist in one draw call.
+  const colArr = new Float32Array(MOTE_CAP * 3);
+  _moteColAttr = new THREE.InstancedBufferAttribute(colArr, 3);
+  _moteInst.instanceColor = _moteColAttr;
+  for (let i = 0; i < MOTE_CAP; i++) {
+    _moteInst.setMatrixAt(i, _moteHideMat);
+    _moteColTmp.setHex(0xffffff);
+    _moteInst.setColorAt(i, _moteColTmp);
+  }
+  _moteInst.instanceMatrix.needsUpdate = true;
+  if (_moteInst.instanceColor) _moteInst.instanceColor.needsUpdate = true;
+  _scene.add(_moteInst);
+  return _moteInst;
+}
+
+/**
+ * Spawn a mote at (x, z), moving toward (x+dx, z+dz) over `life` seconds.
+ * `color` hex, `widthScale` is the perpendicular thickness (default 0.45),
+ * `lenScale` is the trail length (default 1.6). Caller can pass `fadeIn` to
+ * stagger in (default 0.1 = ramp during first 10% of life). Returns true if
+ * a slot was found, false if cap was reached (drop is gameplay-safe — motes
+ * are pure decoration).
+ *
+ * Motion model: constant velocity. Caller picks dx/dz scaled to (life ×
+ * desired_distance), so vx = dx/life. Velocity is captured at spawn; if the
+ * mote should curve (Engulf spiral), spawn many short-lived motes with the
+ * intended chord rather than building curve math here.
+ */
+export function spawnTellMote(x, z, dx, dz, life, color, widthScale, lenScale, yOffset) {
+  _ensureMoteInst();
+  let slot = -1;
+  for (let i = 0; i < MOTE_CAP; i++) {
+    if (!_motes[i].used) { slot = i; break; }
+  }
+  if (slot < 0) return false; // cap — gameplay-safe drop
+  const m = _motes[slot];
+  m.used = true;
+  m.x = x; m.y = (yOffset != null ? yOffset : MOTE_Y); m.z = z;
+  m.vx = dx / Math.max(0.001, life);
+  m.vy = 0;
+  m.vz = dz / Math.max(0.001, life);
+  m.life = Math.max(0.05, life);
+  m.age = 0;
+  m.color = color >>> 0;
+  m.baseScale = (widthScale != null ? widthScale : 0.45);
+  m.lenScale  = (lenScale  != null ? lenScale  : 1.6);
+  // Head points along motion vector. Mote-trail bitmap's bright pinpoint is
+  // at uv.x=0.12. With our plane lying flat (rotateX -π/2 baked into
+  // _moteFlatX), the U axis maps to world +X by default. So yaw = atan2 of
+  // motion in (x, z) about world Y aligns the head with motion.
+  m.rot = -Math.atan2(dz, dx);
+  m.fadeIn = 0.15;
+  return true;
+}
+
+function _updateBossTellMotes(dt) {
+  if (!_moteInst) return;
+  let anyChange = false;
+  for (let i = 0; i < MOTE_CAP; i++) {
+    const m = _motes[i];
+    if (!m.used) continue;
+    m.age += dt;
+    if (m.age >= m.life) {
+      m.used = false;
+      _moteInst.setMatrixAt(i, _moteHideMat);
+      anyChange = true;
+      continue;
+    }
+    m.x += m.vx * dt;
+    m.y += m.vy * dt;
+    m.z += m.vz * dt;
+    const k = m.age / m.life;
+    // Triangular alpha: ramp in for fadeIn, then fade out over the rest.
+    let alpha;
+    if (k < m.fadeIn) alpha = k / m.fadeIn;
+    else alpha = 1 - (k - m.fadeIn) / (1 - m.fadeIn);
+    alpha = Math.max(0, Math.min(1, alpha));
+    // Slight stretch as the mote travels — sells motion smear.
+    const lenK = m.lenScale * (0.85 + 0.30 * Math.min(1, k * 2.5));
+    _motePos.set(m.x, m.y, m.z);
+    // Compose: flat rotation then yaw about Y (multiplyQuaternions order:
+    // _yawQ × _moteFlatX = first apply flat, then yaw).
+    _moteQuat.setFromAxisAngle(_moteYawAxis, m.rot);
+    _moteQuat.multiply(_moteFlatX);
+    _moteScl.set(lenK, 1, m.baseScale);
+    _moteMat4.compose(_motePos, _moteQuat, _moteScl);
+    _moteInst.setMatrixAt(i, _moteMat4);
+    _moteColTmp.setHex(m.color).multiplyScalar(alpha);
+    _moteInst.setColorAt(i, _moteColTmp);
+    anyChange = true;
+  }
+  if (anyChange) {
+    _moteInst.instanceMatrix.needsUpdate = true;
+    if (_moteInst.instanceColor) _moteInst.instanceColor.needsUpdate = true;
+  }
+}
+
+function _resetBossTellMotes() {
+  if (!_moteInst) return;
+  for (let i = 0; i < MOTE_CAP; i++) {
+    _motes[i].used = false;
+    _moteInst.setMatrixAt(i, _moteHideMat);
+  }
+  _moteInst.instanceMatrix.needsUpdate = true;
+}
+
 export const MINI_BOSS_NAMES = [
   { name: 'GROTHAR THE GLUTTON',     subtitle: 'awakens hungering' },
   { name: 'VEXMAW THE SHRIEKER',     subtitle: 'splits the canopy' },
@@ -136,6 +314,8 @@ export function resetBossTelegraphs() {
   }
   _activeRings.length = 0;
   _pulls.length = 0;
+  // V2: clear mote pool so motes from a previous run don't ghost in.
+  _resetBossTellMotes();
   // Engulf slow is a one-shot state.run flag; clear it so a fresh run does
   // not start mid-slow if the player died inside a windup.
   if (state && state.run) state.run.signature_engulfSlowUntil = 0;
@@ -207,12 +387,23 @@ const engulfPattern = {
   windupColor: COL_ENGULF,
   windupDuration: 1.2,
   makeTell(boss) {
-    // Contracting ring: starts large, shrinks toward boss as windup advances.
-    // Sells "you are being drawn in".
+    // Contracting outer ring (rune art, primary tell).
     const ring = _makeRingMesh(COL_ENGULF, 0.95);
     ring.position.set(boss.mesh.position.x, 0.04, boss.mesh.position.z);
     ring.scale.set(6.0, 1, 6.0);
     _scene.add(ring);
+    // V2: inner glow ring at higher pulse frequency. Sells the "draw-in"
+    // suction by being smaller + brighter at the center of the contract.
+    // Stored on the boss so _disposeTell can clean it up.
+    const inner = _makeRingMesh(COL_ENGULF, 0.55);
+    inner.position.set(boss.mesh.position.x, 0.045, boss.mesh.position.z);
+    inner.scale.set(2.2, 1, 2.2);
+    _scene.add(inner);
+    boss._engulfInner = inner;
+    // V2: mote accumulator — track how much windup-time has elapsed since
+    // last mote emission. Per-mote: cyan, spirals inward, life ~0.75s,
+    // velocity scaled so it covers from radius 6u to ~0u in that time.
+    boss._engulfMoteAcc = 0;
     return ring;
   },
   resolve(boss, _state) {
@@ -251,6 +442,27 @@ const engulfPattern = {
     _scene.add(ring);
     _activeRings.push({ mesh: ring, age: 0, ttl: 0.45, maxRadius: 8.0, type: 'ring' });
 
+    // V2: clean the inner glow ring + emit a release burst — 12 motes
+    // flying OUTWARD from boss center (opposite direction of windup motes)
+    // so the impact reads as a kinetic release. Cyan, short life.
+    if (boss._engulfInner) {
+      if (boss._engulfInner.parent) boss._engulfInner.parent.remove(boss._engulfInner);
+      boss._engulfInner = null;
+    }
+    const RELEASE_N = 12;
+    for (let i = 0; i < RELEASE_N; i++) {
+      const a = (i / RELEASE_N) * Math.PI * 2 + Math.random() * 0.2;
+      const dist = 4.5 + Math.random() * 2.0;
+      spawnTellMote(
+        bx, bz,
+        Math.cos(a) * dist, Math.sin(a) * dist,
+        0.45,
+        0x9eeeff,
+        0.50, 1.4,
+        0.18,
+      );
+    }
+
     state.fx.shake      = Math.max(state.fx.shake || 0, 0.40);
     state.fx.bloomBoost = Math.max(state.fx.bloomBoost || 0, 0.45);
   },
@@ -278,6 +490,18 @@ const sonicConePattern = {
     // forward axis is +X, so rotation.y = -atan2(z, x).
     cone.rotation.y = -Math.atan2(boss._coneDir.z, boss._coneDir.x);
     _scene.add(cone);
+    // V2: inner glow cone — smaller, hotter, faster pulse. Sits inside the
+    // outer cone so the wedge layers like an actual sonic blast charging up.
+    const inner = _makeConeMesh(COL_SONIC);
+    inner.position.set(bx, 0.05, bz);
+    inner.scale.set(4.5, 1, 4.5);
+    inner.rotation.y = cone.rotation.y;
+    inner.material.opacity = 0.55;
+    _scene.add(inner);
+    boss._sonicInner = inner;
+    // V2: streak mote accumulator. Motes spawn at cone tip and race BACK
+    // toward the boss (charging-up suction beat). Magenta, short life.
+    boss._sonicMoteAcc = 0;
     return cone;
   },
   resolve(boss, _state) {
@@ -303,6 +527,29 @@ const sonicConePattern = {
     flash.rotation.y = -Math.atan2(cd.z, cd.x);
     _scene.add(flash);
     _activeRings.push({ mesh: flash, age: 0, ttl: 0.20, maxRadius: 7.0, type: 'cone' });
+
+    // V2: clean inner cone + emit forward-firing burst motes along the cone
+    // axis (opposite to the suction direction). 10 motes splayed within
+    // the ±45° wedge, blasting outward to ~7u.
+    if (boss._sonicInner) {
+      if (boss._sonicInner.parent) boss._sonicInner.parent.remove(boss._sonicInner);
+      boss._sonicInner = null;
+    }
+    const baseAng = Math.atan2(cd.z, cd.x);
+    const FIRE_N = 10;
+    for (let i = 0; i < FIRE_N; i++) {
+      const spread = (i / (FIRE_N - 1) - 0.5) * (Math.PI / 2.5);
+      const a = baseAng + spread;
+      const dist = 5.5 + Math.random() * 1.5;
+      spawnTellMote(
+        bx, bz,
+        Math.cos(a) * dist, Math.sin(a) * dist,
+        0.35,
+        0xff9ee6,
+        0.40, 1.8,
+        0.20,
+      );
+    }
 
     state.fx.shake      = Math.max(state.fx.shake || 0, 0.30);
     state.fx.bloomBoost = Math.max(state.fx.bloomBoost || 0, 0.40);
@@ -343,6 +590,10 @@ const quakeCrossPattern = {
       bars.push(bar);
     }
     boss._quakeMeshes = bars;
+    // V2: debris-dust accumulator. Each tick during windup, sprinkle a few
+    // amber motes near the bar edges with small outward-jittered velocity.
+    // Sells "ground cracking, dust shaking loose".
+    boss._quakeDebrisAcc = 0;
     // Return the first bar as the "tell ring" so the dispatch loop's
     // boss._tellRing cleanup also fires for at least one mesh (we override
     // cleanup below). We return a sentinel object: the dispatcher checks
@@ -391,6 +642,29 @@ const quakeCrossPattern = {
     boss._quakeMeshes = null;
     boss._tellRing = null; // dispatch loop won't try to remove it twice
 
+    // V2: per-cardinal debris release burst — 3 motes per bar, perpendicular
+    // to the bar's long axis (kicks out to the sides as the shockwave hits).
+    // Total 12 motes; well under cap.
+    for (let i = 0; i < QUAKE_DIRS.length; i++) {
+      const d = QUAKE_DIRS[i];
+      // Perpendicular axis (right-hand normal of (dx, dz)):
+      const px = -d.dz, pz = d.dx;
+      for (let s = 0; s < 3; s++) {
+        const along = 1.5 + s * 1.8; // along bar length
+        const sx = bx + d.dx * along;
+        const sz = bz + d.dz * along;
+        const side = (Math.random() - 0.5) * 2; // ±perpendicular splash
+        spawnTellMote(
+          sx, sz,
+          px * side * 1.6, pz * side * 1.6,
+          0.40,
+          0xffd28a,
+          0.30, 1.1,
+          0.18,
+        );
+      }
+    }
+
     state.fx.shake      = Math.max(state.fx.shake || 0, 0.55);
     state.fx.bloomBoost = Math.max(state.fx.bloomBoost || 0, 0.55);
   },
@@ -417,6 +691,16 @@ function _disposeTell(boss) {
     if (boss._tellRing.parent) boss._tellRing.parent.remove(boss._tellRing);
     boss._tellRing = null;
   }
+  // V2 inner layers — safety net (patterns clean these on resolve but if a
+  // boss dies mid-windup we still need to drop the inner meshes).
+  if (boss._engulfInner) {
+    if (boss._engulfInner.parent) boss._engulfInner.parent.remove(boss._engulfInner);
+    boss._engulfInner = null;
+  }
+  if (boss._sonicInner) {
+    if (boss._sonicInner.parent) boss._sonicInner.parent.remove(boss._sonicInner);
+    boss._sonicInner = null;
+  }
   // Quake: 4 meshes in _quakeMeshes (only set if a quake was interrupted
   // before resolve — normal resolve transfers them to _activeRings first).
   if (boss._quakeMeshes) {
@@ -427,37 +711,139 @@ function _disposeTell(boss) {
   }
 }
 
-function _updateTellMidWindup(boss, pattern, elapsed, t) {
+function _updateTellMidWindup(boss, pattern, elapsed, t, dt) {
   // Pattern-specific in-windup animation. Keeps the tell readable.
   const k = Math.min(1, elapsed / boss._activeWindup);
+  const bx = boss.mesh.position.x;
+  const bz = boss.mesh.position.z;
+
   if (pattern.id === 'engulf') {
     if (!boss._tellRing) return;
-    // Contracting ring: 6.0 → 1.2 over the windup. Tracks boss position so
-    // a moving Grothar still shows where the pull will originate.
+    // Contracting outer ring: 6.0 → 1.2 over the windup. Tracks boss position
+    // so a moving Grothar still shows where the pull will originate.
     const s = 6.0 - k * 4.8;
     boss._tellRing.scale.set(s, 1, s);
-    boss._tellRing.position.x = boss.mesh.position.x;
-    boss._tellRing.position.z = boss.mesh.position.z;
+    boss._tellRing.position.x = bx;
+    boss._tellRing.position.z = bz;
     boss._tellRing.material.opacity = 0.5 + 0.45 * (0.5 + 0.5 * Math.sin(t * 18));
+    // V2: inner glow — faster pulse (9 Hz vs outer 18 Hz half-cycle), grows
+    // brighter as the windup nears resolve. Sits at half the outer scale.
+    if (boss._engulfInner) {
+      const si = (s * 0.45) + 0.2;
+      boss._engulfInner.scale.set(si, 1, si);
+      boss._engulfInner.position.x = bx;
+      boss._engulfInner.position.z = bz;
+      boss._engulfInner.material.opacity = 0.35 + 0.55 * k * (0.5 + 0.5 * Math.sin(t * 9));
+    }
+    // V2: spawn cyan motes spiraling INWARD. Emit ~8 motes/sec during
+    // windup, scaled up as resolve approaches (intensity ramp).
+    boss._engulfMoteAcc = (boss._engulfMoteAcc || 0) + dt;
+    const rate = 0.12 - 0.06 * k; // every 0.12s → 0.06s as windup ends
+    while (boss._engulfMoteAcc >= rate) {
+      boss._engulfMoteAcc -= rate;
+      // Spawn at a random point on the outer ring; mote target = boss center.
+      // Add a small tangential offset so the path spirals rather than going
+      // dead-straight (sells "drawn in by vortex").
+      const a = Math.random() * Math.PI * 2;
+      const r = 5.0 + Math.random() * 1.2;
+      const sx = bx + Math.cos(a) * r;
+      const sz = bz + Math.sin(a) * r;
+      // Tangent-biased target = boss + small perpendicular offset
+      const tang = (Math.random() - 0.5) * 1.2;
+      const px = -Math.sin(a) * tang;
+      const pz =  Math.cos(a) * tang;
+      const tgtX = bx + px;
+      const tgtZ = bz + pz;
+      spawnTellMote(
+        sx, sz,
+        tgtX - sx, tgtZ - sz,
+        0.55 + Math.random() * 0.2,
+        0x9eeeff,
+        0.40, 1.5,
+        0.18,
+      );
+    }
   } else if (pattern.id === 'sonic') {
     if (!boss._tellRing) return;
     // Cone pulses but DOESN'T re-aim — direction was locked at start.
-    boss._tellRing.position.x = boss.mesh.position.x;
-    boss._tellRing.position.z = boss.mesh.position.z;
+    boss._tellRing.position.x = bx;
+    boss._tellRing.position.z = bz;
     const s = 6.0 + k * 1.5;
     boss._tellRing.scale.set(s, 1, s);
     boss._tellRing.material.opacity = 0.55 + 0.4 * (0.5 + 0.5 * Math.sin(t * 26));
+    // V2: inner glow — smaller, hotter, breathes faster (13 Hz). Stays
+    // anchored on boss.
+    if (boss._sonicInner) {
+      boss._sonicInner.position.x = bx;
+      boss._sonicInner.position.z = bz;
+      const si = 4.5 + k * 0.8;
+      boss._sonicInner.scale.set(si, 1, si);
+      boss._sonicInner.material.opacity = 0.35 + 0.55 * k * (0.5 + 0.5 * Math.sin(t * 13));
+    }
+    // V2: streak motes — spawn at cone tip / forward radius, race BACK to
+    // boss. Sells "shrieker inhaling air before the blast". ~10/sec.
+    boss._sonicMoteAcc = (boss._sonicMoteAcc || 0) + dt;
+    const rate = 0.10 - 0.04 * k;
+    const cd = boss._coneDir || { x: 1, z: 0 };
+    const baseAng = Math.atan2(cd.z, cd.x);
+    while (boss._sonicMoteAcc >= rate) {
+      boss._sonicMoteAcc -= rate;
+      const spread = (Math.random() - 0.5) * (Math.PI / 2.5);   // ±36°
+      const a = baseAng + spread;
+      const r = 5.0 + Math.random() * 1.5;
+      const sx = bx + Math.cos(a) * r;
+      const sz = bz + Math.sin(a) * r;
+      // Velocity points back toward boss; mote head will be at boss-side.
+      spawnTellMote(
+        sx, sz,
+        bx - sx, bz - sz,
+        0.35 + Math.random() * 0.15,
+        0xff9ee6,
+        0.30, 1.6,
+        0.22,
+      );
+    }
   } else if (pattern.id === 'quake') {
     // Pulse all 4 bars in unison. Brighten as resolve approaches so the
     // player feels the "wind up" beat.
     const bars = boss._quakeMeshes || [];
     const op   = 0.45 + 0.5 * k * (0.5 + 0.5 * Math.sin(t * 14));
     for (const bar of bars) bar.material.opacity = op;
+    // V2: debris dust along each bar's edge. ~6/sec total (1.5/bar/sec).
+    // Each fleck has tiny outward perpendicular velocity. Ramps with k so
+    // resolve has the most dust.
+    boss._quakeDebrisAcc = (boss._quakeDebrisAcc || 0) + dt;
+    const rate = 0.18 - 0.10 * k;
+    while (boss._quakeDebrisAcc >= rate) {
+      boss._quakeDebrisAcc -= rate;
+      const dir = QUAKE_DIRS[Math.floor(Math.random() * QUAKE_DIRS.length)];
+      const along = Math.random() * QUAKE_LEN;
+      // Pick a side (perpendicular)
+      const side = Math.random() < 0.5 ? -1 : 1;
+      const px = -dir.dz, pz = dir.dx;
+      const sx = bx + dir.dx * along + px * side * (QUAKE_HALF_WIDTH * 0.95);
+      const sz = bz + dir.dz * along + pz * side * (QUAKE_HALF_WIDTH * 0.95);
+      // Velocity: small kick outward perpendicular to the bar.
+      spawnTellMote(
+        sx, sz,
+        px * side * 0.5, pz * side * 0.5,
+        0.45 + Math.random() * 0.2,
+        0xffd28a,
+        0.22, 0.7,
+        0.22,
+      );
+    }
   }
 }
 
 export function updateBossTelegraphs(dt) {
   if (!_scene) return;
+  // V2 mote layer: ensure pool exists, then tick all live motes once per
+  // frame. Runs even when no boss is in windup so release-burst motes from
+  // a recent resolve continue to fly out and fade.
+  _ensureMoteInst();
+  _updateBossTellMotes(dt);
+
   const t = state.time.game;
   const active = state.enemies.active;
 
@@ -542,7 +928,7 @@ export function updateBossTelegraphs(dt) {
         e._activeWindup = 0;
         e._nextTellAt = t + interval;
       } else {
-        _updateTellMidWindup(e, pattern, elapsed, t);
+        _updateTellMidWindup(e, pattern, elapsed, t, dt);
       }
       continue;
     }
