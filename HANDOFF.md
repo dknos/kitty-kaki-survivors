@@ -41,8 +41,9 @@ User collaboration style:
 | 34 | Iter 9: Retention Hooks (weekly mutator + share card + DAG + Hall of Records) | **completed** `0b2fe5a` |
 | 35 | Iter 10: Polish Lock (audio/a11y, tier-4 capstones, FX residue, ship rituals) | **completed** `4836f98` |
 | 36 | **Iter 11: Shop Tree Live Wires (RE-PRIORITIZED from r171 spike)** — closes the tier-1-3 consumer gap discovered by 10b. KK_VERSION → 1.0.0. | **completed** `a3e8bb4` 🚢 |
-| **37** | **Iter 12: r171 + TSL compute particles spike** (moved from iter 11) | pending — 1-2 agent worktree spike, post-v1.0 polish |
-| 38+ | Iter 13+ candidates | per `ITER_10_11_BRIEFS.md` reassessment — perf hardening if soak fails, Cloudflare leaderboard, touch/mobile, i18n, r171 promotion, OST, screenshots/og-card.png, notifyCombatPressure caller wiring |
+| 37 | Iter 12: r171 + TSL compute particles spike (worktree-isolated) | **completed — NO-GO verdict, deferred to v1.1** (see `../kk-survivors-r171/R171_SPIKE.md`) |
+| — | Tutorial disable | shipped `364a527` (user feedback: tutorial cards are annoying) |
+| 38+ | Iter 13+ candidates | open polish backlog (none ship-blocking): r171 retry with TSL bloom port (4-6 days), notifyCombatPressure caller wiring, og-card.png screenshot, shop-tree-passive in-game tooltips, orbitals passive_cooldown via dmgInterval knob, perf hardening if user reports drops, Cloudflare leaderboard, touch/mobile, i18n actual translations, OST |
 
 WSL session may have a fresh task list — if so, re-create these from this table.
 
@@ -51,7 +52,13 @@ WSL session may have a fresh task list — if so, re-create these from this tabl
 - `ITER_10_11_BRIEFS.md` — iter 10 + iter 11 (r171 spike) + ship reassessment (8-point quality checklist).
 - `FX_AUDIT.md` — FX placeholder audit from 2026-05-14 pass.
 
-**Loop state:** the parent session is running in /loop dynamic mode. Wakeups armed on a 1800s safety net; primary wake signal is bg-agent task-notifications.
+**Loop state:** STOPPED. All planned iters shipped or deferred. v1.0 live; no needle-moving work remains in scope per user mandate. Next session can pick up iter 13+ candidates above if user requests.
+
+## Iter 12 spike outcome (post-v1.0)
+
+`../kk-survivors-r171` worktree on branch `iter-12-spike-r171`. **NO-GO for v1.0.x.** r171's TSL `PostProcessing` has no camera-layer-mask sub-pass; porting our selective bloom (23 `BLOOM_LAYER` call sites + 80-line `PostFXShader`) would be 700-900 LOC across 26+ files — exceeds the 2x file-surface budget. WebGL2 stays the rendering floor. Worktree branch is left in place for future v1.1 retry; full findings in `../kk-survivors-r171/R171_SPIKE.md`. The 12b perf-compare harness (`compareRenderers` extension to perfSoak.js) also lives on the spike branch; can be cherry-picked if useful.
+
+To resume v1.1: read `R171_SPIKE.md` "What would unblock a future GO" section. Estimated 4-6 days focused work (Pattern A vs B bloom decision, PostFXShader → TSL nodes port, `onBeforeCompile` splices to NodeMaterial rewrite with WebGL2 fallback alive, shadow bias visual gate, run `compareRenderers` on iGPU + dGPU).
 
 ## Iteration pattern (use it)
 
