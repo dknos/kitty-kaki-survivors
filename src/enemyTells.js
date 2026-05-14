@@ -88,7 +88,15 @@ _hideMat.compose(_hidePos, _zeroQuat, _hideScl);
 
 // ── State ─────────────────────────────────────────────────────────────────
 let _scene       = null;
-let _eliteRings  = /** @type {THREE.InstancedMesh|null} */ (null);
+// Per-family ground rings (iter 28h). Each carries the same PlaneGeometry but
+// a dedicated texture so the player can tell Volatile / Frosted / Shielded /
+// Mini-boss / Final boss / plain Elite apart by shape, not just tint.
+let _ringsElite     = /** @type {THREE.InstancedMesh|null} */ (null);
+let _ringsVolatile  = /** @type {THREE.InstancedMesh|null} */ (null);
+let _ringsFrosted   = /** @type {THREE.InstancedMesh|null} */ (null);
+let _ringsShielded  = /** @type {THREE.InstancedMesh|null} */ (null);
+let _ringsMini      = /** @type {THREE.InstancedMesh|null} */ (null);
+let _ringsFinal     = /** @type {THREE.InstancedMesh|null} */ (null);
 let _rangedTells = /** @type {THREE.InstancedMesh|null} */ (null);
 let _threatDots  = /** @type {THREE.InstancedMesh|null} */ (null);
 let _leapMarkers = /** @type {THREE.InstancedMesh|null} */ (null);
@@ -385,41 +393,539 @@ function _makeChevronCrescentTexture() {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// Family-specific ground-ring textures (iter 28h).
+//
+// Every threat family (Volatile / Frosted / Shielded / Mini-boss / Final boss /
+// plain Elite) now draws a DIFFERENT shape so the player can read the threat
+// at a glance instead of decoding a tint.
+//
+// All five honor the same band constraint as `_makeRuneRingTexture`
+// (alpha mass at r ≈ 0.55..0.78 of the canvas) so consumers can keep their
+// PlaneGeometry sizes and the visible radius stays identical.
+// ──────────────────────────────────────────────────────────────────────────
+
+function _bandCanvas(S) {
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  return { c, ctx: c.getContext('2d') };
+}
+
+function _bandTexFromCanvas(c) {
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  t.generateMipmaps = true;
+  t.minFilter = THREE.LinearMipmapLinearFilter;
+  t.magFilter = THREE.LinearFilter;
+  t.needsUpdate = true;
+  return t;
+}
+
+let _volatileTex = null;
+function _makeVolatileExplosiveTexture() {
+  if (_volatileTex) return _volatileTex;
+  const S = 512;
+  const { c, ctx } = _bandCanvas(S);
+  ctx.clearRect(0, 0, S, S);
+  const cx = S / 2, cy = S / 2;
+  // Hot danger band (alpha envelope)
+  const env = ctx.createRadialGradient(cx, cy, S * 0.50, cx, cy, S * 0.78);
+  env.addColorStop(0.00, 'rgba(255,255,255,0)');
+  env.addColorStop(0.18, 'rgba(255,255,255,0.55)');
+  env.addColorStop(0.35, 'rgba(255,255,255,1.0)');
+  env.addColorStop(0.62, 'rgba(255,255,255,0.85)');
+  env.addColorStop(1.00, 'rgba(255,255,255,0)');
+  ctx.fillStyle = env;
+  ctx.fillRect(0, 0, S, S);
+  ctx.translate(cx, cy);
+  // 8 zigzag explosion chevrons pointing outward — "radiation hazard" feel
+  ctx.strokeStyle = 'rgba(255,255,255,1)';
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  for (let i = 0; i < 8; i++) {
+    const ang = (i / 8) * Math.PI * 2;
+    ctx.save();
+    ctx.rotate(ang);
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.moveTo(S * 0.30, -S * 0.04);
+    ctx.lineTo(S * 0.34, S * 0.00);
+    ctx.lineTo(S * 0.33, S * 0.04);
+    ctx.lineTo(S * 0.38, S * 0.02);
+    ctx.lineTo(S * 0.36, -S * 0.03);
+    ctx.lineTo(S * 0.41, -S * 0.01);
+    ctx.stroke();
+    // Inner bright trace
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    ctx.restore();
+  }
+  // 16 short crackle veins inside the band — danger hatching
+  ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+  ctx.lineWidth = 1.8;
+  for (let i = 0; i < 16; i++) {
+    const a = (i / 16) * Math.PI * 2 + Math.random() * 0.10;
+    const r0 = S * (0.34 + Math.random() * 0.02);
+    const r1 = r0 + S * (0.03 + Math.random() * 0.02);
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a) * r0, Math.sin(a) * r0);
+    const midA = a + (Math.random() - 0.5) * 0.18;
+    const midR = (r0 + r1) * 0.5;
+    ctx.lineTo(Math.cos(midA) * midR, Math.sin(midA) * midR);
+    ctx.lineTo(Math.cos(a + (Math.random() - 0.5) * 0.10) * r1,
+               Math.sin(a + (Math.random() - 0.5) * 0.10) * r1);
+    ctx.stroke();
+  }
+  // Outer hot rim band — thick concentric stroke to read as "primed shell"
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+  ctx.beginPath();
+  ctx.arc(0, 0, S * 0.40, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  _volatileTex = _bandTexFromCanvas(c);
+  return _volatileTex;
+}
+
+let _frostedTex = null;
+function _makeFrostedCrystalTexture() {
+  if (_frostedTex) return _frostedTex;
+  const S = 512;
+  const { c, ctx } = _bandCanvas(S);
+  ctx.clearRect(0, 0, S, S);
+  const cx = S / 2, cy = S / 2;
+  // Band envelope — softer falloff so the snowflake reads "drifting"
+  const env = ctx.createRadialGradient(cx, cy, S * 0.46, cx, cy, S * 0.80);
+  env.addColorStop(0.00, 'rgba(255,255,255,0)');
+  env.addColorStop(0.20, 'rgba(255,255,255,0.40)');
+  env.addColorStop(0.40, 'rgba(255,255,255,0.95)');
+  env.addColorStop(0.62, 'rgba(255,255,255,0.70)');
+  env.addColorStop(1.00, 'rgba(255,255,255,0)');
+  ctx.fillStyle = env;
+  ctx.fillRect(0, 0, S, S);
+  ctx.translate(cx, cy);
+  ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+  ctx.lineCap = 'round';
+  // 6 large snowflake arms in band — main 6-fold symmetry
+  for (let i = 0; i < 6; i++) {
+    const ang = (i / 6) * Math.PI * 2;
+    ctx.save();
+    ctx.rotate(ang);
+    ctx.lineWidth = 4;
+    // Main spine
+    ctx.beginPath();
+    ctx.moveTo(S * 0.30, 0);
+    ctx.lineTo(S * 0.42, 0);
+    ctx.stroke();
+    // Two side barbs near outer end
+    ctx.lineWidth = 2.5;
+    for (const r of [0.34, 0.38]) {
+      ctx.beginPath();
+      ctx.moveTo(S * r, 0);
+      ctx.lineTo(S * (r - 0.02), S * 0.025);
+      ctx.moveTo(S * r, 0);
+      ctx.lineTo(S * (r - 0.02), -S * 0.025);
+      ctx.stroke();
+    }
+    // Outer tip cross
+    ctx.beginPath();
+    ctx.moveTo(S * 0.42, -S * 0.02);
+    ctx.lineTo(S * 0.42, S * 0.02);
+    ctx.stroke();
+    ctx.restore();
+  }
+  // 12 between-arm crystalline glints (smaller diamonds)
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  for (let i = 0; i < 12; i++) {
+    const ang = (i / 12) * Math.PI * 2 + Math.PI / 12;
+    const r = S * (0.36 + (i % 2) * 0.04);
+    ctx.save();
+    ctx.rotate(ang);
+    ctx.translate(r, 0);
+    ctx.rotate(Math.PI / 4);
+    ctx.fillRect(-3, -3, 6, 6);
+    ctx.restore();
+  }
+  // Outer rim — thin crystalline ring
+  ctx.strokeStyle = 'rgba(255,255,255,0.70)';
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.arc(0, 0, S * 0.44, 0, Math.PI * 2);
+  ctx.stroke();
+  // Inner ring — faint
+  ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.arc(0, 0, S * 0.30, 0, Math.PI * 2);
+  ctx.stroke();
+  // Scatter of tiny snow specks across band — "drifting frost" feel
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  for (let i = 0; i < 40; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const r = S * (0.32 + Math.random() * 0.14);
+    ctx.beginPath();
+    ctx.arc(Math.cos(a) * r, Math.sin(a) * r, 0.8 + Math.random() * 1.0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  _frostedTex = _bandTexFromCanvas(c);
+  return _frostedTex;
+}
+
+let _shieldedTex = null;
+function _makeShieldedHeraldTexture() {
+  if (_shieldedTex) return _shieldedTex;
+  const S = 512;
+  const { c, ctx } = _bandCanvas(S);
+  ctx.clearRect(0, 0, S, S);
+  const cx = S / 2, cy = S / 2;
+  // Heavier, more solid band — metallic ward feel
+  const env = ctx.createRadialGradient(cx, cy, S * 0.48, cx, cy, S * 0.78);
+  env.addColorStop(0.00, 'rgba(255,255,255,0)');
+  env.addColorStop(0.18, 'rgba(255,255,255,0.80)');
+  env.addColorStop(0.42, 'rgba(255,255,255,1.0)');
+  env.addColorStop(0.65, 'rgba(255,255,255,0.85)');
+  env.addColorStop(1.00, 'rgba(255,255,255,0)');
+  ctx.fillStyle = env;
+  ctx.fillRect(0, 0, S, S);
+  ctx.translate(cx, cy);
+  // Inner & outer hard edges — riveted plate look
+  ctx.strokeStyle = 'rgba(255,255,255,1)';
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.arc(0, 0, S * 0.40, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(0, 0, S * 0.30, 0, Math.PI * 2);
+  ctx.stroke();
+  // 16 rivets evenly around mid-band
+  ctx.fillStyle = 'rgba(255,255,255,1)';
+  for (let i = 0; i < 16; i++) {
+    const a = (i / 16) * Math.PI * 2;
+    const r = S * 0.35;
+    ctx.beginPath();
+    ctx.arc(Math.cos(a) * r, Math.sin(a) * r, 4, 0, Math.PI * 2);
+    ctx.fill();
+    // Highlight pip
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.beginPath();
+    ctx.arc(Math.cos(a) * r - 1, Math.sin(a) * r - 1, 1.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,1)';
+  }
+  // 4 cross-quarter cardinal bars — segmented ward
+  ctx.strokeStyle = 'rgba(255,255,255,0.90)';
+  ctx.lineWidth = 3;
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a) * S * 0.30, Math.sin(a) * S * 0.30);
+    ctx.lineTo(Math.cos(a) * S * 0.40, Math.sin(a) * S * 0.40);
+    ctx.stroke();
+  }
+  // Heraldic center cross (inside the band's inner edge)
+  ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+  ctx.lineWidth = 2.0;
+  ctx.beginPath();
+  ctx.moveTo(-S * 0.30, 0); ctx.lineTo(-S * 0.22, 0);
+  ctx.moveTo( S * 0.22, 0); ctx.lineTo( S * 0.30, 0);
+  ctx.moveTo(0, -S * 0.30); ctx.lineTo(0, -S * 0.22);
+  ctx.moveTo(0,  S * 0.22); ctx.lineTo(0,  S * 0.30);
+  ctx.stroke();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  _shieldedTex = _bandTexFromCanvas(c);
+  return _shieldedTex;
+}
+
+let _miniBossTex = null;
+function _makeMiniBossBladesTexture() {
+  if (_miniBossTex) return _miniBossTex;
+  const S = 512;
+  const { c, ctx } = _bandCanvas(S);
+  ctx.clearRect(0, 0, S, S);
+  const cx = S / 2, cy = S / 2;
+  // Band envelope — slightly inset so the blade tips touch the outer band
+  const env = ctx.createRadialGradient(cx, cy, S * 0.48, cx, cy, S * 0.78);
+  env.addColorStop(0.00, 'rgba(255,255,255,0)');
+  env.addColorStop(0.30, 'rgba(255,255,255,0.85)');
+  env.addColorStop(0.55, 'rgba(255,255,255,1.0)');
+  env.addColorStop(0.78, 'rgba(255,255,255,0.65)');
+  env.addColorStop(1.00, 'rgba(255,255,255,0)');
+  ctx.fillStyle = env;
+  ctx.fillRect(0, 0, S, S);
+  ctx.translate(cx, cy);
+  ctx.strokeStyle = 'rgba(255,255,255,1)';
+  ctx.fillStyle   = 'rgba(255,255,255,1)';
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  // 4 crossed sabers around band — hostile X pattern
+  for (let i = 0; i < 4; i++) {
+    const ang = (i / 4) * Math.PI * 2 + Math.PI / 4;
+    ctx.save();
+    ctx.rotate(ang);
+    // Saber shape — triangle blade
+    ctx.beginPath();
+    ctx.moveTo(S * 0.26, -S * 0.022);
+    ctx.lineTo(S * 0.44, 0);
+    ctx.lineTo(S * 0.26, S * 0.022);
+    ctx.closePath();
+    ctx.fill();
+    // Crossguard line
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(S * 0.27, -S * 0.045);
+    ctx.lineTo(S * 0.27, S * 0.045);
+    ctx.stroke();
+    ctx.restore();
+  }
+  // Spike teeth around outer rim — 16 jagged barbs
+  for (let i = 0; i < 16; i++) {
+    const a = (i / 16) * Math.PI * 2;
+    const r0 = S * 0.41;
+    const r1 = S * 0.45;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a) * r0, Math.sin(a) * r0);
+    ctx.lineTo(Math.cos(a + 0.06) * r1, Math.sin(a + 0.06) * r1);
+    ctx.lineTo(Math.cos(a + 0.12) * r0, Math.sin(a + 0.12) * r0);
+    ctx.fill();
+  }
+  // Inner pentagonal void — 5-sided dark center accent (use lower alpha)
+  ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2 - Math.PI / 2;
+    const x = Math.cos(a) * S * 0.18;
+    const y = Math.sin(a) * S * 0.18;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.stroke();
+  // Inner thin band ring
+  ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(0, 0, S * 0.30, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  _miniBossTex = _bandTexFromCanvas(c);
+  return _miniBossTex;
+}
+
+let _finalBossTex = null;
+function _makeFinalBossClawsTexture() {
+  if (_finalBossTex) return _finalBossTex;
+  const S = 512;
+  const { c, ctx } = _bandCanvas(S);
+  ctx.clearRect(0, 0, S, S);
+  const cx = S / 2, cy = S / 2;
+  // Wider envelope — final boss reads as the biggest threat
+  const env = ctx.createRadialGradient(cx, cy, S * 0.42, cx, cy, S * 0.78);
+  env.addColorStop(0.00, 'rgba(255,255,255,0)');
+  env.addColorStop(0.20, 'rgba(255,255,255,0.65)');
+  env.addColorStop(0.45, 'rgba(255,255,255,1.0)');
+  env.addColorStop(0.70, 'rgba(255,255,255,0.78)');
+  env.addColorStop(1.00, 'rgba(255,255,255,0)');
+  ctx.fillStyle = env;
+  ctx.fillRect(0, 0, S, S);
+  ctx.translate(cx, cy);
+  ctx.strokeStyle = 'rgba(255,255,255,1)';
+  ctx.fillStyle   = 'rgba(255,255,255,1)';
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  // 6 inward-curving dragon claws around band
+  for (let i = 0; i < 6; i++) {
+    const ang = (i / 6) * Math.PI * 2;
+    ctx.save();
+    ctx.rotate(ang);
+    // Claw — curved blade arc tapering inward
+    ctx.lineWidth = 9;
+    ctx.beginPath();
+    ctx.moveTo(S * 0.45, S * 0.00);
+    ctx.quadraticCurveTo(S * 0.42, S * 0.08, S * 0.30, S * 0.05);
+    ctx.stroke();
+    // Inner bright trace
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(S * 0.44, S * 0.005);
+    ctx.quadraticCurveTo(S * 0.41, S * 0.07, S * 0.31, S * 0.045);
+    ctx.stroke();
+    // Tip droplet
+    ctx.beginPath();
+    ctx.arc(S * 0.45, 0, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  // Central pentagram — 5 lines connecting outer points
+  const pent = [];
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2 - Math.PI / 2;
+    pent.push([Math.cos(a) * S * 0.20, Math.sin(a) * S * 0.20]);
+  }
+  ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+  ctx.lineWidth = 2.4;
+  ctx.beginPath();
+  // Star polygon — connect every 2nd point
+  for (let i = 0; i < 5; i++) {
+    const p0 = pent[i];
+    const p1 = pent[(i + 2) % 5];
+    if (i === 0) ctx.moveTo(p0[0], p0[1]);
+    ctx.lineTo(p1[0], p1[1]);
+  }
+  ctx.closePath();
+  ctx.stroke();
+  // Outer rim
+  ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+  ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  ctx.arc(0, 0, S * 0.42, 0, Math.PI * 2);
+  ctx.stroke();
+  // Inner rim
+  ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.arc(0, 0, S * 0.30, 0, Math.PI * 2);
+  ctx.stroke();
+  // Blood-splatter mottle — 60 tiny dots
+  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  for (let i = 0; i < 60; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const r = S * (0.32 + Math.random() * 0.10);
+    ctx.beginPath();
+    ctx.arc(Math.cos(a) * r, Math.sin(a) * r, 0.8 + Math.random() * 1.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  _finalBossTex = _bandTexFromCanvas(c);
+  return _finalBossTex;
+}
+
+let _eliteWreathTex = null;
+function _makeEliteWreathTexture() {
+  if (_eliteWreathTex) return _eliteWreathTex;
+  const S = 512;
+  const { c, ctx } = _bandCanvas(S);
+  ctx.clearRect(0, 0, S, S);
+  const cx = S / 2, cy = S / 2;
+  // Standard band envelope
+  const env = ctx.createRadialGradient(cx, cy, S * 0.46, cx, cy, S * 0.80);
+  env.addColorStop(0.00, 'rgba(255,255,255,0)');
+  env.addColorStop(0.25, 'rgba(255,255,255,0.60)');
+  env.addColorStop(0.50, 'rgba(255,255,255,1.0)');
+  env.addColorStop(0.74, 'rgba(255,255,255,0.70)');
+  env.addColorStop(1.00, 'rgba(255,255,255,0)');
+  ctx.fillStyle = env;
+  ctx.fillRect(0, 0, S, S);
+  ctx.translate(cx, cy);
+  // Laurel branches — two arcs of leaves curving around the band
+  // Each leaf = small ellipse tilted along the branch tangent.
+  // 24 leaves total, mirrored top + bottom.
+  ctx.fillStyle = 'rgba(255,255,255,1)';
+  ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+  ctx.lineWidth = 2;
+  const LEAVES_PER_SIDE = 14;
+  for (let side = 0; side < 2; side++) {
+    const dir = side === 0 ? 1 : -1;
+    for (let i = 0; i < LEAVES_PER_SIDE; i++) {
+      const t = (i + 0.5) / LEAVES_PER_SIDE;
+      const a = (-Math.PI * 0.45 + t * Math.PI * 0.90) * dir + (dir > 0 ? 0 : Math.PI);
+      const r = S * 0.37;
+      const x = Math.cos(a) * r;
+      const y = Math.sin(a) * r;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(a + Math.PI / 2 - 0.3 * dir);
+      // Leaf body
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 12, 4, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // Vein line
+      ctx.beginPath();
+      ctx.moveTo(-10, 0); ctx.lineTo(10, 0);
+      ctx.lineWidth = 0.8;
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+  // Top crown chevron (3-pointed) — "champion" cue
+  ctx.fillStyle = 'rgba(255,255,255,1)';
+  ctx.beginPath();
+  ctx.moveTo(-S * 0.10, -S * 0.30);
+  ctx.lineTo(-S * 0.06, -S * 0.42);
+  ctx.lineTo(-S * 0.02, -S * 0.34);
+  ctx.lineTo(0,          -S * 0.46);
+  ctx.lineTo(S * 0.02,   -S * 0.34);
+  ctx.lineTo(S * 0.06,   -S * 0.42);
+  ctx.lineTo(S * 0.10,   -S * 0.30);
+  ctx.closePath();
+  ctx.fill();
+  // Bottom tied ribbon
+  ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(-S * 0.05, S * 0.30);
+  ctx.quadraticCurveTo(0, S * 0.36, S * 0.05, S * 0.30);
+  ctx.stroke();
+  // Inner & outer thin rings to frame the wreath
+  ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.arc(0, 0, S * 0.30, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(0, 0, S * 0.44, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  _eliteWreathTex = _bandTexFromCanvas(c);
+  return _eliteWreathTex;
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // Init
 // ──────────────────────────────────────────────────────────────────────────
 export function initEnemyTells(scene) {
   _scene = scene;
 
-  // ── Elite ground ring ──
-  // Solid disc plane (alpha comes from the rune texture); rotate flat.
+  // ── Per-family ground rings (iter 28h) ──
+  // Shared PlaneGeometry. One InstancedMesh per family with its own texture.
+  // Six families, each cap ELITE_RING_CAP — 6×32×Matrix4 is negligible.
   const ringGeo = new THREE.PlaneGeometry(RING_OUTER * 2, RING_OUTER * 2);
   ringGeo.rotateX(-Math.PI / 2);
-  const ringMat = new THREE.MeshBasicMaterial({
-    map: _makeRuneRingTexture(),
-    color: 0xffffff,
-    transparent: true,
-    opacity: 0.95,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    side: THREE.DoubleSide,
-  });
-  _eliteRings = new THREE.InstancedMesh(ringGeo, ringMat, ELITE_RING_CAP);
-  _eliteRings.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  _eliteRings.frustumCulled = false;
-  _eliteRings.renderOrder = 4;
-  _eliteRings.layers.enable(BLOOM_LAYER);
-  if (_eliteRings.instanceColor === null) {
-    // Allocate per-instance color buffer so each ring can be tier-tinted.
-    const colors = new Float32Array(ELITE_RING_CAP * 3);
-    _eliteRings.instanceColor = new THREE.InstancedBufferAttribute(colors, 3);
-  }
-  for (let i = 0; i < ELITE_RING_CAP; i++) {
-    _eliteRings.setMatrixAt(i, _hideMat);
-    _eliteRings.setColorAt(i, COL_ELITE);
-  }
-  _eliteRings.instanceMatrix.needsUpdate = true;
-  if (_eliteRings.instanceColor) _eliteRings.instanceColor.needsUpdate = true;
-  _scene.add(_eliteRings);
+
+  const makeFamilyRings = (tex, defaultCol) => {
+    const mat = new THREE.MeshBasicMaterial({
+      map: tex,
+      color: 0xffffff,
+      transparent: true,
+      opacity: 0.95,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
+    });
+    const inst = new THREE.InstancedMesh(ringGeo, mat, ELITE_RING_CAP);
+    inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    inst.frustumCulled = false;
+    inst.renderOrder = 4;
+    inst.layers.enable(BLOOM_LAYER);
+    inst.instanceColor = new THREE.InstancedBufferAttribute(
+      new Float32Array(ELITE_RING_CAP * 3), 3,
+    );
+    for (let i = 0; i < ELITE_RING_CAP; i++) {
+      inst.setMatrixAt(i, _hideMat);
+      inst.setColorAt(i, defaultCol);
+    }
+    inst.instanceMatrix.needsUpdate = true;
+    inst.instanceColor.needsUpdate = true;
+    _scene.add(inst);
+    return inst;
+  };
+
+  _ringsElite    = makeFamilyRings(_makeEliteWreathTexture(),       COL_ELITE);
+  _ringsVolatile = makeFamilyRings(_makeVolatileExplosiveTexture(), COL_VOLATILE);
+  _ringsFrosted  = makeFamilyRings(_makeFrostedCrystalTexture(),    COL_FROST);
+  _ringsShielded = makeFamilyRings(_makeShieldedHeraldTexture(),    COL_SHIELD_GOLD);
+  _ringsMini     = makeFamilyRings(_makeMiniBossBladesTexture(),    COL_MINI);
+  _ringsFinal    = makeFamilyRings(_makeFinalBossClawsTexture(),    COL_FINAL);
 
   // ── Ranged wind-up tell ──
   // Textured plane (chevron crescent) tilted so it floats above the enemy's
@@ -603,7 +1109,7 @@ export function clearLeapMarker(enemyId) {
 // Per-frame update
 // ──────────────────────────────────────────────────────────────────────────
 export function updateEnemyTells(dt) {
-  if (!_eliteRings || !_rangedTells || !_threatDots) return;
+  if (!_ringsElite || !_rangedTells || !_threatDots) return;
 
   const active = state.enemies.active;
   const t      = state.time.game;
@@ -615,63 +1121,70 @@ export function updateEnemyTells(dt) {
   const dotPulse  = 1 + Math.sin(t * 8.0) * 0.18;
   const dotOpacityPulse = 0.7 + 0.3 * (0.5 + 0.5 * Math.sin(t * 11.0));
 
-  let ringSlot = 0;
-  let tellSlot = 0;
-  let dotSlot  = 0;
+  // Per-family slot counters (iter 28h).
+  let eliteSlot = 0;
+  let volSlot   = 0;
+  let frostSlot = 0;
+  let shldSlot  = 0;
+  let miniSlot  = 0;
+  let finalSlot = 0;
+  let tellSlot  = 0;
+  let dotSlot   = 0;
 
   for (let i = 0; i < active.length; i++) {
     const e = active[i];
     if (!e || !e.alive) continue;
     const ep = e.mesh.position;
 
-    // ── 1. Elite ring ──
+    // ── 1. Family-dispatched ground ring (iter 28h) ──
     // Render condition: any elite, OR any affixed enemy carrying a ground-tell
     // affix (volatile / shielded / frosted) so trash mobs with an affix also
-    // earn a silhouette cue. Non-affixed standards still skip — they should
-    // read as background filler.
+    // earn a silhouette cue. Non-affixed standards still skip.
+    //
+    // Dispatch priority (highest threat first — what the player most needs
+    // to read): Final Boss > Mini-Boss > Volatile > Shielded > Frosted >
+    // Vampiric (tinted Elite) > plain Elite.
     const wantsAffixRing = (e._volatile || e._shieldedRim || e._frostAura);
-    if ((e.elite || wantsAffixRing) && ringSlot < ELITE_RING_CAP) {
-      // Base threat-tier color, then override by affix in teaching-priority
-      // order: Volatile beats Shield beats Vamp beats Frost. Volatile leads
-      // because "cyan ring = explosive" is the highest-stakes lesson and
-      // mis-reading it ends the run.
-      let col = COL_ELITE;
-      if (e.isFinalBoss)      col = COL_FINAL;
-      else if (e.isMiniBoss)  col = COL_MINI;
-
-      if (e._volatile) {
-        col = COL_VOLATILE;
-      } else if (e._shieldedRim) {
-        // Gold flicker: modulate the base gold by a fast sine so the rim
-        // pulses like a charging ward. Use the scratch THREE.Color to avoid
-        // mutating the const palette entry.
-        const flick = 0.55 + 0.45 * Math.sin(t * 8.0);
-        _ringColTmp.copy(COL_SHIELD_GOLD).multiplyScalar(flick + 0.55);
-        col = _ringColTmp;
-      } else if (e._vampPct) {
-        // Blend the existing tier color halfway toward red so vampiric elites
-        // read as "still elite, but bloody". For non-elite vampirics we start
-        // from COL_ELITE so they still get a clear silhouette.
-        _ringColTmp.copy(e.elite ? col : COL_ELITE).lerp(COL_VAMP_RED, 0.55);
-        col = _ringColTmp;
-      } else if (e._frostAura) {
-        col = COL_FROST;
-      }
-
-      // Frost: slight upward drift on the ring's Y so the cyan tint reads as
-      // "cold rising off the corpse", distinguishing it from the static
-      // volatile pulse. (No new particle slot — this is the "cool blue tint"
-      // fallback the brief flags as acceptable.)
+    if (e.elite || wantsAffixRing || e.isMiniBoss || e.isFinalBoss) {
+      // Frost: slight upward drift on the ring's Y so the snowflake reads as
+      // "cold rising off the corpse", distinguishing it from the static rings.
       const ringY = e._frostAura ? RING_Y + 0.04 + 0.025 * Math.sin(t * 2.2 + i) : RING_Y;
       _pos.set(ep.x, ringY, ep.z);
       _scl.set(ringPulse, 1, ringPulse);
       // Slow yaw rotation — sells "magic glyph rotating" vs flat decal.
-      // Use enemy index for varied phase so a cluster doesn't lockstep.
       _quat.setFromAxisAngle(_axisY, t * 0.4 + i * 0.7);
       _mat.compose(_pos, _quat, _scl);
-      _eliteRings.setMatrixAt(ringSlot, _mat);
-      _eliteRings.setColorAt(ringSlot, col);
-      ringSlot++;
+
+      let bucket = null;
+      let bucketSlot = 0;
+      let col = null;
+      if (e.isFinalBoss && finalSlot < ELITE_RING_CAP) {
+        bucket = _ringsFinal; bucketSlot = finalSlot++; col = COL_FINAL;
+      } else if (e.isMiniBoss && miniSlot < ELITE_RING_CAP) {
+        bucket = _ringsMini;  bucketSlot = miniSlot++;  col = COL_MINI;
+      } else if (e._volatile && volSlot < ELITE_RING_CAP) {
+        bucket = _ringsVolatile; bucketSlot = volSlot++; col = COL_VOLATILE;
+      } else if (e._shieldedRim && shldSlot < ELITE_RING_CAP) {
+        // Gold flicker on the shielded ward — same modulation as before.
+        const flick = 0.55 + 0.45 * Math.sin(t * 8.0);
+        _ringColTmp.copy(COL_SHIELD_GOLD).multiplyScalar(flick + 0.55);
+        bucket = _ringsShielded; bucketSlot = shldSlot++; col = _ringColTmp;
+      } else if (e._frostAura && frostSlot < ELITE_RING_CAP) {
+        bucket = _ringsFrosted; bucketSlot = frostSlot++; col = COL_FROST;
+      } else if (eliteSlot < ELITE_RING_CAP) {
+        // Vampiric + plain elite — share the wreath bucket; vampiric tints red.
+        if (e._vampPct) {
+          _ringColTmp.copy(COL_ELITE).lerp(COL_VAMP_RED, 0.55);
+          col = _ringColTmp;
+        } else {
+          col = COL_ELITE;
+        }
+        bucket = _ringsElite; bucketSlot = eliteSlot++;
+      }
+      if (bucket) {
+        bucket.setMatrixAt(bucketSlot, _mat);
+        bucket.setColorAt(bucketSlot, col);
+      }
     }
 
     // ── 2. Ranged wind-up tell ──
@@ -716,8 +1229,18 @@ export function updateEnemyTells(dt) {
   }
 
   // Collapse unused slots so leftover instances from prior frames don't render.
-  for (let i = ringSlot; i < ELITE_RING_CAP; i++) {
-    _eliteRings.setMatrixAt(i, _hideMat);
+  const familyBuckets = [
+    [_ringsElite,    eliteSlot],
+    [_ringsVolatile, volSlot],
+    [_ringsFrosted,  frostSlot],
+    [_ringsShielded, shldSlot],
+    [_ringsMini,     miniSlot],
+    [_ringsFinal,    finalSlot],
+  ];
+  for (const [inst, used] of familyBuckets) {
+    for (let i = used; i < ELITE_RING_CAP; i++) inst.setMatrixAt(i, _hideMat);
+    inst.instanceMatrix.needsUpdate = true;
+    if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
   }
   for (let i = tellSlot; i < RANGED_TELL_CAP; i++) {
     _rangedTells.setMatrixAt(i, _hideMat);
@@ -731,8 +1254,6 @@ export function updateEnemyTells(dt) {
   // without a custom shader).
   _threatDots.material.opacity = dotOpacityPulse;
 
-  _eliteRings.instanceMatrix.needsUpdate = true;
-  if (_eliteRings.instanceColor) _eliteRings.instanceColor.needsUpdate = true;
   _rangedTells.instanceMatrix.needsUpdate = true;
   _threatDots.instanceMatrix.needsUpdate = true;
   if (_threatDots.instanceColor) _threatDots.instanceColor.needsUpdate = true;
@@ -763,11 +1284,14 @@ export function updateEnemyTells(dt) {
 // Reset (called from main.js on run restart)
 // ──────────────────────────────────────────────────────────────────────────
 export function resetEnemyTells() {
-  if (!_eliteRings || !_rangedTells || !_threatDots) return;
-  for (let i = 0; i < ELITE_RING_CAP; i++) _eliteRings.setMatrixAt(i, _hideMat);
+  if (!_ringsElite || !_rangedTells || !_threatDots) return;
+  const families = [_ringsElite, _ringsVolatile, _ringsFrosted, _ringsShielded, _ringsMini, _ringsFinal];
+  for (const inst of families) {
+    for (let i = 0; i < ELITE_RING_CAP; i++) inst.setMatrixAt(i, _hideMat);
+    inst.instanceMatrix.needsUpdate = true;
+  }
   for (let i = 0; i < RANGED_TELL_CAP; i++) _rangedTells.setMatrixAt(i, _hideMat);
   for (let i = 0; i < THREAT_DOT_CAP;  i++) _threatDots.setMatrixAt(i, _hideMat);
-  _eliteRings.instanceMatrix.needsUpdate = true;
   _rangedTells.instanceMatrix.needsUpdate = true;
   _threatDots.instanceMatrix.needsUpdate = true;
   // Wipe leap markers + free all slots so the next run starts clean.
