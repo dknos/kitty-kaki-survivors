@@ -84,8 +84,9 @@ const RESERVED_TILES = new Set([
   '9,5','9,6',
   // Computer desk
   '0,5','0,6',
-  // Fireplace strip (east wall)
-  '0,6','0,7',
+  // Fireplace strip (west wall, south side). '0,6' already covered by the
+  // computer desk envelope above — Set dedups so it's harmless either way.
+  '0,7',
   // Door zone (south wall middle 2 tiles)
   '4,7','5,7',
 ]);
@@ -233,8 +234,8 @@ export const HOME_CATALOG = [
   {
     id: 'sword_mount', name: 'Sword on the Wall', icon: '⚔',
     glb: 'home_sword_mount', scale: 1.6, wall: true,
-    unlock: 'Defeat the final boss.',
-    unlockCheck: (m) => !!(m.achievements && m.achievements.first_victory),
+    unlock: 'Unlock Endless Mode.',
+    unlockCheck: (m) => !!m.unlockedEndless,
     flavor: 'mounted, not retired',
   },
   {
@@ -401,13 +402,27 @@ function _spawnPlacementMesh(p) {
     cube.castShadow = true;
     group.add(cube);
   }
-  // Optional emissive bake — small warm glow on the lamp + cauldron etc.
-  if (def.emissive) {
-    const pl = new THREE.PointLight(
-      def.emissive.color, def.emissive.intensity, def.emissive.range, 2,
-    );
-    pl.position.set(0, def.emissive.y, 0);
-    group.add(pl);
+  // Emissive bake — bump the cloned mesh's material(s) emissive channel
+  // instead of spawning a per-placement PointLight. Three.js's default
+  // forward-renderer shader budgets ~8 lights and the interior already
+  // has 7 fixed lights; with placement cap = 30 a player who lined the
+  // walls with lamps would blow that budget and trigger shader recompiles
+  // / silent dropouts. Material emissive renders for free and reads as
+  // "warm glow" with no per-placement light cost.
+  if (def.emissive && kit) {
+    kit.traverse(o => {
+      if (!o.isMesh || !o.material) return;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      for (const m of mats) {
+        if (m && m.emissive && typeof m.emissive.setHex === 'function') {
+          m.emissive.setHex(def.emissive.color);
+          // Scale up — emissive without a backing light needs a higher value
+          // to read at the same warmth as the original PointLight design.
+          m.emissiveIntensity = (def.emissive.intensity || 0.5) * 2.4;
+          m.needsUpdate = true;
+        }
+      }
+    });
   }
   // Position + rotation
   if (def.wall && p.wallSide) {
