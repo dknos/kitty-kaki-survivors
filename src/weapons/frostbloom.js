@@ -95,7 +95,8 @@ export default {
 
     inst.cd -= dt;
     if (inst.cd <= 0) {
-      inst.cd = level.cooldown * (state.hero.statMul.cooldown || 1);
+      // Iter 11a SHOP_TREE Power tier 2 "Quick Hands" composes with statMul.cooldown.
+      inst.cd = level.cooldown * (state.hero.statMul.cooldown || 1) * (state.run.passive_cooldown || 1);
       // Start all rings at the hero's current position, with stagger delays.
       for (const r of inst.rings) {
         r.age = -r.delay;       // negative age means waiting on stagger

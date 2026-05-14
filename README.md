@@ -9,7 +9,7 @@ A Vampire-Survivors-style auto-attacking horde game built in **THREE.js** with n
 <!-- TODO: assets/screenshot.png (1280x720) -->
 <!-- TODO: assets/demo.gif    (loop, ~3s) -->
 
-**Version:** v1.0.0-rc1 · **Status:** release-candidate (iter 10 polish lock)
+**Version:** v1.0.0 · **Status:** shipped (iter 11 closed the shop-tree live-wires gap)
 
 **▶ Play locally:** `npx serve` then open `http://localhost:5180/`.
 

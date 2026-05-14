@@ -207,7 +207,9 @@ export default {
 
     try { sfx.weaponChain(); } catch (_) {}
     const cdMul = state.hero.statMul.cooldown || 1;
-    inst.cd = (inst.evolved ? 0.30 : level.cooldown) * cdMul;
+    // Iter 11a SHOP_TREE Power tier 2 "Quick Hands" composes with the iter-7
+    // statMul.cooldown chain (passives/signature_tempo/Overdrive).
+    inst.cd = (inst.evolved ? 0.30 : level.cooldown) * cdMul * (state.run.passive_cooldown || 1);
 
     // ── Boom "Charged Coil" signature: every 5th arc volley fires a free
     // re-cast at full chain count. Echo is re-entrancy-guarded so it doesn't

@@ -189,7 +189,14 @@ export function tickSpawnDirector(dt) {
     // Luck shop upgrade speeds up the chest cadence by 3% per level.
     const luckMul = 1 - 0.03 * shopLevel('luck');
     const dailyMul = state.run && state.run.dailyChestMul ? state.run.dailyChestMul : 1;
-    _nextChest = t + SPAWN.chestIntervalSec * luckMul * dailyMul;
+    // Iter 11c — SHOP_TREE Greed tier-2 "Lucky Charm" (+0.05 per level) raises
+    // chest spawn rate. Since chest cadence is expressed as an INTERVAL (lower
+    // = more chests), a "+rate" bonus must DIVIDE the interval. Read is gated
+    // by the weeklyChestLockUntilSec check above so the iter-9 weekly chest
+    // lockdown still suppresses the entire schedule for its first N seconds.
+    const passiveChestRate = (state.run && state.run.passive_chestRate) || 0;
+    const chestRateDiv = 1 + passiveChestRate;
+    _nextChest = t + (SPAWN.chestIntervalSec * luckMul * dailyMul) / chestRateDiv;
   }
 
   // ── Final boss warning + spawn ──

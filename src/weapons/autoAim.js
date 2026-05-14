@@ -195,7 +195,9 @@ export default {
 
     try { sfx.weaponAutoaim(); } catch (_) {}
 
-    inst.cd = level.cooldown * (state.hero.statMul.cooldown || 1);
+    // Iter 11a SHOP_TREE Power tier 2 "Quick Hands" multiplies on top of the
+    // existing statMul.cooldown chain (passives/signature_tempo/Overdrive).
+    inst.cd = level.cooldown * (state.hero.statMul.cooldown || 1) * (state.run.passive_cooldown || 1);
   },
 
   refresh(state, level, inst) {

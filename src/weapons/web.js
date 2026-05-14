@@ -196,7 +196,8 @@ export default {
     const h = state.hero.pos;
     _spawnWeb(h.x, h.z, level, !!inst.evolved);
     try { sfx.weaponWeb(); } catch (_) {}
-    inst.cd = level.cooldown * (state.hero.statMul.cooldown || 1);
+    // Iter 11a SHOP_TREE Power tier 2 "Quick Hands" composes with statMul.cooldown.
+    inst.cd = level.cooldown * (state.hero.statMul.cooldown || 1) * (state.run.passive_cooldown || 1);
   },
 
   refresh(state, level, inst) {

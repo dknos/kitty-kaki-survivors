@@ -56,9 +56,9 @@ const F = {
 };
 
 // ── Build version ────────────────────────────────────────────────────────────
-// Flipped to '1.0.0' on the iter-10 ship commit. Until then, '-rc1' surfaces
-// "release candidate" in the bottom-right + how-to-play footer + credits modal.
-export const KK_VERSION = '1.0.0-rc1';
+// Flipped to '1.0.0' on the iter-11 ship commit (Shop Tree Live Wires —
+// the broken-tier-1-3-consumers gap was the last v1.0 blocker).
+export const KK_VERSION = '1.0.0';
 
 // ── Module-local DOM refs ────────────────────────────────────────────────────
 let _root = null;

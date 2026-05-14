@@ -577,9 +577,14 @@ export function killEnemy(enemy) {
   }
 
   // Quest progress hooks — increment hunt/boss counters at the source.
+  // Iter 11c — SHOP_TREE Greed tier-3 "Sigil Sense" (+1 per owned level) adds
+  // bonus sigils on every mini-boss kill. Read state.run.passive_miniBossSigilBonus
+  // (baked by applyMetaUpgrades) and stack additively on the base grant of 1.
+  // Final boss grant is intentionally untouched — node text scopes to mini-boss.
+  const miniBossSigilBonus = (state.run && state.run.passive_miniBossSigilBonus) || 0;
   import('./meta.js').then(({ questEvent, grantSigils }) => {
     questEvent('kill', { tier: enemy.glbKey });
-    if (enemy.isMiniBoss)  { questEvent('miniBoss');  grantSigils(1, 'miniBoss'); }
+    if (enemy.isMiniBoss)  { questEvent('miniBoss');  grantSigils(1 + miniBossSigilBonus, 'miniBoss'); }
     if (enemy.isFinalBoss) { questEvent('finalBoss'); grantSigils(5, 'finalBoss'); }
   });
 
@@ -685,6 +690,14 @@ export function damageEnemy(enemy, dmg, source) {
       dmg *= (1 + state.run.signature_tempoBonus);
     }
   }
+  // ── Iter 11a SHOP_TREE Power tier 1 "Sharpened Edge": outgoing damage mul.
+  // Composes AFTER iter-7 signature multipliers, BEFORE iter-8 shield clamp,
+  // so a sharpened-edge hit still gets clamped to 1 vs a shielded mob (the
+  // shield design is "consume N hits", not "absorb N damage"). Skip phoenix
+  // (self-burst flat baseline) and volatile (chain explosion, fixed 35 dmg).
+  if (source !== 'phoenix' && source !== 'volatile') {
+    dmg *= (state.run.passive_dmg || 1);
+  }
   // ── Iter 8 Shielded affix: clamp incoming dmg to 1 until shield depleted ──
   // Sits BETWEEN iter-7 multipliers (which scale the raw weapon dmg upward) and
   // the crit/variance roll below — so a Sniper Headhunter shot vs. a shielded
@@ -700,7 +713,12 @@ export function damageEnemy(enemy, dmg, source) {
   }
   // Variance + crit rolls (DoT skips crit by passing dmg with isDoT flag in future)
   const variance = 1 + (Math.random() - 0.5) * 2 * DAMAGE.variance;
-  const isCrit = Math.random() < DAMAGE.critChance;
+  // Iter 11a SHOP_TREE Power tier 3 "Critical Eye" folds additively into the
+  // base 8% crit chance — single roll keeps isCrit semantics consistent for the
+  // damage-number tier ('crit'), shake bump, and longer flash duration below.
+  // Skip phoenix so the Ember Burst stays a deterministic flat 200 baseline.
+  const critChance = DAMAGE.critChance + (source !== 'phoenix' ? (state.run.passive_critChance || 0) : 0);
+  const isCrit = Math.random() < critChance;
   // Frostbloom freeze (and Sigil Bell stun): frozen enemies take +25% damage.
   const frozenMul = (enemy._frozenUntil && state.time.game < enemy._frozenUntil) ? 1.25 : 1;
   // Berserk passive: damage scales with hero's missing HP.

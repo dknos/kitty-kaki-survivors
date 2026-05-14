@@ -4,6 +4,11 @@
  * migrate without nuking saves later.
  */
 
+// Iter 11c — read state.run.passive_coinMul (SHOP_TREE Greed tier-1 "Magpie"
+// bonus baked in applyMetaUpgrades) inside commitRunResults. No circular dep:
+// state.js does not import meta.js. Adding the only import in this file.
+import { state } from './state.js';
+
 const SAVE_KEY = 'kk-survivors-meta-v1';
 
 const DEFAULT = {
@@ -952,7 +957,13 @@ export function commitRunResults({ timeSurvived, kills, dmgDealt, level, victory
   const vaultLv = (meta.house && meta.house.vault) || 0;
   // Greed passive multiplier passed by caller (showDeathScreen) — defaults to 0.
   const greedMul = (typeof arguments[0] !== 'undefined' && typeof arguments[0].greedMul === 'number') ? arguments[0].greedMul : 0;
-  const coinMul = (meta.optHyper ? 1.5 : 1) * (1 + 0.25 * vaultLv) * (1 + greedMul);
+  // Iter 11c — SHOP_TREE Greed tier-1 "Magpie" passive (+0.20 per owned level).
+  // applyMetaUpgrades bakes node effects into state.run.passive_coinMul; we
+  // compose additively with the in-run greedMul weapon-passive so both
+  // "coin gain bonus" sources stack linearly on top of the (Hyper × Vault)
+  // multiplicative chassis.
+  const passiveCoinMul = (state && state.run && state.run.passive_coinMul) || 0;
+  const coinMul = (meta.optHyper ? 1.5 : 1) * (1 + 0.25 * vaultLv) * (1 + greedMul + passiveCoinMul);
   const coinsEarned = Math.floor((kills + Math.floor(timeSurvived / 12)) * coinMul);
   // Sigils accumulated this run (via grantSigils since last commit) flush into the return.
   const sigilsEarned = _sigilsThisRun;

@@ -186,8 +186,12 @@ export function updateHero(dt) {
   if (h.dashCD > 0) h.dashCD -= dt;
 
   // Pummarola passive: continuous HP regen (capped at hpMax). Cheap, no alloc.
-  if (h.regenPerSec && h.hp < h.hpMax && !state.gameOver) {
-    h.hp = Math.min(h.hpMax, h.hp + h.regenPerSec * dt);
+  // Iter 11 — Shop Tree Live Wires: Survival tier 3 "Regeneration" adds
+  // passive_regen HP/sec on top of Pummarola so the two stack additively
+  // (a player with both gets regenPerSec + passive_regen per second).
+  const _regenRate = (h.regenPerSec || 0) + (state.run.passive_regen || 0);
+  if (_regenRate > 0 && h.hp > 0 && h.hp < h.hpMax && !state.gameOver) {
+    h.hp = Math.min(h.hpMax, h.hp + _regenRate * dt);
   }
 
   // Dash trigger
@@ -384,6 +388,14 @@ export function takeDamage(amt) {
   // Sanctum (Sticky Web evolution): −30% damage while standing in any
   // burning web. Flag refreshed every web tick — see weapons/web.js.
   if (h.inSanctum) dmgMul *= 0.7;
+  // Iter 11 — Shop Tree Live Wires: Survival tier 1 "Iron Skin" wires
+  // passive_dmgReduction (additive 0..1, cap 0.75) into incoming damage.
+  // Composes multiplicatively with the existing dmgTaken multiplier so a
+  // run with Armor + Iron Skin stacks gracefully. Must run BEFORE Nine Lives
+  // consumption below so the signature consumes a post-DR lethal hit.
+  if (state.run.passive_dmgReduction > 0) {
+    dmgMul *= (1 - Math.min(0.75, state.run.passive_dmgReduction));
+  }
   amt = amt * dmgMul;
   h.hp -= amt;
   h.iFramesUntil = state.time.game + HERO.iFramesSec;
