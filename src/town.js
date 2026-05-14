@@ -516,21 +516,14 @@ export function buildTown(scene) {
   g.add(_tent);
   _interactables.push({
     pos: { x: 12, z: -3 }, radius: 2.8,
-    label: '🔒  Sealed (Clear Catacomb Void to unlock)',
+    label: '🎰  The Seedy Tent',
     key: 'casino',
-    _casino: true,    // marker so tickTown can repaint label on unlock-state change
+    _casino: true,    // marker so tickTown can repaint label on cosmetic state changes
   });
   _handlers.casino = () => {
-    // Locked path: brief uiError chirp, no modal. Toast hint already lives in
-    // the prompt label so we don't double-narrate.
-    if (!getMeta().unlockedVoid) {
-      try { sfx.uiCancel && sfx.uiCancel(); } catch (_) {}
-      return;
-    }
-    // Unlocked path: settle any pending Boss Rush Wager first (so a player
-    // who just won a Boss Rush sees the payout banner *before* the menu),
-    // then open the casino menu via dynamic import. The dynamic import keeps
-    // town.js's import graph clean (ui.js is large + imports many siblings).
+    // Iter 33e — casino is open from the start of the game. Settle any in-flight
+    // Boss Rush wager (legacy code path; new menu no longer offers wagers) before
+    // opening the dashboard.
     import('./casino.js')
       .then(({ settlePendingWager }) => { try { settlePendingWager(); } catch (_) {} })
       .catch(() => {});
@@ -735,16 +728,8 @@ export function tickTown(dt) {
       _tentLanternMesh.material.opacity = 0.85 + 0.15 * Math.sin(t * 6.1);
     }
   }
-  for (const it of _interactables) {
-    if (!it._casino) continue;
-    const unlocked = !!getMeta().unlockedVoid;
-    if (it._unlocked !== unlocked) {
-      it._unlocked = unlocked;
-      it.label = unlocked
-        ? '🎰  The Seedy Tent'
-        : '🔒  Sealed (Clear Catacomb Void to unlock)';
-    }
-  }
+  // Casino is always unlocked as of iter 33e — no per-frame label repaint needed,
+  // but we leave the iterator scaffolding here in case future state needs it.
 
   // Hellfire Brazier — bob/twist flames; "intense" window after a press makes
   // flames climb + light bleed brighter for ~5s as the confirmation cue.

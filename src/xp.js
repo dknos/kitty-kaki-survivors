@@ -214,7 +214,7 @@ export function dropGem(pos, value = 1) {
 }
 
 function _triggerLevelUp() {
-  const choices = weaponChoices(3);
+  const choices = weaponChoices(3 + ((state && state.run && state.run.casinoExtraChoices) || 0));
   state.levelUpChoices = choices;
   state.pendingLevelUp = true;
   showLevelUpModal(choices);
@@ -267,11 +267,14 @@ export function updateGems(dt) {
       if (ddx * ddx + ddz * ddz <= PICKUP_DIST_SQ) {
         // Shop growth + Crown passive + Soul Link XP-mul, all multiply on top.
         // Weekly XP_FAMINE mutator stacks here as a flat 0.7× scalar (iter 9).
+        // Iter 33e — Catnip Rush run buff adds 50% XP for first 5 minutes.
+        const catnipActive = state.run.casinoCatnipUntil && state.time.game < state.run.casinoCatnipUntil;
         const xpMul = (1 + 0.08 * shopLevel('growth')) *
                       (1 + (state.run.passive_xpMul || 0)) *
                       (1 + (state.run.passive_soulLinkXpMul || 0)) *
                       (state.run.stageRuleXpMul || 1) *
-                      (state.run.weeklyXpMul || 1);
+                      (state.run.weeklyXpMul || 1) *
+                      (catnipActive ? 1.5 : 1);
         hero.xp += g.value * xpMul;
         state.run.pickedGems++;
         g.active = false;
@@ -382,7 +385,7 @@ export function applyLevelUpChoice(choice) {
   if (state.pendingLevelCount > 0) {
     // Still queued — re-roll + re-open in place.
     state.pendingLevelUp = true;
-    state.levelUpChoices = weaponChoices(3);
+    state.levelUpChoices = weaponChoices(3 + ((state && state.run && state.run.casinoExtraChoices) || 0));
     showLevelUpModal(state.levelUpChoices);
   } else {
     state.pendingLevelUp = false;

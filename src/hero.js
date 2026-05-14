@@ -433,7 +433,7 @@ export function updateHero(dt) {
   }
   if (didLevel && !state.pendingLevelUp) {
     state.pendingLevelUp = true;
-    state.levelUpChoices = weaponChoices(3);
+    state.levelUpChoices = weaponChoices(3 + ((state && state.run && state.run.casinoExtraChoices) || 0));
     showLevelUpModal(state.levelUpChoices);
     if (sfx && sfx.levelUp) sfx.levelUp();
     try { flashLevelUp(); } catch (_) {}

@@ -781,6 +781,12 @@ function applyMetaUpgrades() {
     }
   }
 
+  // Iter 33e — apply casino permanent + queued temporary buffs. Stacks on
+  // top of shop / relic / SHOP_TREE so casino doesn't no-op when those exist.
+  import('./casino.js').then(({ applyCasinoBuffsOnRunStart }) => {
+    try { applyCasinoBuffsOnRunStart(); } catch (_) {}
+  });
+
   // Mode flags snapshot. Weekly is mutually exclusive with Daily/BossRush —
   // dailyOn was already gated above so the && !dailyOn guards subsume weekly.
   state.modes.hyper = !!(meta.unlockedHyper && meta.optHyper) && !dailyOn && !weeklyOn;

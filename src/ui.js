@@ -60,7 +60,7 @@ const F = {
 // ── Build version ────────────────────────────────────────────────────────────
 // Flipped to '1.0.0' on the iter-11 ship commit (Shop Tree Live Wires —
 // the broken-tier-1-3-consumers gap was the last v1.0 blocker).
-export const KK_VERSION = '1.4.18';
+export const KK_VERSION = '1.4.19';
 
 // ── Module-local DOM refs ────────────────────────────────────────────────────
 let _root = null;
@@ -1045,7 +1045,7 @@ export function showLevelUpModal(choices) {
     if (state.hero.rerolls <= 0) return;
     state.hero.rerolls -= 1;
     import('./weapons/index.js').then(({ weaponChoices }) => {
-      const fresh = weaponChoices(3);
+      const fresh = weaponChoices(3 + ((state && state.run && state.run.casinoExtraChoices) || 0));
       state.levelUpChoices = fresh;
       paintCards(row, fresh, _registry || {});
       rebuildQol();
@@ -1063,7 +1063,7 @@ export function showLevelUpModal(choices) {
     if (state.pendingLevelCount > 0) {
       import('./weapons/index.js').then(({ weaponChoices }) => {
         state.pendingLevelUp = true;
-        state.levelUpChoices = weaponChoices(3);
+        state.levelUpChoices = weaponChoices(3 + ((state && state.run && state.run.casinoExtraChoices) || 0));
         showLevelUpModal(state.levelUpChoices);
       });
     } else {
@@ -2937,96 +2937,86 @@ function _emberLine(label) {
  * Casino entry hub — two big buttons (Slots, Boss Rush Wager) + a status line
  * if a wager is already pending (which blocks starting another one).
  */
+// Iter 33e — Casino dashboard. Tabbed hub with three sections:
+//   Games  — Slots (Embers) and Parlay (Sigils 50/50 doubler)
+//   Buffs  — Permanent + Temporary powerups paid in Sigils
+//   House  — Casino unlocks paid in Sigils
+// Always available, no gating.
+let _casinoTab = 'games';
 export function showCasinoMenu() {
   try { hideTooltip(); } catch (_) {}
   if (_casinoModal) return;
-  // Settle any pending wager on open too (belt-and-suspenders alongside the
-  // town.enterTown() hook — covers the case where the player walks past the
-  // tent right after a Boss Rush victory).
-  import('./casino.js').then(({ settlePendingWager }) => {
-    try { settlePendingWager(); } catch (_) {}
-  });
   try { sfx.modalOpen(); } catch (_) {}
   _casinoModal = document.createElement('div');
   _casinoModal.style.cssText = _CASINO_BG;
 
+  const meta = (function(){ try { return JSON.parse(localStorage.getItem('kk_meta') || '{}'); } catch (_) { return {}; } })();
+  const sigils = meta.sigils || 0;
+  const embers = meta.embers || 0;
+
   const header = document.createElement('div');
   header.innerHTML = `
-    <div style="font-family:${F.display}; font-size:calc(var(--kk-font-scale,1) * 48px); font-weight:900;
+    <div style="font-family:${F.display}; font-size:calc(var(--kk-font-scale,1) * 40px); font-weight:900;
                 letter-spacing:0.22em; color:${CASINO_RED};
                 text-shadow: 0 2px 18px rgba(0,0,0,0.7), 0 0 30px rgba(255,80,80,0.25);
                 margin-bottom: 4px; text-align:center;">The Seedy Tent</div>
     <div style="font-family:${F.body}; font-size:calc(var(--kk-font-scale,1) * 11px); letter-spacing:0.34em;
-                color:rgba(245,239,225,0.55); text-transform:uppercase; margin-bottom: 22px;">
-      Pull the lever. The wheel remembers.
+                color:rgba(245,239,225,0.55); text-transform:uppercase; margin-bottom: 14px; text-align:center;">
+      Pull the lever. Cash the sigils. The wheel remembers.
     </div>
-    ${_emberLine('Embers')}
+    <div style="display:flex; gap:18px; justify-content:center; margin-bottom:18px; font-family:${F.display}; letter-spacing:0.22em;">
+      <div style="color:#ffd27f; font-size:calc(var(--kk-font-scale,1) * 16px);">🔥 ${embers.toLocaleString()} Embers</div>
+      <div style="color:#c9a4ff; font-size:calc(var(--kk-font-scale,1) * 16px);">✦ ${sigils.toLocaleString()} Sigils</div>
+    </div>
   `;
   _casinoModal.appendChild(header);
 
-  // Pending-wager strip (only renders when one exists). Players can't start a
-  // new wager while one is open; we show what they committed so they know.
-  import('./casino.js').then(({ readWager }) => {
-    const w = readWager();
-    if (!w || !_casinoModal) return;
-    const strip = document.createElement('div');
-    strip.style.cssText = `
-      background: linear-gradient(180deg, rgba(40,16,16,0.94), rgba(20,8,8,0.96));
-      border: 1px solid ${CASINO_RED}; border-radius: 10px;
-      padding: 12px 18px; margin-bottom: 22px;
-      max-width: 560px; width: 100%;
-      font-family:${F.body}; font-size:calc(var(--kk-font-scale,1) * 12.5px);
-      color:#ffae6a; letter-spacing:0.10em; text-align:center;
-      box-shadow: 0 0 16px rgba(255,94,94,0.18);`;
-    strip.innerHTML = `
-      <div style="font-family:${F.display}; letter-spacing:0.28em; font-size:calc(var(--kk-font-scale,1) * 12px); color:${CASINO_RED}; margin-bottom:6px;">
-        WAGER PENDING
-      </div>
-      ${w.wagerAmount} 🔥 staked · ${w.stacks} mutator${w.stacks > 1 ? 's' : ''} · payout ×${w.payoutMul}<br>
-      <span style="opacity:0.7;">Complete the next Boss Rush run to settle.</span>
-    `;
-    _casinoModal.insertBefore(strip, _casinoModal.children[_casinoModal.children.length - 2] || null);
-  });
+  const tabRow = document.createElement('div');
+  tabRow.style.cssText = 'display:flex; gap:8px; margin-bottom:16px;';
+  const tabs = [
+    { id: 'games', label: 'Games' },
+    { id: 'buffs', label: 'Buffs' },
+    { id: 'house', label: 'House' },
+  ];
+  const body = document.createElement('div');
+  body.style.cssText = 'max-width: 760px; width: 100%; min-height: 280px; display:flex; flex-direction:column; gap:10px;';
 
-  const btnRow = document.createElement('div');
-  btnRow.style.cssText = 'display: grid; grid-template-columns: 1fr 1fr; gap: 18px; max-width: 720px; width: 100%; margin-bottom: 28px;';
-
-  const mkBigBtn = (icon, label, sub, accent, onclick) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.style.cssText = `
-      padding: 22px 18px; cursor: pointer;
-      background: linear-gradient(180deg, rgba(28,16,16,0.94), rgba(14,8,8,0.96));
-      border: 1px solid ${accent}; border-radius: 12px;
-      color: ${accent}; font-family: ${F.display};
-      letter-spacing: 0.22em;
-      box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 14px 28px rgba(0,0,0,0.6);
-      transition: transform 0.14s ease, box-shadow 0.14s ease;`;
-    b.innerHTML = `
-      <div style="font-size:calc(var(--kk-font-scale,1) * 44px); margin-bottom: 6px;">${icon}</div>
-      <div style="font-size:calc(var(--kk-font-scale,1) * 18px); font-weight:700;">${label}</div>
-      <div style="font-size:calc(var(--kk-font-scale,1) * 11px); letter-spacing:0.18em; opacity:0.7; margin-top:6px; text-transform:uppercase;">${sub}</div>
-    `;
-    b.addEventListener('mouseenter', () => { b.style.transform = 'translateY(-2px)'; b.style.boxShadow = `0 1px 0 rgba(255,255,255,0.06) inset, 0 18px 34px rgba(0,0,0,0.65), 0 0 22px ${accent}33`; });
-    b.addEventListener('mouseleave', () => { b.style.transform = 'translateY(0)'; b.style.boxShadow = `0 1px 0 rgba(255,255,255,0.04) inset, 0 14px 28px rgba(0,0,0,0.6)`; });
-    b.addEventListener('click', () => { try { sfx.uiClick(); } catch (_) {} onclick(); });
-    return b;
+  const renderTab = () => {
+    body.innerHTML = '';
+    if (_casinoTab === 'games') {
+      body.appendChild(_buildGamesTab());
+    } else if (_casinoTab === 'buffs') {
+      body.appendChild(_buildBuffsTab());
+    } else {
+      body.appendChild(_buildHouseTab());
+    }
+    for (const tb of tabRow.children) {
+      const active = tb.dataset.tabid === _casinoTab;
+      tb.style.background = active ? `linear-gradient(180deg, rgba(60,28,28,0.96), rgba(28,12,12,0.96))` : `linear-gradient(180deg, rgba(20,12,12,0.78), rgba(10,6,6,0.86))`;
+      tb.style.color = active ? '#ffd27f' : 'rgba(245,239,225,0.55)';
+      tb.style.borderColor = active ? CASINO_RED : C.edge;
+    }
   };
 
-  btnRow.appendChild(mkBigBtn('🎰', 'Slots', 'Spin against the house', '#ffd27f', () => {
-    _closeCasino();
-    showCasinoSlots();
-  }));
-  btnRow.appendChild(mkBigBtn('⚔', 'Boss Rush Wager', 'Bet the next run', CASINO_RED, () => {
-    _closeCasino();
-    showBossRushWager();
-  }));
-  _casinoModal.appendChild(btnRow);
+  for (const t of tabs) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.dataset.tabid = t.id;
+    b.textContent = t.label;
+    b.style.cssText = `padding:9px 22px; cursor:pointer; border-radius:8px; border:1px solid ${C.edge};
+      font-family:${F.display}; letter-spacing:0.26em; font-size:calc(var(--kk-font-scale,1) * 13px);
+      background:linear-gradient(180deg, rgba(20,12,12,0.78), rgba(10,6,6,0.86)); color:rgba(245,239,225,0.55);`;
+    b.onclick = () => { try { sfx.uiClick(); } catch (_) {} _casinoTab = t.id; renderTab(); };
+    tabRow.appendChild(b);
+  }
+  _casinoModal.appendChild(tabRow);
+  _casinoModal.appendChild(body);
+  renderTab();
 
   const close = document.createElement('button');
   close.type = 'button';
   close.textContent = 'Leave · Esc';
-  close.style.cssText = `padding: 10px 26px; cursor: pointer;
+  close.style.cssText = `padding: 10px 26px; cursor: pointer; margin-top:16px;
     background: linear-gradient(180deg, rgba(20,28,22,0.78), rgba(8,14,12,0.86));
     border: 1px solid ${C.edge}; border-radius: 8px;
     color: ${C.magenta}; font-family: ${F.display}; font-size: calc(var(--kk-font-scale,1) * 13px); font-weight: 700;
@@ -3036,6 +3026,226 @@ export function showCasinoMenu() {
   _root.appendChild(_casinoModal);
 
   _casinoKey = (e) => { if (e.code === 'Escape') _closeCasino(); };
+  window.addEventListener('keydown', _casinoKey);
+}
+
+function _buildGamesTab() {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:grid; grid-template-columns: 1fr 1fr; gap:14px;';
+  const mkCard = (icon, name, sub, accent, onclick) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.style.cssText = `padding:22px 18px; cursor:pointer;
+      background: linear-gradient(180deg, rgba(28,16,16,0.94), rgba(14,8,8,0.96));
+      border: 1px solid ${accent}; border-radius: 12px; color:${accent};
+      font-family:${F.display}; letter-spacing:0.22em;
+      box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 14px 28px rgba(0,0,0,0.6);`;
+    b.innerHTML = `
+      <div style="font-size:calc(var(--kk-font-scale,1) * 40px); margin-bottom:6px;">${icon}</div>
+      <div style="font-size:calc(var(--kk-font-scale,1) * 18px); font-weight:700;">${name}</div>
+      <div style="font-size:calc(var(--kk-font-scale,1) * 11px); opacity:0.7; margin-top:6px;">${sub}</div>`;
+    b.onclick = () => { try { sfx.uiClick(); } catch (_) {} onclick(); };
+    return b;
+  };
+  wrap.appendChild(mkCard('🎰', 'Slots', '3-reel · pays Embers', '#ffd27f', () => { _closeCasino(); showCasinoSlots(); }));
+  wrap.appendChild(mkCard('🪙', 'Parlay', '50/50 · sigil doubler', '#c9a4ff', () => { _closeCasino(); showCasinoParlay(); }));
+  return wrap;
+}
+
+function _buildBuffsTab() {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex; flex-direction:column; gap:14px;';
+  // Lazy-import catalogs each render so the data is always fresh
+  import('./casino.js').then(({ PERM_BUFFS, RUN_BUFFS, permLevel, buyPerm, buyRunBuff }) => {
+    wrap.innerHTML = '';
+    const sec = (title, color) => {
+      const h = document.createElement('div');
+      h.style.cssText = `font-family:${F.display}; letter-spacing:0.32em; color:${color}; font-size:calc(var(--kk-font-scale,1) * 13px); margin:6px 0 4px;`;
+      h.textContent = title;
+      return h;
+    };
+    wrap.appendChild(sec('PERMANENT — Spent Sigils, kept forever', '#ffd27f'));
+    for (const def of PERM_BUFFS) {
+      const lvl = permLevel(def.id);
+      const cost = def.cost * (lvl + 1);
+      wrap.appendChild(_buffRow(def, `${def.desc}`, `Lv ${lvl}/${def.max}`, cost, lvl >= def.max, () => {
+        if (buyPerm(def.id)) { try { sfx.uiClick(); } catch (_) {} renderBuffs(); }
+      }));
+    }
+    wrap.appendChild(sec('TEMPORARY — One-shot, applied next run', '#c9a4ff'));
+    for (const def of RUN_BUFFS) {
+      wrap.appendChild(_buffRow(def, def.desc, 'Queues', def.cost, false, () => {
+        if (buyRunBuff(def.id)) { try { sfx.uiClick(); } catch (_) {} renderBuffs(); }
+      }));
+    }
+  });
+  const renderBuffs = () => {
+    // Re-render full menu when sigil count or levels change so the header
+    // and all "buy" affordability checks stay current.
+    _closeCasino();
+    showCasinoMenu();
+  };
+  return wrap;
+}
+
+function _buffRow(def, descText, levelText, cost, maxed, onBuy) {
+  const meta = (function(){ try { return JSON.parse(localStorage.getItem('kk_meta') || '{}'); } catch (_) { return {}; } })();
+  const sigils = meta.sigils || 0;
+  const canAfford = sigils >= cost && !maxed;
+  const row = document.createElement('div');
+  row.style.cssText = `display:grid; grid-template-columns: 38px 1fr auto; gap:12px; align-items:center;
+    background: linear-gradient(180deg, rgba(20,12,12,0.86), rgba(10,6,6,0.86));
+    border: 1px solid ${C.edge}; border-radius: 8px; padding: 10px 14px;`;
+  row.innerHTML = `
+    <div style="font-size:calc(var(--kk-font-scale,1) * 26px); text-align:center;">${def.icon}</div>
+    <div>
+      <div style="font-family:${F.display}; letter-spacing:0.22em; color:#f5efe1; font-size:calc(var(--kk-font-scale,1) * 13px);">${def.name}</div>
+      <div style="font-family:${F.body}; font-size:calc(var(--kk-font-scale,1) * 11px); color:rgba(245,239,225,0.6);">${descText} · <span style="color:#c9a4ff;">${levelText}</span></div>
+    </div>`;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.textContent = maxed ? 'MAX' : `${cost} ✦`;
+  btn.disabled = !canAfford;
+  btn.style.cssText = `padding:8px 16px; cursor:${canAfford ? 'pointer' : 'not-allowed'};
+    background: linear-gradient(180deg, rgba(60,28,28,0.94), rgba(28,12,12,0.96));
+    border: 1px solid ${canAfford ? CASINO_RED : C.edge}; border-radius: 6px;
+    color: ${canAfford ? '#ffd27f' : 'rgba(245,239,225,0.4)'};
+    font-family:${F.display}; letter-spacing:0.22em; font-size:calc(var(--kk-font-scale,1) * 12px);`;
+  btn.onclick = canAfford ? onBuy : null;
+  row.appendChild(btn);
+  return row;
+}
+
+function _buildHouseTab() {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex; flex-direction:column; gap:14px;';
+  import('./casino.js').then(({ HOUSE_UPGRADES, houseOwned, buyHouse }) => {
+    wrap.innerHTML = '';
+    const h = document.createElement('div');
+    h.style.cssText = `font-family:${F.display}; letter-spacing:0.32em; color:#ffd27f; font-size:calc(var(--kk-font-scale,1) * 13px); margin:6px 0 4px;`;
+    h.textContent = 'HOUSE — One-time unlocks';
+    wrap.appendChild(h);
+    for (const def of HOUSE_UPGRADES) {
+      const owned = houseOwned(def.id);
+      wrap.appendChild(_buffRow(def, def.desc, owned ? 'OWNED' : 'Not owned', def.cost, owned, () => {
+        if (buyHouse(def.id)) { try { sfx.uiClick(); } catch (_) {} _closeCasino(); showCasinoMenu(); }
+      }));
+    }
+    const stub = document.createElement('div');
+    stub.style.cssText = `font-family:${F.body}; font-size:calc(var(--kk-font-scale,1) * 10.5px); color:rgba(245,239,225,0.45); margin-top:8px; text-align:center;`;
+    stub.textContent = 'More tables, decks, and dens unlocking in upcoming iters.';
+    wrap.appendChild(stub);
+  });
+  return wrap;
+}
+
+// Parlay modal — single-track pure 50/50 doubler. Player stakes N sigils
+// (range PARLAY_MIN_BET..PARLAY_MAX_BET capped at current balance). Each flip
+// either doubles the pool or wipes it; the player chooses when to cash out.
+export function showCasinoParlay() {
+  try { hideTooltip(); } catch (_) {}
+  if (_casinoModal) return;
+  try { sfx.modalOpen(); } catch (_) {}
+  _casinoModal = document.createElement('div');
+  _casinoModal.style.cssText = _CASINO_BG;
+  import('./casino.js').then(({ parlayFlip, settleParlay, PARLAY_MIN_BET, PARLAY_MAX_BET }) => {
+    _casinoModal.innerHTML = '';
+    const meta = (function(){ try { return JSON.parse(localStorage.getItem('kk_meta') || '{}'); } catch (_) { return {}; } })();
+    let sigils = meta.sigils || 0;
+    let seed = 0;        // sigils committed at game start
+    let pool = 0;        // current pool (doubles or wipes per flip)
+    let flips = 0;
+    let busted = false;
+
+    const title = document.createElement('div');
+    title.style.cssText = `font-family:${F.display}; font-size:calc(var(--kk-font-scale,1) * 40px); font-weight:900;
+      letter-spacing:0.22em; color:#c9a4ff; margin-bottom:6px; text-align:center;`;
+    title.textContent = 'Parlay';
+    _casinoModal.appendChild(title);
+
+    const sub = document.createElement('div');
+    sub.style.cssText = `font-family:${F.body}; font-size:calc(var(--kk-font-scale,1) * 11px); letter-spacing:0.34em;
+      color:rgba(245,239,225,0.55); text-transform:uppercase; margin-bottom:18px; text-align:center;`;
+    sub.textContent = '50/50 flip · cash out anytime · bust wipes pool';
+    _casinoModal.appendChild(sub);
+
+    const state_ = document.createElement('div');
+    state_.style.cssText = `max-width:520px; width:100%; padding:18px 22px; margin-bottom:14px;
+      background: linear-gradient(180deg, rgba(28,18,40,0.96), rgba(12,8,18,0.96));
+      border:1px solid #c9a4ff; border-radius:12px; text-align:center;
+      font-family:${F.display}; letter-spacing:0.22em;`;
+    _casinoModal.appendChild(state_);
+
+    const controls = document.createElement('div');
+    controls.style.cssText = `display:flex; gap:10px; justify-content:center; margin-bottom:18px;`;
+    _casinoModal.appendChild(controls);
+
+    const refreshUI = () => {
+      const balance = sigils - seed + pool;
+      state_.innerHTML = `
+        <div style="color:#c9a4ff; font-size:calc(var(--kk-font-scale,1) * 12px); margin-bottom:6px;">FLIPS · ${flips}</div>
+        <div style="color:#f5efe1; font-size:calc(var(--kk-font-scale,1) * 24px); margin-bottom:6px;">Pool: ${pool} ✦</div>
+        <div style="color:rgba(245,239,225,0.6); font-size:calc(var(--kk-font-scale,1) * 11px);">Wallet now: ${balance} ✦</div>
+        ${busted ? `<div style="color:${CASINO_RED}; margin-top:8px;">BUST · pool wiped</div>` : ''}
+      `;
+      controls.innerHTML = '';
+      const mkBtn = (label, accent, onclick, disabled = false) => {
+        const b = document.createElement('button');
+        b.type = 'button'; b.textContent = label;
+        b.disabled = disabled;
+        b.style.cssText = `padding:10px 22px; cursor:${disabled ? 'not-allowed' : 'pointer'};
+          background: linear-gradient(180deg, rgba(40,24,56,0.94), rgba(20,12,28,0.96));
+          border:1px solid ${disabled ? C.edge : accent}; border-radius:8px;
+          color:${disabled ? 'rgba(245,239,225,0.4)' : accent}; font-family:${F.display}; letter-spacing:0.24em; font-size:calc(var(--kk-font-scale,1) * 13px);`;
+        b.onclick = disabled ? null : onclick;
+        return b;
+      };
+      if (pool === 0 && !busted) {
+        // Pick a seed
+        for (const v of [5, 10, 25, 50, 100]) {
+          const can = v >= PARLAY_MIN_BET && v <= PARLAY_MAX_BET && sigils >= v;
+          controls.appendChild(mkBtn(`Stake ${v} ✦`, '#c9a4ff', () => {
+            seed = v; pool = v; flips = 0; busted = false; refreshUI();
+          }, !can));
+        }
+      } else if (busted) {
+        controls.appendChild(mkBtn('Try Again', '#c9a4ff', () => {
+          settleParlay(seed, 0);
+          sigils = sigils - seed;
+          seed = 0; pool = 0; flips = 0; busted = false; refreshUI();
+        }));
+      } else {
+        controls.appendChild(mkBtn(`Flip · risk ${pool} ✦`, CASINO_RED, () => {
+          const win = parlayFlip();
+          flips += 1;
+          if (win) { pool *= 2; }
+          else { busted = true; }
+          refreshUI();
+        }));
+        controls.appendChild(mkBtn(`Cash out · take ${pool} ✦`, '#9bff9b', () => {
+          settleParlay(seed, pool);
+          sigils = sigils - seed + pool;
+          seed = 0; pool = 0; flips = 0; refreshUI();
+        }));
+      }
+    };
+    refreshUI();
+
+    const backBtn = document.createElement('button');
+    backBtn.type = 'button';
+    backBtn.textContent = '← Back to Casino';
+    backBtn.style.cssText = `padding:10px 24px; cursor:pointer;
+      background: linear-gradient(180deg, rgba(20,28,22,0.78), rgba(8,14,12,0.86));
+      border: 1px solid ${C.edge}; border-radius: 8px; color: ${C.magenta};
+      font-family: ${F.display}; font-size: calc(var(--kk-font-scale,1) * 13px); letter-spacing: 0.28em;`;
+    backBtn.onclick = () => {
+      if (pool > 0 && !busted) settleParlay(seed, pool);
+      _closeCasino(); showCasinoMenu();
+    };
+    _casinoModal.appendChild(backBtn);
+  });
+  _root.appendChild(_casinoModal);
+  _casinoKey = (e) => { if (e.code === 'Escape') { _closeCasino(); showCasinoMenu(); } };
   window.addEventListener('keydown', _casinoKey);
 }
 

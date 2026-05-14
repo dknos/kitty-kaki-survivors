@@ -308,3 +308,159 @@ function _showCasinoToast(text, accent = '#ffd27f') {
   document.body.appendChild(t);
   setTimeout(() => { if (t.parentNode) t.parentNode.removeChild(t); }, 2400);
 }
+
+// ── Iter 33e — Casino dashboard catalogs ────────────────────────────────────
+// The casino is now an always-open hub with three tabs:
+//   • Games    — Slots (Embers) and Parlay (Sigils, 50/50 doubler).
+//   • Buffs    — Permanent and Temporary powerups, paid in Sigils.
+//   • House    — Casino-wide unlocks (bet multipliers, decor), paid in Sigils.
+//
+// Spent Sigils never come back, but earned Sigils via the lifetime counter
+// stay monotonic (sigilsEarned in meta.lifetime), so 'sigils:N' character
+// unlocks still progress regardless of how much you've blown at the tables.
+
+// PARLAY — pure 50/50 doubler. Player commits a Sigil stake; on win pool
+// doubles. They can cash out or flip again. Mathematical house edge 0%;
+// the player only loses by stacking flips and busting on the next call.
+export function parlayFlip() {
+  return Math.random() < 0.5;
+}
+
+export const PARLAY_MIN_BET = 5;
+export const PARLAY_MAX_BET = 100;     // cap per single seed, prevents one-shot fortune dumps
+
+/** Settle a parlay session — debit the seed, credit the final pool if cashed out. */
+export function settleParlay(seed, payout) {
+  const m = getMeta();
+  m.sigils = Math.max(0, (m.sigils || 0) - seed) + payout;
+  m.casinoParlayPlays = (m.casinoParlayPlays || 0) + 1;
+  if (payout > 0) m.casinoParlayWon = (m.casinoParlayWon || 0) + payout;
+  saveMeta();
+}
+
+// PERMANENT BUFFS — account-level, multi-level. Stored on
+// meta.casinoPerm[id] = level (int, 0..max). Costs scale linearly per level
+// (cost * (level+1)) so the second/third pick of any node is steeper.
+export const PERM_BUFFS = [
+  { id: 'rigged_dice',  name: 'Rigged Dice',  desc: '+1 starting reroll per level (max 3)',     icon: '🎲', cost: 60,  max: 3 },
+  { id: 'extra_choice', name: 'Extra Choice', desc: '+1 weapon option on level-up (max 2)',     icon: '➕', cost: 90,  max: 2 },
+  { id: 'lucky_chest',  name: 'Lucky Charm',  desc: '+15% chest tier-up chance per level (max 3)', icon: '🍀', cost: 40, max: 3 },
+  { id: 'pity_revive',  name: 'Nine Lives',   desc: '+1 free revive per run (max 2)',           icon: '😼', cost: 150, max: 2 },
+];
+
+// TEMPORARY (RUN-SCOPED) BUFFS — bought now, queued for the next run via
+// meta.casinoRunQueued (array of buff ids). Consumed on run start; refilling
+// the queue is fine, each entry fires once.
+export const RUN_BUFFS = [
+  { id: 'catnip_rush',  name: 'Catnip Rush',     desc: '+50% XP for the first 5 min next run', icon: '🌿', cost: 20 },
+  { id: 'free_rerolls', name: 'Free Rerolls',    desc: '+3 rerolls next run',                  icon: '🔄', cost: 15 },
+  { id: 'high_roller',  name: 'High Roller',     desc: '2× gold drops, +20% damage taken',      icon: '🎩', cost: 25 },
+  { id: 'big_start',    name: 'Iron Breakfast',  desc: 'Start with +60 max HP and full heal',  icon: '🥩', cost: 30 },
+];
+
+// HOUSE UPGRADES — flat unlocks stored on meta.casinoHouse[id] = true.
+export const HOUSE_UPGRADES = [
+  { id: 'vip_multipliers', name: 'VIP Lounge', desc: 'Unlock 5× and 10× bet sizes',        icon: '👑', cost: 250 },
+  { id: 'vault_decor',     name: 'The Vault',  desc: 'Decor: a Sigil hoard that grows with lifetime winnings', icon: '💰', cost: 500 },
+];
+
+/** Current level of a permanent buff (0 if never bought). */
+export function permLevel(id) {
+  const m = getMeta();
+  return (m.casinoPerm && m.casinoPerm[id]) || 0;
+}
+
+/** Buy one level of a permanent buff. Returns true on success. */
+export function buyPerm(id) {
+  const def = PERM_BUFFS.find(b => b.id === id);
+  if (!def) return false;
+  const m = getMeta();
+  const lvl = permLevel(id);
+  if (lvl >= def.max) return false;
+  const cost = def.cost * (lvl + 1);
+  if ((m.sigils || 0) < cost) return false;
+  m.sigils -= cost;
+  m.casinoPerm = m.casinoPerm || {};
+  m.casinoPerm[id] = lvl + 1;
+  saveMeta();
+  return true;
+}
+
+/** Queue a run-scoped buff for the next run. Returns true on success. */
+export function buyRunBuff(id) {
+  const def = RUN_BUFFS.find(b => b.id === id);
+  if (!def) return false;
+  const m = getMeta();
+  if ((m.sigils || 0) < def.cost) return false;
+  m.sigils -= def.cost;
+  m.casinoRunQueued = m.casinoRunQueued || [];
+  m.casinoRunQueued.push(id);
+  saveMeta();
+  return true;
+}
+
+/** True if a house upgrade is owned. */
+export function houseOwned(id) {
+  const m = getMeta();
+  return !!(m.casinoHouse && m.casinoHouse[id]);
+}
+
+/** Buy a house upgrade. Returns true on success. */
+export function buyHouse(id) {
+  const def = HOUSE_UPGRADES.find(b => b.id === id);
+  if (!def) return false;
+  const m = getMeta();
+  if (houseOwned(id)) return false;
+  if ((m.sigils || 0) < def.cost) return false;
+  m.sigils -= def.cost;
+  m.casinoHouse = m.casinoHouse || {};
+  m.casinoHouse[id] = true;
+  saveMeta();
+  return true;
+}
+
+/**
+ * Apply both permanent and queued run buffs at the start of a run. Permanent
+ * buffs read meta.casinoPerm; queued run buffs are drained from
+ * meta.casinoRunQueued (one-shot). Called from main.js startGame() / similar.
+ */
+export function applyCasinoBuffsOnRunStart() {
+  const m = getMeta();
+  const hero = state.hero;
+  if (!hero) return;
+  // PERM: +1 starting reroll per Rigged Dice level
+  const rd = permLevel('rigged_dice');
+  if (rd > 0) hero.rerolls = (hero.rerolls || 0) + rd;
+  // PERM: Pity Revive grants free revives this run
+  const pr = permLevel('pity_revive');
+  if (pr > 0) state.run.casinoExtraRevives = pr;
+  // PERM: Extra Choice — snapshot to state.run for O(1) reads in level-up UI
+  state.run.casinoExtraChoices = permLevel('extra_choice');
+  // RUN: drain queued one-shot buffs
+  const queued = (m.casinoRunQueued || []).slice();
+  m.casinoRunQueued = [];
+  saveMeta();
+  for (const id of queued) {
+    switch (id) {
+      case 'catnip_rush':
+        state.run.casinoCatnipUntil = (state.time?.game || 0) + 300;
+        break;
+      case 'free_rerolls':
+        hero.rerolls = (hero.rerolls || 0) + 3;
+        break;
+      case 'high_roller':
+        state.run.casinoGoldMul = (state.run.casinoGoldMul || 1) * 2;
+        state.run.casinoDmgTakenMul = (state.run.casinoDmgTakenMul || 1) * 1.2;
+        break;
+      case 'big_start':
+        hero.hpMax = (hero.hpMax || 100) + 60;
+        hero.hp = hero.hpMax;
+        break;
+    }
+  }
+}
+
+/** Read by ui.js level-up modal to size the option grid. */
+export function casinoExtraChoices() {
+  return permLevel('extra_choice');
+}
