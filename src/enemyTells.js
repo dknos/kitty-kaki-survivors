@@ -56,7 +56,10 @@ const COL_DOT_FINAL    = new THREE.Color(0xff3344);
 // Affix tints (iter 8c) — override the threat-tier color when the enemy has
 // a matching slot field stamped by enemyAffixes.js. Pre-allocated at module
 // scope so the per-frame loop stays zero-alloc.
-const COL_VOLATILE     = new THREE.Color(0x66ddff);   // cyan ring — "don't dash through"
+// Iter 32c — volatile was cyan (0x66ddff), nearly identical to frost (blue).
+// On Twilight Hollow where both affixes spawn often, every ring read as "blue".
+// Hot orange now: radiation/warning signal, no overlap with the cool family.
+const COL_VOLATILE     = new THREE.Color(0xff8a33);   // orange — explosive warning
 const COL_FROST        = new THREE.Color(0x88ddff);   // cool blue — slow aura
 const COL_SHIELD_GOLD  = new THREE.Color(0xffd24a);   // gold base for flicker modulation
 const COL_VAMP_RED     = new THREE.Color(0xff3344);   // reuse COL_FINAL hue for vampiric blend
