@@ -241,6 +241,7 @@ function showFor(el, fn, ev) {
   _lastEvent = ev || null;
   if (ev && (ev.clientX || ev.clientY)) positionAtCursor(ev);
   else positionAtElement(el);
+  root.style.display = 'block';
   root.style.opacity = '1';
 }
 
@@ -249,7 +250,14 @@ function hide() {
   _activeFn = null;
   _lastEvent = null;
   if (_showTimer) { clearTimeout(_showTimer); _showTimer = 0; }
-  if (_root) _root.style.opacity = '0';
+  if (_root) {
+    _root.style.opacity = '0';
+    // Also collapse to display:none. Hover paths that ripped the source element
+    // out of the DOM (e.g. clicking a char card → hideStartScreen removes the
+    // card before mouseleave fires) leave the tooltip stuck at opacity:1 with
+    // no future event to clear it. display:none defeats that stuck state.
+    _root.style.display = 'none';
+  }
 }
 
 function scheduleShow(el, fn, ev) {

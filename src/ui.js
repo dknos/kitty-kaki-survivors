@@ -58,7 +58,7 @@ const F = {
 // ── Build version ────────────────────────────────────────────────────────────
 // Flipped to '1.0.0' on the iter-11 ship commit (Shop Tree Live Wires —
 // the broken-tier-1-3-consumers gap was the last v1.0 blocker).
-export const KK_VERSION = '1.0.0';
+export const KK_VERSION = '1.0.1';
 
 // ── Module-local DOM refs ────────────────────────────────────────────────────
 let _root = null;
@@ -949,6 +949,10 @@ export function hideLevelUpModal() {
 export function showDeathScreen() {
   if (_deathScreen) return;
 
+  // Defensive: clear any active tooltip before drawing the death modal. Stuck
+  // tooltips sit at z:9999 and visually mask the death-screen buttons.
+  try { hideTooltip(); } catch (_) {}
+
   // Run-history log: snapshot the run into meta.runHistory[]. Runs first so the
   // history entry reflects the live state (weapons, evolutions, kills) before
   // teardown touches anything. Capture the return value so the SHARE button
@@ -1077,7 +1081,7 @@ export function showDeathScreen() {
 
   const hint = document.createElement('div');
   hint.className = 'kk-death-hint';
-  hint.textContent = '(or reload the page)';
+  hint.textContent = 'R · Retry    T or Esc · Town';
 
   // Per-source damage breakdown — drives "one more run" by exposing which
   // weapon was actually carrying the run.
@@ -1268,6 +1272,9 @@ export function showDeathScreen() {
   _deathKeyHandler = (e) => {
     if (e.code === 'KeyR' || e.key === 'r' || e.key === 'R' || e.code === 'Enter' || e.code === 'Space') restart();
     else if (e.code === 'KeyT' || e.key === 't' || e.key === 'T') goTown();
+    // Escape: default to "return to town" — most players hit Esc first to bail
+    // out of a modal, and town is the safer cleanup path than a fresh retry.
+    else if (e.code === 'Escape' || e.key === 'Escape') goTown();
   };
   window.addEventListener('keydown', _deathKeyHandler);
 }
@@ -2188,6 +2195,11 @@ export function hideStartScreen() {
   _startCharRowRef = null;
   _startBtnRowRef = null;
   _startPresetRowRef = null;
+  // Clear any active tooltip BEFORE removing the start-screen DOM. Character
+  // cards register tooltips bound to themselves; if the player clicks/Space's
+  // through while hovering, removing _startScreen orphans the card and no
+  // mouseleave fires — leaving the tooltip stuck at opacity:1 over gameplay.
+  try { hideTooltip(); } catch (_) {}
   if (_startScreen && _startScreen.parentNode) {
     _startScreen.parentNode.removeChild(_startScreen);
   }
