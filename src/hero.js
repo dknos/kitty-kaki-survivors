@@ -88,15 +88,9 @@ export function initHero(scene) {
   const group = new THREE.Group();
   group.name = 'heroGroup';
 
-  // Bright cyan base marker — always visible, sits at hero feet so you can
-  // never lose the hero even if the GLB fails to load.
-  const marker = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.6, 0.8, 0.15, 16),
-    new THREE.MeshBasicMaterial({ color: 0x44ffcc })
-  );
-  marker.position.y = 0.08;
-  group.add(marker);
-
+  // GLB-load fallback marker lives in the `else` branch below (cone @ y=1.1).
+  // No unconditional ground disc — that was reading as a green ring/shadow
+  // on top of the loaded GLB.
   const mesh = cloneCached('hero');
   if (mesh) {
     // Hero is plush fabric — high roughness, no metalness sheen.

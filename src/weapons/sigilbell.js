@@ -17,25 +17,13 @@ import { burstExplosion } from '../vfxBurst.js';
 import { spawnKillRing } from '../fx.js';
 
 // ── Shared geometry + material (cached across all sigils) ────────────────────
-// Disc + rune-textured plane. The textured plane carries the canonical
-// magic-circle art (ticks + cardinal glyphs) so the sigil reads as a
-// hand-inked summoning rune instead of a stack of two flat colored shapes.
-const SIGIL_GEO = new THREE.CircleGeometry(1.0, 32);
+// Single rune-textured plane carries the canonical magic-circle art (ticks +
+// cardinal glyphs) so the sigil reads as a hand-inked summoning rune.
 const RUNE_GEO = new THREE.PlaneGeometry(2.0, 2.0);
 
 let _sigilRuneTex = null;
 function _getSigilRuneTex() { return _sigilRuneTex || (_sigilRuneTex = makeRuneRingTexture()); }
 
-function _makeSigilMat() {
-  return new THREE.MeshBasicMaterial({
-    color: 0xffffff,
-    transparent: true,
-    opacity: 0.0,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    side: THREE.DoubleSide,
-  });
-}
 function _makeRuneMat() {
   return new THREE.MeshBasicMaterial({
     map: _getSigilRuneTex(),
@@ -56,27 +44,20 @@ const STUN_DUR = 0.6;          // seconds enemies are stunned on detonation
 
 function _makeSigilMesh() {
   const g = new THREE.Group();
-  const disc = new THREE.Mesh(SIGIL_GEO, _makeSigilMat());
-  // Rune disc uses the textured ring art (overrides the old flat outline).
   const rune = new THREE.Mesh(RUNE_GEO, _makeRuneMat());
-  disc.quaternion.copy(_flat);
   rune.quaternion.copy(_flat);
-  disc.position.y = 0.04;
   rune.position.y = 0.05;
   // Random initial yaw so two adjacent sigils don't render identical glyph
   // orientation. We rotate during tick to sell "spell inscribing itself".
   rune.userData.yawBase = Math.random() * Math.PI * 2;
-  disc.layers.enable(BLOOM_LAYER);
   rune.layers.enable(BLOOM_LAYER);
-  g.add(disc);
   g.add(rune);
-  return { group: g, disc, rune };
+  return { group: g, rune };
 }
 
 function _cleanupSigil(s, scene) {
   if (!s) return;
   if (s.mesh && s.mesh.parent) s.mesh.parent.remove(s.mesh);
-  if (s.disc && s.disc.material) s.disc.material.dispose();
   if (s.rune && s.rune.material) s.rune.material.dispose();
 }
 
@@ -167,7 +148,6 @@ export default {
         x: hero.x, z: hero.z,
         ttl: SIGIL_TTL,
         mesh: built.group,
-        disc: built.disc,
         rune: built.rune,
       });
     }
@@ -186,19 +166,15 @@ export default {
       _yawQ.setFromAxisAngle(_axisY, yaw);
       s.rune.quaternion.multiplyQuaternions(_yawQ, _flat);
       if (s.ttl > 0.4) {
-        // Cool white build, growing opacity + a slow pulse
+        // Cool white build, growing opacity with a slow pulse on the rune.
         const pulse = 0.4 + 0.3 * (0.5 + 0.5 * Math.sin(tNow * 8));
-        s.disc.material.color.setHex(0xeaf2ff);
         s.rune.material.color.setHex(0xbbe6ff);
-        s.disc.material.opacity = pulse * (0.4 + 0.6 * ramp);
-        s.rune.material.opacity = (0.6 + 0.4 * ramp);
+        s.rune.material.opacity = pulse * (0.5 + 0.5 * ramp);
       } else {
         // Red-hot final ramp — flash to detonation
         const t = Math.max(0, Math.min(1, 1 - (s.ttl / 0.4)));   // 0..1
-        s.disc.material.color.setHex(0xff5533);
         s.rune.material.color.setHex(0xffd24a);
-        s.disc.material.opacity = 0.7 + 0.3 * t;
-        s.rune.material.opacity = 0.95;
+        s.rune.material.opacity = 0.85 + 0.15 * t;
         // Slight scale shimmer during red phase
         const r0 = level.radius * areaMul;
         const k = 1 + 0.05 * Math.sin(tNow * 30);

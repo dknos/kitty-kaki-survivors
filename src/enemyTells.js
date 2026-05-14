@@ -288,6 +288,102 @@ function _makeRuneRingTexture() {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// Chevron crescent texture — for the ranged wind-up tell.
+// 256² canvas, alpha-masked crescent at the top half with three forward-
+// pointing chevrons. Center hot, edges fading. Mapped to a square plane;
+// the bottom half is fully transparent so only the crescent renders.
+// ──────────────────────────────────────────────────────────────────────────
+let _chevronTex = null;
+function _makeChevronCrescentTexture() {
+  if (_chevronTex) return _chevronTex;
+  const S = 256;
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0, 0, S, S);
+  const cx = S / 2, cy = S * 0.62; // shift center down so crescent sits up
+
+  // Outer rim arc band — thick stroke fading at the ends
+  const arcGrad = ctx.createLinearGradient(0, 0, S, 0);
+  arcGrad.addColorStop(0.00, 'rgba(255,255,255,0)');
+  arcGrad.addColorStop(0.18, 'rgba(255,255,255,0.55)');
+  arcGrad.addColorStop(0.50, 'rgba(255,255,255,1.0)');
+  arcGrad.addColorStop(0.82, 'rgba(255,255,255,0.55)');
+  arcGrad.addColorStop(1.00, 'rgba(255,255,255,0)');
+  ctx.strokeStyle = arcGrad;
+  ctx.lineCap = 'round';
+  // Two stacked arcs — outer rim + inner filament
+  ctx.lineWidth = 14;
+  ctx.beginPath();
+  ctx.arc(cx, cy, S * 0.42, Math.PI * 1.15, Math.PI * 1.85);
+  ctx.stroke();
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.arc(cx, cy, S * 0.34, Math.PI * 1.18, Math.PI * 1.82);
+  ctx.stroke();
+
+  // Three forward-pointing chevrons inside the crescent — biggest at center
+  ctx.strokeStyle = 'rgba(255,255,255,1)';
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  const chev = [
+    { a: -0.40, r: 0.30, w: 6, span: 0.28 },
+    { a:  0.00, r: 0.26, w: 8, span: 0.36 },
+    { a:  0.40, r: 0.30, w: 6, span: 0.28 },
+  ];
+  for (const ch of chev) {
+    const ang = Math.PI * 1.5 + ch.a;
+    const r = S * ch.r;
+    const px = cx + Math.cos(ang) * r;
+    const py = cy + Math.sin(ang) * r;
+    const span = ch.span;
+    const r1 = r + S * 0.08;
+    ctx.lineWidth = ch.w;
+    ctx.beginPath();
+    const l1x = cx + Math.cos(ang - span) * r1;
+    const l1y = cy + Math.sin(ang - span) * r1;
+    const r1x = cx + Math.cos(ang + span) * r1;
+    const r1y = cy + Math.sin(ang + span) * r1;
+    ctx.moveTo(l1x, l1y);
+    ctx.lineTo(px, py);
+    ctx.lineTo(r1x, r1y);
+    ctx.stroke();
+  }
+
+  // Tick marks across the band — short radial strokes for ink-glyph feel
+  ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+  ctx.lineWidth = 1.6;
+  for (let i = 0; i < 14; i++) {
+    const t = i / 13;
+    const a = Math.PI * 1.18 + t * Math.PI * 0.64;
+    const r0 = S * 0.36, r1 = S * 0.46;
+    ctx.beginPath();
+    ctx.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0);
+    ctx.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
+    ctx.stroke();
+  }
+
+  // Soft halo behind the band — radial gradient mask, alpha-only contribution
+  ctx.globalCompositeOperation = 'destination-over';
+  const halo = ctx.createRadialGradient(cx, cy - S * 0.05, S * 0.10, cx, cy - S * 0.05, S * 0.46);
+  halo.addColorStop(0.00, 'rgba(255,255,255,0.20)');
+  halo.addColorStop(0.65, 'rgba(255,255,255,0.10)');
+  halo.addColorStop(1.00, 'rgba(255,255,255,0)');
+  ctx.fillStyle = halo;
+  ctx.fillRect(0, 0, S, S);
+  ctx.globalCompositeOperation = 'source-over';
+
+  _chevronTex = new THREE.CanvasTexture(c);
+  _chevronTex.colorSpace = THREE.SRGBColorSpace;
+  _chevronTex.anisotropy = 4;
+  _chevronTex.generateMipmaps = true;
+  _chevronTex.minFilter = THREE.LinearMipmapLinearFilter;
+  _chevronTex.magFilter = THREE.LinearFilter;
+  _chevronTex.needsUpdate = true;
+  return _chevronTex;
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // Init
 // ──────────────────────────────────────────────────────────────────────────
 export function initEnemyTells(scene) {
@@ -325,11 +421,15 @@ export function initEnemyTells(scene) {
   _scene.add(_eliteRings);
 
   // ── Ranged wind-up tell ──
-  // Crescent built from a thin ring arc, tilted so it floats above the head
-  // and reads as a charging glyph from the iso camera.
-  const tellGeo = new THREE.RingGeometry(RANGED_TELL_SIZE * 0.55, RANGED_TELL_SIZE, 24, 1, Math.PI * 0.15, Math.PI * 0.7);
+  // Textured plane (chevron crescent) tilted so it floats above the enemy's
+  // head and reads as a charging glyph from the iso camera. Replaces the old
+  // flat RingGeometry with a hand-painted crescent — same alpha-band envelope
+  // language as the rune ring, with three forward-pointing chevrons.
+  const tellSize = RANGED_TELL_SIZE * 2.4;
+  const tellGeo = new THREE.PlaneGeometry(tellSize, tellSize);
   tellGeo.rotateX(-Math.PI / 2.4);
   const tellMat = new THREE.MeshBasicMaterial({
+    map: _makeChevronCrescentTexture(),
     color: COL_RANGED,
     transparent: true,
     opacity: 0.9,
