@@ -7,6 +7,285 @@ import * as THREE from 'three';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 import { WORLD } from './config.js';
 import { cloneCached } from './assets.js';
+import { tex as particleTex } from './particleTextures.js';
+
+// ── Per-stage atmospheric particles (iter 15) ────────────────────────────────
+// Single THREE.Points cluster per stage, attached to envGroup at boot. Only
+// the active stage's cluster is visible + ticked. Custom ShaderMaterial gives
+// each point its own size + alpha (vanilla PointsMaterial is uniform-only),
+// which we need for Void's per-point twinkle and Twilight's flicker. Forest +
+// Cinder reuse the same shader but mostly drive size via the base uniform.
+//
+// Density target: 200-300 points per stage. With 4 stages = 4 draw calls max,
+// well under the 80k tri / 200 draw call budget.
+const ATMOS_SPECS = {
+  forest: {
+    count: 220,
+    radius: 60,          // horizontal disc around hero
+    yMin: 0.2,           // points spawn between yMin and yMax (world Y)
+    yMax: 14,
+    color: 0x9bcf6a,     // sage-green pollen mote
+    baseSize: 1.8,
+    sizeJitter: 0.8,
+    baseAlpha: 0.55,
+    alphaJitter: 0.25,
+    texKey: 'pollen',
+    blending: THREE.AdditiveBlending,
+  },
+  twilight: {
+    count: 180,
+    radius: 60,
+    yMin: 0.4,
+    yMax: 12,
+    color: 0xb8d0ff,     // cool blue-white wisp
+    baseSize: 2.0,
+    sizeJitter: 0.7,
+    baseAlpha: 0.50,
+    alphaJitter: 0.30,
+    texKey: 'glowWhite',
+    blending: THREE.AdditiveBlending,
+  },
+  cinder: {
+    count: 260,
+    radius: 60,
+    yMin: 0.1,
+    yMax: 16,
+    color: 0xff8a3a,     // ember orange
+    baseSize: 1.5,
+    sizeJitter: 0.9,
+    baseAlpha: 0.75,
+    alphaJitter: 0.20,
+    texKey: 'emberWarm',
+    blending: THREE.AdditiveBlending,
+  },
+  void: {
+    count: 200,
+    radius: 60,
+    yMin: 0.5,
+    yMax: 10,
+    color: 0xc69cff,     // violet ghost sparkle
+    baseSize: 1.6,
+    sizeJitter: 0.7,
+    baseAlpha: 0.60,
+    alphaJitter: 0.35,
+    texKey: 'twinkle',
+    blending: THREE.AdditiveBlending,
+  },
+};
+
+const _ATMOS_VS = /* glsl */ `
+  attribute float aSize;
+  attribute float aAlpha;
+  varying float vAlpha;
+  void main() {
+    vAlpha = aAlpha;
+    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    gl_PointSize = aSize * (300.0 / max(0.1, -mv.z));
+    gl_Position = projectionMatrix * mv;
+  }
+`;
+const _ATMOS_FS = /* glsl */ `
+  uniform sampler2D uMap;
+  uniform vec3 uColor;
+  varying float vAlpha;
+  void main() {
+    vec4 t = texture2D(uMap, gl_PointCoord);
+    float a = t.a * vAlpha;
+    if (a < 0.01) discard;
+    gl_FragColor = vec4(uColor * t.rgb, a);
+  }
+`;
+
+function _buildAtmosCluster(spec) {
+  const N = spec.count;
+  const positions = new Float32Array(N * 3);
+  const sizes     = new Float32Array(N);
+  const alphas    = new Float32Array(N);
+  const phases    = new Float32Array(N);  // per-point random phase for twinkle
+  const seeds     = new Float32Array(N);  // per-point unique seed (xz jitter)
+  for (let i = 0; i < N; i++) {
+    // Spawn within a disc around origin; main.js shifts to hero on first tick.
+    const a = Math.random() * Math.PI * 2;
+    const r = Math.sqrt(Math.random()) * spec.radius;
+    positions[i * 3 + 0] = Math.cos(a) * r;
+    positions[i * 3 + 1] = spec.yMin + Math.random() * (spec.yMax - spec.yMin);
+    positions[i * 3 + 2] = Math.sin(a) * r;
+    sizes[i]  = spec.baseSize + (Math.random() - 0.5) * 2 * spec.sizeJitter;
+    alphas[i] = Math.max(0, spec.baseAlpha + (Math.random() - 0.5) * 2 * spec.alphaJitter);
+    phases[i] = Math.random() * Math.PI * 2;
+    seeds[i]  = Math.random() * 1000;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('aSize',    new THREE.BufferAttribute(sizes, 1));
+  geo.setAttribute('aAlpha',   new THREE.BufferAttribute(alphas, 1));
+  // Large bounding sphere so frustum culling doesn't drop the cluster when we
+  // wrap-shift points around the hero (positions move freely in world space).
+  geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), 1e6);
+
+  const map = particleTex(spec.texKey);
+  const mat = new THREE.ShaderMaterial({
+    uniforms: {
+      uMap:   { value: map },
+      uColor: { value: new THREE.Color(spec.color) },
+    },
+    vertexShader:   _ATMOS_VS,
+    fragmentShader: _ATMOS_FS,
+    transparent: true,
+    depthWrite: false,
+    blending: spec.blending,
+  });
+  const points = new THREE.Points(geo, mat);
+  points.frustumCulled = false;
+  points.userData._atmosSpec = spec;
+  points.userData._phases = phases;
+  points.userData._seeds  = seeds;
+  points.userData._baseAlpha = spec.baseAlpha;
+  points.userData._alphaJitter = spec.alphaJitter;
+  points.userData._tickAcc = Math.random() * 10;  // animation clock offset
+  points.userData._initialized = false;           // hero-centering flag
+  points.visible = false;
+  return points;
+}
+
+// Per-stage tick functions. All operate on absolute world coords; hero passes
+// in its x/z to anchor the wrap-disc. Vertical drift uses world Y bounds (not
+// hero-relative) so jumps don't fountain particles.
+function _tickForest(points, dt, hx, hz) {
+  const spec = points.userData._atmosSpec;
+  const pos  = points.geometry.attributes.position.array;
+  const seeds = points.userData._seeds;
+  points.userData._tickAcc += dt;
+  const t = points.userData._tickAcc;
+  const R = spec.radius, R2 = R * R;
+  const N = spec.count;
+  for (let i = 0; i < N; i++) {
+    const ix = i * 3;
+    // Slow upward drift + sin-wave x-jitter
+    pos[ix + 1] += dt * (0.6 + Math.sin(t * 0.5 + seeds[i]) * 0.15);
+    pos[ix + 0] += dt * Math.sin(t * 0.7 + seeds[i] * 0.13) * 0.20;
+    // Respawn at base when above yMax
+    if (pos[ix + 1] > spec.yMax) {
+      pos[ix + 1] = spec.yMin + Math.random() * 1.0;
+    }
+    // Horizontal wrap around hero (mirror to opposite edge)
+    const dx = pos[ix + 0] - hx;
+    const dz = pos[ix + 2] - hz;
+    if (dx * dx + dz * dz > R2) {
+      pos[ix + 0] = hx - dx;
+      pos[ix + 2] = hz - dz;
+    }
+  }
+  points.geometry.attributes.position.needsUpdate = true;
+}
+
+function _tickTwilight(points, dt, hx, hz) {
+  const spec = points.userData._atmosSpec;
+  const pos  = points.geometry.attributes.position.array;
+  const alphas = points.geometry.attributes.aAlpha.array;
+  const seeds = points.userData._seeds;
+  const phases = points.userData._phases;
+  points.userData._tickAcc += dt;
+  const t = points.userData._tickAcc;
+  const R = spec.radius, R2 = R * R;
+  const N = spec.count;
+  const base = points.userData._baseAlpha;
+  const aJit = points.userData._alphaJitter;
+  for (let i = 0; i < N; i++) {
+    const ix = i * 3;
+    // Slow vertical drift + lateral orbit
+    pos[ix + 1] += dt * (0.35 + Math.sin(t * 0.4 + seeds[i]) * 0.10);
+    const orbit = t * 0.25 + phases[i];
+    pos[ix + 0] += dt * Math.cos(orbit) * 0.30;
+    pos[ix + 2] += dt * Math.sin(orbit) * 0.30;
+    if (pos[ix + 1] > spec.yMax) {
+      pos[ix + 1] = spec.yMin + Math.random() * 1.0;
+    }
+    const dx = pos[ix + 0] - hx;
+    const dz = pos[ix + 2] - hz;
+    if (dx * dx + dz * dz > R2) {
+      pos[ix + 0] = hx - dx;
+      pos[ix + 2] = hz - dz;
+    }
+    // Occasional flicker — per-point alpha sine with random phase
+    const flicker = 0.5 + 0.5 * Math.sin(t * 2.1 + phases[i] * 3.0);
+    alphas[i] = Math.max(0.05, base + (flicker - 0.5) * 2 * aJit);
+  }
+  points.geometry.attributes.position.needsUpdate = true;
+  points.geometry.attributes.aAlpha.needsUpdate = true;
+}
+
+function _tickCinder(points, dt, hx, hz) {
+  const spec = points.userData._atmosSpec;
+  const pos  = points.geometry.attributes.position.array;
+  const seeds = points.userData._seeds;
+  points.userData._tickAcc += dt;
+  const t = points.userData._tickAcc;
+  const R = spec.radius, R2 = R * R;
+  const N = spec.count;
+  for (let i = 0; i < N; i++) {
+    const ix = i * 3;
+    // Fast upward rise + curl noise (embers swirling)
+    pos[ix + 1] += dt * (2.6 + Math.sin(t * 0.9 + seeds[i]) * 0.35);
+    const curl = t * 1.1 + seeds[i] * 0.07;
+    pos[ix + 0] += dt * Math.sin(curl) * 0.55;
+    pos[ix + 2] += dt * Math.cos(curl * 0.83) * 0.55;
+    if (pos[ix + 1] > spec.yMax) {
+      pos[ix + 1] = spec.yMin + Math.random() * 0.5;
+    }
+    const dx = pos[ix + 0] - hx;
+    const dz = pos[ix + 2] - hz;
+    if (dx * dx + dz * dz > R2) {
+      pos[ix + 0] = hx - dx;
+      pos[ix + 2] = hz - dz;
+    }
+  }
+  points.geometry.attributes.position.needsUpdate = true;
+}
+
+function _tickVoid(points, dt, hx, hz) {
+  const spec = points.userData._atmosSpec;
+  const pos  = points.geometry.attributes.position.array;
+  const alphas = points.geometry.attributes.aAlpha.array;
+  const seeds = points.userData._seeds;
+  const phases = points.userData._phases;
+  points.userData._tickAcc += dt;
+  const t = points.userData._tickAcc;
+  const R = spec.radius, R2 = R * R;
+  const N = spec.count;
+  const base = points.userData._baseAlpha;
+  const aJit = points.userData._alphaJitter;
+  for (let i = 0; i < N; i++) {
+    const ix = i * 3;
+    // Near-static with slow orbital drift
+    const orbit = t * 0.12 + phases[i];
+    pos[ix + 0] += dt * Math.cos(orbit) * 0.12;
+    pos[ix + 2] += dt * Math.sin(orbit) * 0.12;
+    pos[ix + 1] += dt * Math.sin(t * 0.18 + seeds[i]) * 0.05;
+    // Hard bounds (no vertical respawn — they barely move)
+    if (pos[ix + 1] > spec.yMax) pos[ix + 1] = spec.yMax;
+    if (pos[ix + 1] < spec.yMin) pos[ix + 1] = spec.yMin;
+    const dx = pos[ix + 0] - hx;
+    const dz = pos[ix + 2] - hz;
+    if (dx * dx + dz * dz > R2) {
+      pos[ix + 0] = hx - dx;
+      pos[ix + 2] = hz - dz;
+    }
+    // Strong twinkle — per-point alpha sine with random phase
+    const tw = 0.5 + 0.5 * Math.sin(t * 3.2 + phases[i] * 4.5 + seeds[i] * 0.01);
+    alphas[i] = Math.max(0.05, base + (tw - 0.5) * 2 * aJit);
+  }
+  points.geometry.attributes.position.needsUpdate = true;
+  points.geometry.attributes.aAlpha.needsUpdate = true;
+}
+
+const _TICKERS = {
+  forest:   _tickForest,
+  twilight: _tickTwilight,
+  cinder:   _tickCinder,
+  void:     _tickVoid,
+};
+// ─────────────────────────────────────────────────────────────────────────────
 
 // Base scatter (always present)
 const SCATTER = [
@@ -231,6 +510,19 @@ export function buildEnv(scene, renderer) {
   fill.position.set(-30, 30, -30);
   group.add(fill);
 
+  // ── Per-stage atmospheric particle clusters (iter 15) ──
+  // Build all four at boot; applyStageTint toggles visibility per stage.
+  // Each cluster ticks itself when active (tickAtmosphere below).
+  const atmosClusters = {};
+  for (const id of Object.keys(ATMOS_SPECS)) {
+    const cluster = _buildAtmosCluster(ATMOS_SPECS[id]);
+    cluster.name = `atmos_${id}`;
+    group.add(cluster);
+    atmosClusters[id] = cluster;
+  }
+  group.userData.atmosClusters = atmosClusters;
+  group.userData._activeStageId = null;
+
   scene.add(group);
   // Stash the sun on the group so main.js can re-point it each frame.
   group.userData.sun = sun;
@@ -318,6 +610,48 @@ export function buildEnv(scene, renderer) {
       fill.color.setHex(0x6644aa);
       fill.intensity = 0.20;
     }
+    // ── Per-stage atmospheric particles (iter 15) ──
+    // Show only the cluster for the active stage; flag others off so
+    // tickAtmosphere skips them. Reset _initialized so the first tick
+    // re-centers the disc on the hero's current position.
+    group.userData._activeStageId = id;
+    if (atmosClusters) {
+      for (const k of Object.keys(atmosClusters)) {
+        const c = atmosClusters[k];
+        c.visible = (k === id);
+        if (c.visible) c.userData._initialized = false;
+      }
+    }
+  };
+  // ── Tick the active stage's atmospheric particles (iter 15) ──
+  // Called once per gameplay frame from main.js. dt is real-time (not
+  // game-time) so atmosphere keeps drifting during hit-stop/pause for life.
+  // hero is optional; falls back to (0,0) if undefined (e.g. title-screen
+  // hover where the run hasn't started yet — but main.js guards anyway).
+  group.userData.tickAtmosphere = (dt, hero) => {
+    const id = group.userData._activeStageId;
+    if (!id) return;
+    const cluster = atmosClusters[id];
+    if (!cluster || !cluster.visible) return;
+    const ticker = _TICKERS[id];
+    if (!ticker) return;
+    const hx = hero && hero.pos ? hero.pos.x : 0;
+    const hz = hero && hero.pos ? hero.pos.z : 0;
+    // First-frame re-center: shift the disc-centered initial spawn so the
+    // points appear around the hero, not origin.
+    if (!cluster.userData._initialized) {
+      const pos = cluster.geometry.attributes.position.array;
+      const N = cluster.userData._atmosSpec.count;
+      for (let i = 0; i < N; i++) {
+        pos[i * 3 + 0] += hx;
+        pos[i * 3 + 2] += hz;
+      }
+      cluster.geometry.attributes.position.needsUpdate = true;
+      cluster.userData._initialized = true;
+    }
+    // Clamp dt for safety (long pauses / tab-switch resume).
+    const safeDt = Math.min(dt, 0.05);
+    ticker(cluster, safeDt, hx, hz);
   };
   return group;
 }
