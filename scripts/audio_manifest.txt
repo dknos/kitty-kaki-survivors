@@ -1,0 +1,106 @@
+# audio_manifest.txt — sample selection + per-file ffmpeg processing.
+# Format: BUCKET | SOURCE (under /tmp/kk_audio_raw/) | TARGET (under assets/audio/<bucket-dir>/) | FFMPEG -af FILTERS
+# (Common trim+norm is prepended automatically by process-audio.sh.)
+#
+# Notes on filter primitives used here:
+#   asetrate=44100*R + aresample=44100 + atempo=1/R  → pitch shift with constant duration
+#   asetrate=44100*R alone                            → pitch shift + length change (cheaper, fine for short FX)
+#   aecho=0.6:0.4:60:0.3                              → light tail-reverb-ish slap
+#   highpass=f=300 / lowpass=f=8000                   → corrective EQ
+#   atrim=0:N                                         → hard duration cap (keeps tight)
+#
+# Buckets follow the existing audio.js sfx.* API surface. 26 buckets, ~50 files,
+# multi-variant where repetition matters (hit/enemyHurt/coinPickup), single shot
+# where only one body is needed (victory, heroDeath, bossSpawn).
+
+# ── HITS (enemy hurt = the busiest sound in game — 3 variants + ±pitch jitter) ──
+enemyHurt    | impact_pack/Audio/impactSoft_heavy_000.ogg     | enemy_hurt_a.ogg   | asetrate=44100*1.18,aresample=44100,atempo=1/1.18,atrim=0:0.20
+enemyHurt    | impact_pack/Audio/impactSoft_heavy_002.ogg     | enemy_hurt_b.ogg   | asetrate=44100*1.08,aresample=44100,atempo=1/1.08,atrim=0:0.20
+enemyHurt    | impact_pack/Audio/impactPunch_medium_001.ogg   | enemy_hurt_c.ogg   | asetrate=44100*1.05,aresample=44100,atempo=1/1.05,atrim=0:0.20
+
+# ── Generic hit (legacy 'hit' bucket used by orbitals/chain when no enemy is involved) ──
+hit          | impact_pack/Audio/impactPunch_medium_000.ogg   | hit_a.ogg          | atrim=0:0.18
+hit          | impact_pack/Audio/impactPunch_medium_003.ogg   | hit_b.ogg          | atrim=0:0.18
+
+# ── Enemy death (light pop + low chunk) ──
+enemyDeath   | impact_pack/Audio/impactPunch_heavy_000.ogg    | enemy_death_a.ogg  | asetrate=44100*0.88,aresample=44100,atempo=1/0.88,atrim=0:0.28
+enemyDeath   | impact_pack/Audio/impactPunch_heavy_002.ogg    | enemy_death_b.ogg  | asetrate=44100*0.92,aresample=44100,atempo=1/0.92,atrim=0:0.28
+
+# ── Elite death (heavier + glitter tail) ──
+eliteDeath   | jingles_pack/Audio/Hit jingles/jingles_HIT12.ogg | elite_death.ogg  | asetrate=44100*0.95,aresample=44100,atempo=1/0.95,atrim=0:0.80,aecho=0.6:0.4:50:0.25
+
+# ── Hero hit / hurt (lower body, more crunch) ──
+heroHit      | impact_pack/Audio/impactSoft_heavy_004.ogg     | hero_hit.ogg       | asetrate=44100*0.82,aresample=44100,atempo=1/0.82,atrim=0:0.30,lowpass=f=4000
+heroHurt     | impact_pack/Audio/impactPunch_heavy_003.ogg    | hero_hurt.ogg      | asetrate=44100*0.80,aresample=44100,atempo=1/0.80,atrim=0:0.36,lowpass=f=3500
+
+# ── PICKUPS (sparkly, ~-15dB feel — runtime gain already lowers them) ──
+pickup       | casino_pack/Audio/card-slide-3.ogg             | xp_pickup_a.ogg    | asetrate=44100*1.35,aresample=44100,atempo=1/1.35,highpass=f=600,atrim=0:0.18
+pickup       | casino_pack/Audio/card-slide-5.ogg             | xp_pickup_b.ogg    | asetrate=44100*1.42,aresample=44100,atempo=1/1.42,highpass=f=600,atrim=0:0.18
+pickup       | casino_pack/Audio/chip-lay-2.ogg               | xp_pickup_c.ogg    | asetrate=44100*1.30,aresample=44100,atempo=1/1.30,highpass=f=500,atrim=0:0.22
+
+# ── coinPickup (gem ding, even brighter) ──
+coinPickup   | casino_pack/Audio/chip-lay-1.ogg               | coin_pickup_a.ogg  | asetrate=44100*1.55,aresample=44100,atempo=1/1.55,highpass=f=900,atrim=0:0.22
+coinPickup   | casino_pack/Audio/chips-handle-2.ogg           | coin_pickup_b.ogg  | asetrate=44100*1.40,aresample=44100,atempo=1/1.40,highpass=f=900,atrim=0:0.22
+
+# ── heartPickup (warm chime — pizzicato cell) ──
+heartPickup  | jingles_pack/Audio/Pizzicato jingles/jingles_PIZZI03.ogg | heart_pickup.ogg | asetrate=44100*1.08,aresample=44100,atempo=1/1.08,atrim=0:0.55
+
+# ── starPickup (sparkly upper-octave) ──
+starPickup   | jingles_pack/Audio/Pizzicato jingles/jingles_PIZZI06.ogg | star_pickup.ogg  | asetrate=44100*1.25,aresample=44100,atempo=1/1.25,atrim=0:0.55,highpass=f=400
+
+# ── chestOpen (thunk + sparkle — sax jingle for the magic flourish) ──
+chestOpen    | jingles_pack/Audio/Pizzicato jingles/jingles_PIZZI08.ogg | chest_open.ogg   | atrim=0:0.90,aecho=0.6:0.5:80:0.3
+
+# ── LEVEL-UP (rising NES arpeggio — already perfect, just trim/normalize) ──
+levelUp      | jingles_pack/Audio/8-Bit jingles/jingles_NES03.ogg | levelup.ogg     | atrim=0:1.20,aecho=0.6:0.3:80:0.2
+
+# ── VICTORY (longest NES fanfare in the pack) ──
+victory      | jingles_pack/Audio/8-Bit jingles/jingles_NES00.ogg | victory.ogg     | aecho=0.7:0.4:120:0.3
+
+# ── DEATH (generic) ──
+death        | jingles_pack/Audio/Hit jingles/jingles_HIT15.ogg  | death.ogg        | asetrate=44100*0.78,aresample=44100,atempo=1/0.78,lowpass=f=2200
+
+# ── HERO DEATH (long descending — pitched-down minor sax + heavy lowpass for doom) ──
+heroDeath    | jingles_pack/Audio/Sax jingles/jingles_SAX07.ogg  | hero_death.ogg   | asetrate=44100*0.68,aresample=44100,atempo=1/0.68,lowpass=f=1800,aecho=0.7:0.5:200:0.4
+
+# ── EXPLOSION (generic) ──
+explosion    | scifi_pack/Audio/explosionCrunch_002.ogg          | explosion.ogg    | atrim=0:0.55,lowpass=f=3500
+
+# ── WEAPONS ───────────────────────────────────────────────────────────────────
+
+# shoot — generic projectile (legacy hook, used as fallback) — short laser
+shoot        | digital_pack/Audio/laser5.ogg                   | shoot.ogg          | atrim=0:0.18
+
+# burger orbital — meaty soft impact, low + thump
+weaponBurger | impact_pack/Audio/impactSoft_heavy_001.ogg      | weapon_burger_a.ogg| asetrate=44100*0.85,aresample=44100,atempo=1/0.85,atrim=0:0.22
+weaponBurger | impact_pack/Audio/impactSoft_heavy_003.ogg      | weapon_burger_b.ogg| asetrate=44100*0.82,aresample=44100,atempo=1/0.82,atrim=0:0.22
+
+# chain — electric zap, two stacked tones (we'll bias the variants in audio.js)
+weaponChain  | digital_pack/Audio/zap1.ogg                     | weapon_chain_a.ogg | atrim=0:0.18,highpass=f=400
+weaponChain  | digital_pack/Audio/zapTwoTone.ogg               | weapon_chain_b.ogg | atrim=0:0.22,highpass=f=400
+
+# autoaim — pop + sweep (digital laser, pitched up)
+weaponAutoaim| digital_pack/Audio/laser1.ogg                   | weapon_autoaim_a.ogg | asetrate=44100*1.20,aresample=44100,atempo=1/1.20,atrim=0:0.16
+weaponAutoaim| digital_pack/Audio/laser3.ogg                   | weapon_autoaim_b.ogg | asetrate=44100*1.15,aresample=44100,atempo=1/1.15,atrim=0:0.18
+
+# bomb — deep low boom (sci-fi explosion + extra body)
+weaponBomb   | scifi_pack/Audio/lowFrequency_explosion_000.ogg | weapon_bomb.ogg    | atrim=0:0.90,lowpass=f=2200,aecho=0.6:0.5:80:0.4
+
+# web/frostbloom — slow magical pluck, pitched-down interface pluck
+weaponWeb    | interface_pack/Audio/pluck_001.ogg              | weapon_web_a.ogg   | asetrate=44100*0.78,aresample=44100,atempo=1/0.78,atrim=0:0.35,aecho=0.6:0.4:60:0.25
+weaponWeb    | interface_pack/Audio/pluck_002.ogg              | weapon_web_b.ogg   | asetrate=44100*0.82,aresample=44100,atempo=1/0.82,atrim=0:0.35,aecho=0.6:0.4:60:0.25
+
+# dash — whoosh (filtered noise from spaceEngine + a small phaser tail)
+weaponDash   | scifi_pack/Audio/thrusterFire_002.ogg           | weapon_dash.ogg    | atrim=0:0.35,highpass=f=400,lowpass=f=3500
+
+# ── BOSS ─────────────────────────────────────────────────────────────────────
+
+# bossWarn — repeating low warning bell (we trim short; audio.js plays once now)
+bossWarn     | impact_pack/Audio/impactBell_heavy_002.ogg      | boss_warn.ogg      | asetrate=44100*0.90,aresample=44100,atempo=1/0.90,atrim=0:0.80,aecho=0.7:0.5:120:0.4
+
+# bossSpawn — ominous bell + low rumble layered (audio.js sequences with setTimeout)
+bossSpawn    | impact_pack/Audio/impactBell_heavy_000.ogg      | boss_spawn_bell.ogg| asetrate=44100*0.72,aresample=44100,atempo=1/0.72,atrim=0:1.40,lowpass=f=4000,aecho=0.8:0.6:200:0.5
+bossSpawn    | scifi_pack/Audio/lowFrequency_explosion_001.ogg | boss_spawn_rumble.ogg | atrim=0:1.20,lowpass=f=900
+
+# bossShockwave — fast low whoosh + sweep (sci-fi engine pulse)
+bossShockwave| scifi_pack/Audio/lowFrequency_explosion_000.ogg | boss_shockwave.ogg | asetrate=44100*1.05,aresample=44100,atempo=1/1.05,atrim=0:0.50,highpass=f=200,lowpass=f=2800
