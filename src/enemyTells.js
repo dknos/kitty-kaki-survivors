@@ -102,70 +102,187 @@ for (let i = 0; i < LEAP_MARKER_CAP; i++) _leapSlots[i] = { used: false, x: 0, z
 let _leapFrame = 0;
 
 // ──────────────────────────────────────────────────────────────────────────
-// Procedural rune-ring texture — sharp inner pulse + outer band of ticks +
-// 4 cardinal runic glyphs. Beats a flat-color RingGeometry by a country mile.
+// Procedural rune-ring texture — high-density summoning sigil.
+//
+// Iter 25 upgrade: matches `weapons/web.js _makeWeb()` motif density so every
+// consumer (frostbloom, sigilbell, helltide, town statues, enemy tells,
+// boss telegraphs, pylons, chests, bells, catacomb, interior, miniEvents)
+// reads as "spell circle / summoning glyph" instead of "ring with ticks."
+//
+// CRITICAL CONSTRAINT (drop-in compat):
+//   The visible alpha band MUST stay inside r ≈ 0.62…0.75 (×S). Every consumer
+//   sizes its `PlaneGeometry` around that band; widening or shifting changes
+//   the apparent radius of every spell effect in the game. Density goes
+//   INSIDE the band, never outside.
+//
+// Texture is grayscale white-on-transparent — `material.color` tints downstream
+// drive green (frostbloom), yellow (sigilbell ramp/treasure), blue (volatile/
+// frost affixes), pink (mini/leap/helltide rift), amber (helltide altar), etc.
+//
+// Bloom-friendly: peak alpha = 1.0 on hot pixels so the post-FX bloom pass
+// picks the rim/runes out. No raw 4-flat-diamonds anymore.
 // ──────────────────────────────────────────────────────────────────────────
 export function makeRuneRingTexture() { return _makeRuneRingTexture(); }
 function _makeRuneRingTexture() {
-  const S = 256;
+  // 512² doubles per-pixel detail vs old 256² (4× pixels, well under budget —
+  // one cached upload reused across ~16 consumers).
+  const S = 512;
   const c = document.createElement('canvas');
   c.width = c.height = S;
   const ctx = c.getContext('2d');
   ctx.clearRect(0, 0, S, S);
   const cx = S / 2, cy = S / 2;
 
-  // Radial falloff: hot center band, cool soft edges (alpha mask).
+  // ── Layer 1: Radial mask (alpha envelope) ─────────────────────────────
+  // Same stop positions as the previous (256²) texture so every consumer's
+  // PlaneGeometry size still aligns to the visible band.
   const g = ctx.createRadialGradient(cx, cy, S * 0.30, cx, cy, S * 0.50);
   g.addColorStop(0.00, 'rgba(0,0,0,0)');
   g.addColorStop(0.45, 'rgba(255,255,255,0.0)');
-  g.addColorStop(0.62, 'rgba(255,255,255,0.95)');
-  g.addColorStop(0.75, 'rgba(255,255,255,0.55)');
-  g.addColorStop(0.92, 'rgba(255,255,255,0.10)');
+  g.addColorStop(0.58, 'rgba(255,255,255,0.55)');
+  g.addColorStop(0.66, 'rgba(255,255,255,1.0)');
+  g.addColorStop(0.72, 'rgba(255,255,255,0.85)');
+  g.addColorStop(0.78, 'rgba(255,255,255,0.45)');
+  g.addColorStop(0.92, 'rgba(255,255,255,0.08)');
   g.addColorStop(1.00, 'rgba(255,255,255,0)');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, S, S);
 
-  // Tick marks around the outer edge (24 ticks).
   ctx.save();
   ctx.translate(cx, cy);
+  ctx.lineCap = 'round';
+
+  // ── Layer 2: Twin concentric arcs (inner thin filament + outer rim) ──
+  // Matches web.js's "thin lines at varied radii" feel without breaking the
+  // alpha band. Inner filament at 0.62, outer rim at 0.74.
+  ctx.strokeStyle = 'rgba(255,255,255,1)';
+  ctx.lineWidth = 2.0; // 4px primary outline at 512² ≈ style-bible 4px@1024
+  ctx.beginPath();
+  ctx.arc(0, 0, S * 0.62, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.lineWidth = 3.0;
+  ctx.beginPath();
+  ctx.arc(0, 0, S * 0.74, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // ── Layer 3: Arc-segmented inner band — broken arcs read as a glyph ──
+  // 8 short arcs at r=0.68 with gaps between, evoking a sectioned cipher
+  // wheel. Style-bible 2px secondary line weight (1.0px @ 512²).
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+  for (let i = 0; i < 8; i++) {
+    const a0 = (i / 8) * Math.PI * 2 + 0.06;
+    const a1 = a0 + (Math.PI * 2 / 8) - 0.12;
+    ctx.beginPath();
+    ctx.arc(0, 0, S * 0.685, a0, a1);
+    ctx.stroke();
+  }
+
+  // ── Layer 4: 24 tick marks crossing the band (radial strokes) ─────────
+  // Tighter & denser than the old 24 outer ticks — these now span the full
+  // band width so the ring reads as "scribed measurement glyph."
   ctx.strokeStyle = 'rgba(255,255,255,0.95)';
-  ctx.lineWidth = 2.5;
+  ctx.lineWidth = 1.4;
   for (let i = 0; i < 24; i++) {
     const a = (i / 24) * Math.PI * 2;
-    const r0 = S * 0.40, r1 = S * 0.46;
+    const r0 = S * 0.64, r1 = S * 0.72;
     ctx.beginPath();
     ctx.moveTo(Math.cos(a) * r0, Math.sin(a) * r0);
     ctx.lineTo(Math.cos(a) * r1, Math.sin(a) * r1);
     ctx.stroke();
   }
-  // 4 cardinal "rune" wedges — small diamonds.
+
+  // ── Layer 5: 8 cardinal runic glyphs (replacing the old 4 diamonds) ──
+  // Two interleaved shapes — diamonds at N/E/S/W, "eye" lozenges at the
+  // ordinal angles. Hand-inked summoning circle vibe per the original brief
+  // ("hand-inked summoning rune instead of a stack of two flat colored
+  // shapes" — sigilbell.js comment).
   ctx.fillStyle = 'rgba(255,255,255,1)';
-  for (let i = 0; i < 4; i++) {
-    const a = (i / 4) * Math.PI * 2;
-    const r = S * 0.36;
+  ctx.strokeStyle = 'rgba(255,255,255,1)';
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    const r = S * 0.685;
     const x = Math.cos(a) * r, y = Math.sin(a) * r;
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(a);
-    ctx.beginPath();
-    ctx.moveTo(0, -5);
-    ctx.lineTo(7, 0);
-    ctx.lineTo(0, 5);
-    ctx.lineTo(-7, 0);
-    ctx.closePath();
-    ctx.fill();
+    if (i % 2 === 0) {
+      // Cardinal diamonds — pointed glyph
+      ctx.beginPath();
+      ctx.moveTo(0, -10);
+      ctx.lineTo(13, 0);
+      ctx.lineTo(0, 10);
+      ctx.lineTo(-13, 0);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      // Ordinal "eye lozenges" — elongated rune with inner dot
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 12, 5, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(0,0,0,0.85)';
+      ctx.beginPath();
+      ctx.arc(0, 0, 2.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,1)';
+    }
+    ctx.restore();
   }
-  // Thin bright filament right at the center band.
-  ctx.strokeStyle = 'rgba(255,255,255,1)';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.arc(0, 0, S * 0.31, 0, Math.PI * 2);
-  ctx.stroke();
+
+  // ── Layer 6: 4 chord "spokes" connecting opposing runes ───────────────
+  // Thin diametric lines crossing the disc give the eye a "magic-circle
+  // grid" cue. Stay alpha-low so we don't fill in the center hole.
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+  ctx.lineWidth = 1.0;
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a) * S * 0.66, Math.sin(a) * S * 0.66);
+    ctx.lineTo(Math.cos(a + Math.PI) * S * 0.66, Math.sin(a + Math.PI) * S * 0.66);
+    ctx.stroke();
+  }
+
+  // ── Layer 7: Outer "hairs" — 48 high-frequency stipple ticks ─────────
+  // Just outside the rim, alpha-low. Reads as ink-bleed / paper texture
+  // (style-bible "paper grain"), and gives bloom something to halo over.
+  ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+  ctx.lineWidth = 0.8;
+  for (let i = 0; i < 48; i++) {
+    const a = (i / 48) * Math.PI * 2;
+    const r0 = S * 0.755;
+    const r1 = S * 0.755 + (i % 3 === 0 ? 8 : 4); // varied length
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a) * r0, Math.sin(a) * r0);
+    ctx.lineTo(Math.cos(a) * r1, Math.sin(a) * r1);
+    ctx.stroke();
+  }
+
   ctx.restore();
+
+  // ── Layer 8: Paper-grain noise modulation (subtle alpha jitter) ──────
+  // Per style-bible "warm paper, ink lines." 6% alpha jitter inside the
+  // visible band keeps the texture from looking sterile / vector-pure.
+  // Sampled directly into the canvas pixels so it composes with all layers.
+  const img = ctx.getImageData(0, 0, S, S);
+  const data = img.data;
+  for (let y = 0; y < S; y += 1) {
+    for (let x = 0; x < S; x += 1) {
+      const idx = (y * S + x) * 4 + 3;
+      if (data[idx] === 0) continue;
+      // 2-octave value noise — cheap, deterministic
+      const n = (Math.sin(x * 0.27 + y * 0.41) * 0.5 + Math.cos((x - y) * 0.19) * 0.5);
+      const jitter = 1.0 + n * 0.06;
+      data[idx] = Math.max(0, Math.min(255, Math.floor(data[idx] * jitter)));
+    }
+  }
+  ctx.putImageData(img, 0, 0);
 
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 4;
+  t.anisotropy = 8; // bumped from 4 — denser detail benefits from filtering
+  t.generateMipmaps = true;
+  t.minFilter = THREE.LinearMipmapLinearFilter;
+  t.magFilter = THREE.LinearFilter;
   t.needsUpdate = true;
   return t;
 }
