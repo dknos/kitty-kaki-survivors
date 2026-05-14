@@ -61,15 +61,54 @@ export function createCharCarousel(host, opts) {
     width: 100%; max-width: 760px; margin: 12px auto 0;
     pointer-events: auto;
   `;
-  // main.js installs a window-level click-to-start handler; without this guard,
-  // every carousel interaction bubbles up and starts the run.
   wrap.addEventListener('click', (e) => { e.stopPropagation(); });
   wrap.addEventListener('mousedown', (e) => { e.stopPropagation(); });
   wrap.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
 
+  // Stage row: [ ‹ ]  [ canvas stage ]  [ › ]
+  const stageRow = document.createElement('div');
+  stageRow.style.cssText = `
+    display: flex; align-items: center; gap: 8px;
+    width: 100%; pointer-events: auto;
+  `;
+  wrap.appendChild(stageRow);
+
+  const mkArrow = (dir) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = dir < 0 ? '‹' : '›';
+    b.setAttribute('aria-label', dir < 0 ? 'Previous character' : 'Next character');
+    b.style.cssText = `
+      flex: 0 0 auto;
+      width: 52px; height: 52px; border-radius: 26px;
+      background: linear-gradient(180deg, rgba(20,28,22,0.92), rgba(8,14,12,0.96));
+      border: 1px solid rgba(255,210,127,0.55);
+      color: ${C_AMBER}; font-size: 32px; line-height: 44px; font-weight: 700;
+      cursor: pointer; user-select: none;
+      box-shadow: 0 6px 16px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,210,127,0.12);
+      pointer-events: auto;
+      display: flex; align-items: center; justify-content: center;
+      padding: 0;
+      transition: background 0.15s, transform 0.1s;
+    `;
+    b.addEventListener('mouseenter', () => { b.style.background = 'linear-gradient(180deg, rgba(30,40,32,0.95), rgba(14,22,18,0.98))'; });
+    b.addEventListener('mouseleave', () => { b.style.background = 'linear-gradient(180deg, rgba(20,28,22,0.92), rgba(8,14,12,0.96))'; });
+    b.addEventListener('mousedown', (e) => { e.stopPropagation(); b.style.transform = 'translateY(1px)'; });
+    b.addEventListener('mouseup', () => { b.style.transform = 'translateY(0)'; });
+    b.addEventListener('click', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      advance(dir);
+    });
+    return b;
+  };
+  const prevBtn = mkArrow(-1);
+  const nextBtn = mkArrow(+1);
+
   const stage = document.createElement('div');
   stage.style.cssText = `
-    position: relative; width: 100%; aspect-ratio: 16 / 9; max-height: 360px;
+    position: relative; flex: 1 1 auto; aspect-ratio: 16 / 9; max-height: 360px;
+    min-width: 0;
     border: 1px solid rgba(127,255,228,0.18);
     border-radius: 12px;
     background:
@@ -78,33 +117,10 @@ export function createCharCarousel(host, opts) {
     box-shadow: 0 18px 40px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.04);
     overflow: hidden;
   `;
-  wrap.appendChild(stage);
 
-  // Arrow buttons (HTML overlays — outside WebGL canvas)
-  const mkArrow = (dir) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.textContent = dir < 0 ? '‹' : '›';
-    b.setAttribute('aria-label', dir < 0 ? 'Previous character' : 'Next character');
-    b.style.cssText = `
-      position: absolute; top: 50%; ${dir < 0 ? 'left:8px' : 'right:8px'};
-      transform: translateY(-50%);
-      width: 44px; height: 44px; border-radius: 22px;
-      background: linear-gradient(180deg, rgba(20,28,22,0.85), rgba(8,14,12,0.92));
-      border: 1px solid rgba(255,210,127,0.4);
-      color: ${C_AMBER}; font-size: 28px; line-height: 38px; font-weight: 700;
-      cursor: pointer; user-select: none;
-      box-shadow: 0 6px 14px rgba(0,0,0,0.55);
-      pointer-events: auto;
-      z-index: 3;
-    `;
-    b.addEventListener('click', (e) => { e.stopPropagation(); advance(dir); });
-    return b;
-  };
-  const prevBtn = mkArrow(-1);
-  const nextBtn = mkArrow(+1);
-  stage.appendChild(prevBtn);
-  stage.appendChild(nextBtn);
+  stageRow.appendChild(prevBtn);
+  stageRow.appendChild(stage);
+  stageRow.appendChild(nextBtn);
 
   // Pip indicator strip
   const pipRow = document.createElement('div');
