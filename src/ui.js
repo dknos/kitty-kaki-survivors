@@ -232,7 +232,7 @@ function injectCSS() {
     }
     .kk-modal-title {
       font-family: ${F.display};
-      font-size: 44px; font-weight: 900;
+      font-size: calc(var(--kk-font-scale, 1) * 44px); font-weight: 900;
       letter-spacing: 0.18em; margin-bottom: 32px;
       color: ${C.amber};
       text-shadow: 0 2px 16px rgba(0,0,0,0.55);
@@ -274,28 +274,28 @@ function injectCSS() {
     }
     .kk-card-num {
       font-family: ${F.display};
-      font-size: 11px; color: ${C.amber};
+      font-size: calc(var(--kk-font-scale, 1) * 11px); color: ${C.amber};
       margin-bottom: 4px; letter-spacing: 0.32em;
       opacity: 0.8;
     }
     .kk-card-icon {
-      font-size: 60px; line-height: 1; margin: 6px 0 10px;
+      font-size: calc(var(--kk-font-scale, 1) * 60px); line-height: 1; margin: 6px 0 10px;
       filter: drop-shadow(0 4px 10px rgba(0,0,0,0.5));
     }
     .kk-card-name {
       font-family: ${F.display};
-      font-size: 19px; font-weight: 700; color: ${C.text};
+      font-size: calc(var(--kk-font-scale, 1) * 19px); font-weight: 700; color: ${C.text};
       text-align: center; margin-bottom: 4px;
       letter-spacing: 0.08em;
     }
     .kk-card-level {
       font-family: ${F.body};
-      font-size: 11px; color: ${C.amber};
+      font-size: calc(var(--kk-font-scale, 1) * 11px); color: ${C.amber};
       margin-bottom: 12px; letter-spacing: 0.32em;
       text-transform: uppercase;
     }
     .kk-card-desc {
-      font-size: 12.5px; color: rgba(245,239,225,0.78);
+      font-size: calc(var(--kk-font-scale, 1) * 12.5px); color: rgba(245,239,225,0.78);
       text-align: center; line-height: 1.5;
       flex: 1;
       font-family: ${F.body};
@@ -318,19 +318,19 @@ function injectCSS() {
     }
     .kk-death-title {
       font-family: ${F.display};
-      font-size: 76px; font-weight: 900; letter-spacing: 0.18em;
+      font-size: calc(var(--kk-font-scale, 1) * 76px); font-weight: 900; letter-spacing: 0.18em;
       color: ${C.red};
       text-shadow: 0 4px 18px rgba(0,0,0,0.6), 0 0 22px rgba(255,94,94,0.35);
       margin-bottom: 28px;
     }
     .kk-death-stats {
       font-family: ${F.body};
-      font-size: 15px; color: ${C.text};
+      font-size: calc(var(--kk-font-scale, 1) * 15px); color: ${C.text};
       line-height: 1.9; margin-bottom: 18px;
       text-align: left;
       background: rgba(8,14,12,0.55);
       border: 1px solid ${C.edge}; border-radius: 8px;
-      padding: 18px 28px; min-width: 360px;
+      padding: 18px 28px; min-width: min(360px, 90vw);
       letter-spacing: 0.04em;
     }
     .kk-death-stats .kk-stat-val {
@@ -339,7 +339,7 @@ function injectCSS() {
       float: right; margin-left: 18px;
     }
     .kk-death-hint {
-      font-size: 12px; color: rgba(245,239,225,0.7);
+      font-size: calc(var(--kk-font-scale, 1) * 12px); color: rgba(245,239,225,0.7);
       letter-spacing: 0.28em; text-transform: uppercase;
       margin-top: 10px;
     }
@@ -360,7 +360,7 @@ function injectCSS() {
     }
     .kk-start-title {
       font-family: ${F.display};
-      font-size: 68px; font-weight: 900;
+      font-size: calc(var(--kk-font-scale, 1) * 68px); font-weight: 900;
       letter-spacing: 0.22em;
       color: ${C.amber};
       text-shadow:
@@ -372,7 +372,7 @@ function injectCSS() {
     }
     .kk-start-sub {
       font-family: ${F.body};
-      font-size: 13px; color: rgba(245,239,225,0.78);
+      font-size: calc(var(--kk-font-scale, 1) * 13px); color: rgba(245,239,225,0.78);
       letter-spacing: 0.34em; text-transform: uppercase;
       animation: kk-pulse 1.6s ease-in-out infinite;
     }
@@ -390,14 +390,16 @@ function injectCSS() {
     }
 
     /* ── Mobile ── */
+    /* Iter 21b — drop hardcoded font-size overrides so the global --kk-font-scale
+       responsive default (set in index.html @media block) actually reaches modal
+       text. We keep layout overrides (column cards, narrower HP bar) since those
+       aren't covered by the scale var. */
     @media (max-width: 600px) {
       .kk-card-row { flex-direction: column; gap: 12px; }
       .kk-card { width: 80vw; min-height: 0; padding: 12px; }
-      .kk-card-icon { font-size: 40px; margin: 4px 0 8px; }
-      .kk-modal-title { font-size: 30px; margin-bottom: 18px; }
+      .kk-card-icon { margin: 4px 0 8px; }
+      .kk-modal-title { margin-bottom: 18px; }
       .kk-hp-bar { width: 150px; }
-      .kk-death-title { font-size: 44px; }
-      .kk-start-title { font-size: 38px; }
     }
   `;
   const style = document.createElement('style');
@@ -741,7 +743,7 @@ export function showLevelUpModal(choices) {
   title.textContent = 'Level Up';
   _modal.appendChild(title);
   const sub = document.createElement('div');
-  sub.style.cssText = `font-family: ${F.body}; font-size: 12px; letter-spacing: 0.34em;
+  sub.style.cssText = `font-family: ${F.body}; font-size: calc(var(--kk-font-scale, 1) * 12px); letter-spacing: 0.34em;
     color: rgba(245,239,225,0.62); text-transform: uppercase; margin: -22px 0 28px;`;
   sub.textContent = 'Choose your path';
   _modal.appendChild(sub);
@@ -757,12 +759,12 @@ export function showLevelUpModal(choices) {
   function qolBtn(label, accent, charges) {
     const b = document.createElement('button');
     b.type = 'button';
-    b.innerHTML = `${label} <span style="font-family:${F.mono};font-size:11px;opacity:0.78;margin-left:6px;">×${charges}</span>`;
+    b.innerHTML = `${label} <span style="font-family:${F.mono};font-size:calc(var(--kk-font-scale, 1) * 11px);opacity:0.78;margin-left:6px;">×${charges}</span>`;
     b.style.cssText = `padding: 10px 22px; cursor: pointer;
       background: linear-gradient(180deg, rgba(20,28,22,0.86), rgba(8,14,12,0.92));
       border: 1px solid ${C.edge}; border-radius: 8px;
       color: ${accent};
-      font-family: ${F.display}; font-size: 13px; font-weight: 700;
+      font-family: ${F.display}; font-size: calc(var(--kk-font-scale, 1) * 13px); font-weight: 700;
       letter-spacing: 0.26em;
       box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 20px rgba(0,0,0,0.5);`;
     return b;
@@ -1021,13 +1023,13 @@ export function showDeathScreen() {
     align-items: baseline;
   `;
   const statRow = (label, value, extra = '') => `
-    <div style="font-family:${F.body}; letter-spacing:0.20em; text-transform:uppercase; font-size:12px; color:rgba(245,239,225,0.72);">${label}</div>
-    <div style="font-family:${F.mono}; font-size:15px; color:${C.amber}; text-align:right;">${value}${extra}</div>
+    <div style="font-family:${F.body}; letter-spacing:0.20em; text-transform:uppercase; font-size:calc(var(--kk-font-scale, 1) * 12px); color:rgba(245,239,225,0.72);">${label}</div>
+    <div style="font-family:${F.mono}; font-size:calc(var(--kk-font-scale, 1) * 15px); color:${C.amber}; text-align:right;">${value}${extra}</div>
   `;
   // Custom-colored row for sigil earnings — magenta/epic shade, matches `#c87bff`.
   const sigilRow = (label, value) => `
-    <div style="font-family:${F.body}; letter-spacing:0.20em; text-transform:uppercase; font-size:12px; color:rgba(245,239,225,0.72);">${label}</div>
-    <div style="font-family:${F.mono}; font-size:15px; color:#c87bff; text-align:right;">${value}</div>
+    <div style="font-family:${F.body}; letter-spacing:0.20em; text-transform:uppercase; font-size:calc(var(--kk-font-scale, 1) * 12px); color:rgba(245,239,225,0.72);">${label}</div>
+    <div style="font-family:${F.mono}; font-size:calc(var(--kk-font-scale, 1) * 15px); color:#c87bff; text-align:right;">${value}</div>
   `;
   stats.innerHTML = [
     statRow('Time Survived',  fmtTime(state.time.game), bestT),
@@ -1069,7 +1071,7 @@ export function showDeathScreen() {
     border: 1px solid ${retryAccent};
     border-radius: 8px;
     color: ${retryAccent};
-    font-family: ${F.display}; font-size: 18px; font-weight: 700;
+    font-family: ${F.display}; font-size: calc(var(--kk-font-scale, 1) * 18px); font-weight: 700;
     letter-spacing: 0.32em;
     box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 12px 28px rgba(0,0,0,0.5);`;
   btnRow.appendChild(retryBtn);
@@ -1083,7 +1085,7 @@ export function showDeathScreen() {
     border: 1px solid #c9b07a;
     border-radius: 8px;
     color: #c9b07a;
-    font-family: ${F.display}; font-size: 16px; font-weight: 700;
+    font-family: ${F.display}; font-size: calc(var(--kk-font-scale, 1) * 16px); font-weight: 700;
     letter-spacing: 0.24em;
     box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 12px 28px rgba(0,0,0,0.5);`;
   btnRow.appendChild(townBtn);
@@ -1099,7 +1101,7 @@ export function showDeathScreen() {
     margin: 6px 0 4px 0;
     font-family: ${F.body};
     color: ${C.text};
-    min-width: 460px; max-width: 580px;
+    min-width: min(460px, 90vw); max-width: 580px;
     background: rgba(8,14,12,0.55);
     border: 1px solid ${C.edge}; border-radius: 8px;
     padding: 16px 22px;
@@ -1114,7 +1116,7 @@ export function showDeathScreen() {
   if (sources.length > 0) {
     const head = document.createElement('div');
     head.style.cssText = `
-      font-family: ${F.display}; font-size: 11px;
+      font-family: ${F.display}; font-size: calc(var(--kk-font-scale, 1) * 11px);
       color: ${C.amber}; letter-spacing: 0.36em; text-transform: uppercase;
       margin-bottom: 10px;
     `;
@@ -1129,7 +1131,7 @@ export function showDeathScreen() {
         grid-template-columns: 110px 1fr 60px 46px 60px;
         gap: 14px; align-items: center;
         padding: 3px 0;
-        font-size: 12px;
+        font-size: calc(var(--kk-font-scale, 1) * 12px);
       `;
       const label = src.replace(/_/g, ' ');
       const pctRatio = amt / totalDmg;
@@ -1153,7 +1155,7 @@ export function showDeathScreen() {
     relicPanel = document.createElement('div');
     relicPanel.style.cssText = `
       margin: 4px 0; padding: 16px 22px;
-      min-width: 460px; max-width: 580px;
+      min-width: min(460px, 90vw); max-width: 580px;
       background: linear-gradient(180deg, rgba(20,28,22,0.94), rgba(8,14,12,0.96));
       border: 1px solid ${drop.tierColor};
       border-radius: 10px;
@@ -1164,14 +1166,14 @@ export function showDeathScreen() {
       animation: kk-fade-in 0.42s ease-out;
     `;
     const affixLines = drop.affixes.map(a =>
-      `<div style="font-family:${F.body};font-size:13px;color:${C.text};letter-spacing:0.06em;margin-top:3px;">▸ ${escapeHtml(a.fmt)}</div>`
+      `<div style="font-family:${F.body};font-size:calc(var(--kk-font-scale, 1) * 13px);color:${C.text};letter-spacing:0.06em;margin-top:3px;">▸ ${escapeHtml(a.fmt)}</div>`
     ).join('');
     relicPanel.innerHTML = `
-      <div style="font-family:${F.display};font-size:10px;color:${drop.tierColor};letter-spacing:0.36em;text-transform:uppercase;margin-bottom:2px;">★ Relic Dropped</div>
-      <div style="font-family:${F.display};font-size:20px;font-weight:700;color:${C.text};letter-spacing:0.10em;">${escapeHtml(drop.name)}</div>
-      <div style="font-family:${F.body};font-size:11px;color:${drop.tierColor};letter-spacing:0.28em;text-transform:uppercase;margin-top:2px;">${escapeHtml(drop.tier)}</div>
+      <div style="font-family:${F.display};font-size:calc(var(--kk-font-scale, 1) * 10px);color:${drop.tierColor};letter-spacing:0.36em;text-transform:uppercase;margin-bottom:2px;">★ Relic Dropped</div>
+      <div style="font-family:${F.display};font-size:calc(var(--kk-font-scale, 1) * 20px);font-weight:700;color:${C.text};letter-spacing:0.10em;">${escapeHtml(drop.name)}</div>
+      <div style="font-family:${F.body};font-size:calc(var(--kk-font-scale, 1) * 11px);color:${drop.tierColor};letter-spacing:0.28em;text-transform:uppercase;margin-top:2px;">${escapeHtml(drop.tier)}</div>
       <div style="margin-top:8px;">${affixLines}</div>
-      <div style="margin-top:10px; font-family:${F.body}; font-size:11px; color:rgba(245,239,225,0.62); letter-spacing:0.04em;">Auto-equipped for next run · manage in Grimoire.</div>
+      <div style="margin-top:10px; font-family:${F.body}; font-size:calc(var(--kk-font-scale, 1) * 11px); color:rgba(245,239,225,0.62); letter-spacing:0.04em;">Auto-equipped for next run · manage in Grimoire.</div>
     `;
   }
 
@@ -1208,7 +1210,7 @@ export function showDeathScreen() {
     }
   } catch (e) {
     // Friendly fallback label so the area doesn't read as broken.
-    previewWrap.innerHTML = `<div style="font-family:${F.body}; font-size:11px; letter-spacing:0.18em; color:rgba(245,239,225,0.55); text-transform:uppercase;">preview</div>`;
+    previewWrap.innerHTML = `<div style="font-family:${F.body}; font-size:calc(var(--kk-font-scale, 1) * 11px); letter-spacing:0.18em; color:rgba(245,239,225,0.55); text-transform:uppercase;">preview</div>`;
   }
   // SHARE button — sized to read at first glance, accent-matched to victory
   // (amber) or death (cyan) like RETRY so the row reads as one composition.
@@ -1221,7 +1223,7 @@ export function showDeathScreen() {
     border: 1px solid ${shareAccent};
     border-radius: 8px;
     color: ${shareAccent};
-    font-family: ${F.display}; font-size: 16px; font-weight: 700;
+    font-family: ${F.display}; font-size: calc(var(--kk-font-scale, 1) * 16px); font-weight: 700;
     letter-spacing: 0.28em;
     box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 12px 28px rgba(0,0,0,0.5), 0 0 16px ${shareAccent}33;`;
   shareBtn.addEventListener('click', async (e) => {
@@ -1339,8 +1341,8 @@ export function showStartScreen(text) {
 
   const meta = getMeta();
   const metaLine = document.createElement('div');
-  metaLine.style.cssText = `margin-top:24px;font-size:14px;color:${C.amber};text-shadow:0 0 6px ${C.amber};letter-spacing:2px;`;
-  metaLine.style.cssText = `margin-top: 8px; font-family: ${F.body}; font-size: 13px; letter-spacing: 0.24em; text-transform: uppercase; color: rgba(245,239,225,0.78);`;
+  metaLine.style.cssText = `margin-top:24px;font-size:calc(var(--kk-font-scale, 1) * 14px);color:${C.amber};text-shadow:0 0 6px ${C.amber};letter-spacing:2px;`;
+  metaLine.style.cssText = `margin-top: 8px; font-family: ${F.body}; font-size: calc(var(--kk-font-scale, 1) * 13px); letter-spacing: 0.24em; text-transform: uppercase; color: rgba(245,239,225,0.78);`;
   metaLine.innerHTML = meta.runs > 0
     ? `<span style="color:${C.amber}">${meta.coins.toLocaleString()}</span> coins  ·  best <span style="color:${C.amber}">${fmtTime(meta.bestTime)}</span>  ·  <span style="color:${C.amber}">${meta.runs}</span> runs`
     : '<span style="opacity:0.7;">— first run —</span>';
@@ -1410,7 +1412,7 @@ export function showStartScreen(text) {
           <div style="margin-top:6px;display:flex;justify-content:center;">
             <span style="
               display:inline-block;padding:2px 8px;
-              font-family:${F.body};font-size:10px;font-weight:600;
+              font-family:${F.body};font-size:calc(var(--kk-font-scale, 1) * 10px);font-weight:600;
               letter-spacing:0.14em;text-transform:uppercase;
               border-radius:999px;border:1px solid ${C.cyan};
               color:${C.cyan};background:rgba(127,255,228,0.10);
@@ -1428,7 +1430,7 @@ export function showStartScreen(text) {
         const ratio = Math.max(0, Math.min(1, have / sigilNeed));
         const pct = (ratio * 100).toFixed(0);
         sigilPip = `
-          <div style="margin-top:8px;font-family:${F.mono};font-size:10px;letter-spacing:0.08em;color:${SIGIL_PIP_C};text-align:center;">
+          <div style="margin-top:8px;font-family:${F.mono};font-size:calc(var(--kk-font-scale, 1) * 10px);letter-spacing:0.08em;color:${SIGIL_PIP_C};text-align:center;">
             ✦ Sigils: ${Math.min(have, sigilNeed)}/${sigilNeed}
           </div>
           <div style="margin-top:4px;height:5px;border-radius:3px;background:rgba(255,255,255,0.08);overflow:hidden;">
@@ -1438,16 +1440,16 @@ export function showStartScreen(text) {
         // Once unlocked, replace the pip with a green check so the card
         // doesn't look "stuck at locked" if the player glances back.
         sigilPip = `
-          <div style="margin-top:6px;font-family:${F.mono};font-size:10.5px;letter-spacing:0.08em;color:${C.green};text-align:center;">
+          <div style="margin-top:6px;font-family:${F.mono};font-size:calc(var(--kk-font-scale, 1) * 10.5px);letter-spacing:0.08em;color:${C.green};text-align:center;">
             ✓ Sigils complete
           </div>`;
       }
       // Locked-state desc fallback uses the pretty hint instead of the raw token.
       const descLine = unlocked ? escapeHtml(ch.desc) : escapeHtml(formatUnlockHint(ch.unlock));
       card.innerHTML = `
-        <div style="font-size:36px;line-height:1;margin-bottom:6px;filter:drop-shadow(0 3px 6px rgba(0,0,0,0.5));">${unlocked ? ch.icon : '🔒'}</div>
-        <div style="font-family:${F.display};font-size:13px;letter-spacing:0.18em;font-weight:700;color:${selected ? C.amber : C.text};margin-bottom:6px;">${escapeHtml(ch.name)}</div>
-        <div style="font-size:10.5px;line-height:1.45;letter-spacing:0.02em;opacity:${unlocked ? 0.78 : 0.55};">${descLine}</div>
+        <div style="font-size:calc(var(--kk-font-scale, 1) * 36px);line-height:1;margin-bottom:6px;filter:drop-shadow(0 3px 6px rgba(0,0,0,0.5));">${unlocked ? ch.icon : '🔒'}</div>
+        <div style="font-family:${F.display};font-size:calc(var(--kk-font-scale, 1) * 13px);letter-spacing:0.18em;font-weight:700;color:${selected ? C.amber : C.text};margin-bottom:6px;">${escapeHtml(ch.name)}</div>
+        <div style="font-size:calc(var(--kk-font-scale, 1) * 10.5px);line-height:1.45;letter-spacing:0.02em;opacity:${unlocked ? 0.78 : 0.55};">${descLine}</div>
         ${signatureChip}
         ${sigilPip}
       `;
@@ -1522,7 +1524,7 @@ export function showStartScreen(text) {
     border: 1px solid ${C.edge};
     border-radius: 8px;
     color: ${accent};
-    font-family: ${F.display}; font-size: 13px; font-weight: 700;
+    font-family: ${F.display}; font-size: calc(var(--kk-font-scale, 1) * 13px); font-weight: 700;
     letter-spacing: 0.28em;
     box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 20px rgba(0,0,0,0.5);
   `;
@@ -1610,7 +1612,7 @@ export function showStartScreen(text) {
     border-radius:5px;
     border:1px solid rgba(245,239,225,0.28);
     background: rgba(8,14,12,0.66);
-    font-size:11px;
+    font-size:calc(var(--kk-font-scale, 1) * 11px);
     color:rgba(245,239,225,0.85);
     cursor:pointer;
     transition: transform 0.12s ease, border-color 0.12s ease;
@@ -1629,9 +1631,9 @@ export function showStartScreen(text) {
       ? `BEST ${m.dailyRun.bestKills}K · ${fmtTime(m.dailyRun.bestTime)}`
       : 'NO RUNS YET';
     dailyBtn.innerHTML = `
-      <div style="font-family:${F.display}; font-size:13px; font-weight:700; letter-spacing:0.28em;">Daily ${on ? '★' : ''}</div>
-      <div style="font-family:${F.body}; font-size:9.5px; opacity:0.82; margin-top:3px; letter-spacing:0.12em; text-transform:uppercase;">${escapeHtml(cfg.date)} · ${escapeHtml(cfg.modifier)}</div>
-      <div style="font-family:${F.mono}; font-size:10px; opacity:0.85; margin-top:2px;">${best}</div>
+      <div style="font-family:${F.display}; font-size:calc(var(--kk-font-scale, 1) * 13px); font-weight:700; letter-spacing:0.28em;">Daily ${on ? '★' : ''}</div>
+      <div style="font-family:${F.body}; font-size:calc(var(--kk-font-scale, 1) * 9.5px); opacity:0.82; margin-top:3px; letter-spacing:0.12em; text-transform:uppercase;">${escapeHtml(cfg.date)} · ${escapeHtml(cfg.modifier)}</div>
+      <div style="font-family:${F.mono}; font-size:calc(var(--kk-font-scale, 1) * 10px); opacity:0.85; margin-top:2px;">${best}</div>
       ${_shareIconHTML}
     `;
     dailyBtn.style.cssText = `padding: 10px 26px 10px 18px; cursor: pointer; position:relative;
@@ -1701,9 +1703,9 @@ export function showStartScreen(text) {
       ? `BEST ${m.weeklyBest.kills}K · ${fmtTime(m.weeklyBest.time || 0)}`
       : 'NO RUNS YET';
     weeklyBtn.innerHTML = `
-      <div style="font-family:${F.display}; font-size:13px; font-weight:700; letter-spacing:0.28em;">Weekly ${on ? '★' : ''}</div>
-      <div style="font-family:${F.body}; font-size:9.5px; opacity:0.82; margin-top:3px; letter-spacing:0.12em; text-transform:uppercase;">${escapeHtml(wk)} · ${escapeHtml(label)}</div>
-      <div style="font-family:${F.mono}; font-size:10px; opacity:0.85; margin-top:2px;">${best}</div>
+      <div style="font-family:${F.display}; font-size:calc(var(--kk-font-scale, 1) * 13px); font-weight:700; letter-spacing:0.28em;">Weekly ${on ? '★' : ''}</div>
+      <div style="font-family:${F.body}; font-size:calc(var(--kk-font-scale, 1) * 9.5px); opacity:0.82; margin-top:3px; letter-spacing:0.12em; text-transform:uppercase;">${escapeHtml(wk)} · ${escapeHtml(label)}</div>
+      <div style="font-family:${F.mono}; font-size:calc(var(--kk-font-scale, 1) * 10px); opacity:0.85; margin-top:2px;">${best}</div>
       ${_shareIconHTML}
     `;
     weeklyBtn.style.cssText = `padding: 10px 26px 10px 18px; cursor: pointer; position:relative;
@@ -1817,7 +1819,7 @@ export function showStartScreen(text) {
       border: 1px solid ${C.cyan};
       border-radius: 8px;
       font-family: ${F.body};
-      font-size: 11.5px; letter-spacing: 0.18em; text-transform: uppercase;
+      font-size: calc(var(--kk-font-scale, 1) * 11.5px); letter-spacing: 0.18em; text-transform: uppercase;
       color: ${C.cyan};
       box-shadow: 0 0 14px rgba(127,255,228,0.22), 0 6px 18px rgba(0,0,0,0.4);
       max-width: 80vw;
@@ -1848,12 +1850,12 @@ export function showStartScreen(text) {
       border: 1px solid ${relic.tierColor};
       border-radius: 999px;
       box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 18px rgba(0,0,0,0.5);
-      font-family: ${F.body}; font-size: 11.5px; color: ${C.text};
+      font-family: ${F.body}; font-size: calc(var(--kk-font-scale, 1) * 11.5px); color: ${C.text};
       letter-spacing: 0.06em;
       display: inline-flex; align-items: center; gap: 8px;
     `;
     chip.innerHTML = `
-      <span style="font-family:${F.display}; font-size:10px; letter-spacing:0.32em; color:${relic.tierColor}; text-transform:uppercase;">${escapeHtml(relic.tier)} Relic</span>
+      <span style="font-family:${F.display}; font-size:calc(var(--kk-font-scale, 1) * 10px); letter-spacing:0.32em; color:${relic.tierColor}; text-transform:uppercase;">${escapeHtml(relic.tier)} Relic</span>
       <span style="opacity:0.78;">${affixSummary}</span>
     `;
     _startScreen.appendChild(chip);
@@ -1890,8 +1892,8 @@ export function showStartScreen(text) {
           transition: transform 0.16s ease, border-color 0.16s ease;
         `;
         chip.innerHTML = `
-          <div style="font-family:${F.display};font-size:13px;font-weight:700;letter-spacing:0.14em;color:${selected ? C.amber : C.text};">${escapeHtml(st.name)}</div>
-          <div style="font-size:11px;line-height:1.45;opacity:${locked ? 0.55 : 0.78};margin-top:3px;">${locked ? (st.id === 'cinder' ? 'Unlocks after a Twilight Hollow victory.' : 'Unlocks after first victory.') : escapeHtml(st.desc)}</div>
+          <div style="font-family:${F.display};font-size:calc(var(--kk-font-scale, 1) * 13px);font-weight:700;letter-spacing:0.14em;color:${selected ? C.amber : C.text};">${escapeHtml(st.name)}</div>
+          <div style="font-size:calc(var(--kk-font-scale, 1) * 11px);line-height:1.45;opacity:${locked ? 0.55 : 0.78};margin-top:3px;">${locked ? (st.id === 'cinder' ? 'Unlocks after a Twilight Hollow victory.' : 'Unlocks after first victory.') : escapeHtml(st.desc)}</div>
         `;
         if (!locked) {
           chip.onclick = (e) => {
@@ -1931,7 +1933,7 @@ export function showStartScreen(text) {
 
   // Empty-state subtitle — only shown when there are no user presets saved.
   const presetSubtitle = document.createElement('div');
-  presetSubtitle.style.cssText = `font-family:${F.body}; font-size:10.5px;
+  presetSubtitle.style.cssText = `font-family:${F.body}; font-size:calc(var(--kk-font-scale, 1) * 10.5px);
     letter-spacing:0.28em; text-transform:uppercase;
     color: rgba(245,239,225,0.55);`;
   presetSubtitle.textContent = 'Save your favorite character + stage combo.';
@@ -1966,7 +1968,7 @@ export function showStartScreen(text) {
     input.type = 'text';
     input.maxLength = 32;
     input.placeholder = 'Preset name…';
-    input.style.cssText = `padding:8px 12px; font-family:${F.body}; font-size:12px;
+    input.style.cssText = `padding:8px 12px; font-family:${F.body}; font-size:calc(var(--kk-font-scale, 1) * 12px);
       background: rgba(8,14,12,0.65); color:${C.text};
       border: 1px solid ${C.edge}; border-radius:6px;
       letter-spacing:0.06em; min-width:180px; outline:none;`;
@@ -1980,7 +1982,7 @@ export function showStartScreen(text) {
     saveBtn.style.cssText = `padding:8px 14px; cursor:pointer;
       background: linear-gradient(180deg, rgba(200,123,255,0.22), rgba(110,60,180,0.18));
       border: 1px solid ${PRESET_C}; border-radius:6px;
-      color:${PRESET_C}; font-family:${F.display}; font-size:11px;
+      color:${PRESET_C}; font-family:${F.display}; font-size:calc(var(--kk-font-scale, 1) * 11px);
       letter-spacing:0.22em; font-weight:700;`;
 
     const cancelBtn = document.createElement('button');
@@ -1990,7 +1992,7 @@ export function showStartScreen(text) {
     cancelBtn.style.cssText = `padding:8px 14px; cursor:pointer;
       background: rgba(20,28,22,0.78);
       border: 1px solid ${C.edge}; border-radius:6px;
-      color:rgba(245,239,225,0.7); font-family:${F.display}; font-size:11px;
+      color:rgba(245,239,225,0.7); font-family:${F.display}; font-size:calc(var(--kk-font-scale, 1) * 11px);
       letter-spacing:0.22em;`;
 
     const commit = () => {
@@ -2070,10 +2072,10 @@ export function showStartScreen(text) {
       // Truncate stage labels that would overflow the chip.
       const stageShort = stageLabel.length > 14 ? stageLabel.slice(0, 13) + '…' : stageLabel;
       chip.innerHTML = `
-        <span style="font-size:16px; line-height:1;">${charIcon}</span>
+        <span style="font-size:calc(var(--kk-font-scale, 1) * 16px); line-height:1;">${charIcon}</span>
         <span style="display:inline-flex; flex-direction:column; line-height:1.2; min-width:0;">
-          <span style="font-family:${F.display}; font-size:11px; letter-spacing:0.14em; font-weight:700; color:${C.text}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:160px;">${escapeHtml(p.name)}</span>
-          <span style="font-family:${F.body}; font-size:9.5px; letter-spacing:0.18em; text-transform:uppercase; color:rgba(245,239,225,0.6);">${escapeHtml(stageShort)}</span>
+          <span style="font-family:${F.display}; font-size:calc(var(--kk-font-scale, 1) * 11px); letter-spacing:0.14em; font-weight:700; color:${C.text}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:160px;">${escapeHtml(p.name)}</span>
+          <span style="font-family:${F.body}; font-size:calc(var(--kk-font-scale, 1) * 9.5px); letter-spacing:0.18em; text-transform:uppercase; color:rgba(245,239,225,0.6);">${escapeHtml(stageShort)}</span>
         </span>
       `;
 
@@ -2087,7 +2089,7 @@ export function showStartScreen(text) {
         width: 18px; height: 18px; padding: 0;
         background: transparent; border: none;
         color: rgba(245,239,225,0.45); cursor: pointer;
-        font-family: ${F.mono}; font-size: 12px; line-height: 1;
+        font-family: ${F.mono}; font-size: calc(var(--kk-font-scale, 1) * 12px); line-height: 1;
       `;
       closeBtn.addEventListener('mouseenter', () => { closeBtn.style.color = C.red; });
       closeBtn.addEventListener('mouseleave', () => { closeBtn.style.color = 'rgba(245,239,225,0.45)'; });
@@ -2161,7 +2163,7 @@ export function showStartScreen(text) {
       box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 18px rgba(0,0,0,0.5);
       color: ${disabled ? 'rgba(120,120,120,0.6)' : PRESET_C};
       cursor: ${disabled ? 'not-allowed' : 'pointer'};
-      font-family: ${F.display}; font-size: 11px;
+      font-family: ${F.display}; font-size: calc(var(--kk-font-scale, 1) * 11px);
       letter-spacing: 0.20em; font-weight: 700;
       display: inline-flex; align-items: center; gap: 6px;
       transition: transform 0.14s ease, border-color 0.14s ease;
@@ -2327,13 +2329,13 @@ export function showSlotMachine() {
 
   const title = document.createElement('div');
   title.textContent = 'Treasure';
-  title.style.cssText = `font-family: ${F.display}; font-size: 52px; font-weight: 900;
+  title.style.cssText = `font-family: ${F.display}; font-size: calc(var(--kk-font-scale, 1) * 52px); font-weight: 900;
     letter-spacing: 0.20em; color: ${C.amber};
     text-shadow: 0 2px 18px rgba(0,0,0,0.6), 0 0 28px rgba(255,210,127,0.22);
     margin-bottom: 6px;`;
 
   const slotSub = document.createElement('div');
-  slotSub.style.cssText = `font-family: ${F.body}; font-size: 11px; letter-spacing: 0.34em;
+  slotSub.style.cssText = `font-family: ${F.body}; font-size: calc(var(--kk-font-scale, 1) * 11px); letter-spacing: 0.34em;
     color: rgba(245,239,225,0.62); text-transform: uppercase; margin-bottom: 22px;`;
   slotSub.textContent = 'Spin the reels of fortune';
 
@@ -2356,7 +2358,7 @@ export function showSlotMachine() {
       border: 1px solid ${C.edge};
       border-radius: 8px;
       display: flex; align-items: center; justify-content: center;
-      font-size: 64px; line-height: 1;
+      font-size: calc(var(--kk-font-scale, 1) * 64px); line-height: 1;
       box-shadow: inset 0 2px 10px rgba(0,0,0,0.7), inset 0 -1px 0 rgba(255,255,255,0.04);
       filter: drop-shadow(0 4px 8px rgba(0,0,0,0.4));`;
     r.textContent = '❓';
@@ -2365,7 +2367,7 @@ export function showSlotMachine() {
   }
 
   const result = document.createElement('div');
-  result.style.cssText = `min-height: 56px; font-family: ${F.display}; font-size: 24px; font-weight: 700;
+  result.style.cssText = `min-height: 56px; font-family: ${F.display}; font-size: calc(var(--kk-font-scale, 1) * 24px); font-weight: 700;
     letter-spacing: 0.22em; color: ${C.text};
     margin-bottom: 18px; text-align: center;`;
   result.textContent = 'Rolling…';
@@ -2378,7 +2380,7 @@ export function showSlotMachine() {
     border: 1px solid ${accent};
     border-radius: 8px;
     color: ${accent};
-    font-family: ${F.display}; font-size: 14px; font-weight: 700;
+    font-family: ${F.display}; font-size: calc(var(--kk-font-scale, 1) * 14px); font-weight: 700;
     letter-spacing: 0.28em;
     box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 12px 26px rgba(0,0,0,0.55);
     display: none;`;
@@ -2510,14 +2512,14 @@ export function showGrimoire() {
     z-index: 120; overflow-y: auto;
   `;
   const title = document.createElement('div');
-  title.style.cssText = `font-family: ${F.display}; font-size: 44px; font-weight: 900;
+  title.style.cssText = `font-family: ${F.display}; font-size: calc(var(--kk-font-scale, 1) * 44px); font-weight: 900;
     letter-spacing: 0.20em; color: ${C.magenta};
     text-shadow: 0 2px 16px rgba(0,0,0,0.55), 0 0 24px rgba(255,122,216,0.22);
     margin-bottom: 6px;`;
   title.textContent = 'Grimoire';
 
   const subtitle = document.createElement('div');
-  subtitle.style.cssText = `font-family: ${F.body}; font-size: 11px; letter-spacing: 0.32em;
+  subtitle.style.cssText = `font-family: ${F.body}; font-size: calc(var(--kk-font-scale, 1) * 11px); letter-spacing: 0.32em;
     color: rgba(245,239,225,0.62); text-transform: uppercase; margin-bottom: 26px;`;
   subtitle.textContent = 'Evolution recipes — discovered through play';
 
@@ -2526,7 +2528,7 @@ export function showGrimoire() {
 
   // Passives section header + grid (populated below alongside evolutions).
   const passSubtitle = document.createElement('div');
-  passSubtitle.style.cssText = `font-family: ${F.body}; font-size: 11px; letter-spacing: 0.32em;
+  passSubtitle.style.cssText = `font-family: ${F.body}; font-size: calc(var(--kk-font-scale, 1) * 11px); letter-spacing: 0.32em;
     color: rgba(245,239,225,0.62); text-transform: uppercase; margin: 28px 0 14px;`;
   passSubtitle.textContent = 'Passives — mastery across runs';
 
@@ -2559,13 +2561,13 @@ export function showGrimoire() {
       }
       const descText = p.desc(Math.max(1, lifetimeLevel || 1));
       card.innerHTML = `
-        <div style="font-size:30px;text-align:center;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));${lifetimeLevel > 0 ? '' : 'opacity:0.45;'}">${p.icon}</div>
+        <div style="font-size:calc(var(--kk-font-scale, 1) * 30px);text-align:center;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));${lifetimeLevel > 0 ? '' : 'opacity:0.45;'}">${p.icon}</div>
         <div>
-          <div style="font-family:${F.display};font-size:13px;font-weight:700;letter-spacing:0.10em;color:${lifetimeLevel > 0 ? C.magenta : 'rgba(180,180,180,0.7)'};">${escapeHtml(p.name)}</div>
-          <div style="font-size:11px;color:rgba(245,239,225,0.72);line-height:1.45;margin:3px 0 6px;">${escapeHtml(descText)}</div>
+          <div style="font-family:${F.display};font-size:calc(var(--kk-font-scale, 1) * 13px);font-weight:700;letter-spacing:0.10em;color:${lifetimeLevel > 0 ? C.magenta : 'rgba(180,180,180,0.7)'};">${escapeHtml(p.name)}</div>
+          <div style="font-size:calc(var(--kk-font-scale, 1) * 11px);color:rgba(245,239,225,0.72);line-height:1.45;margin:3px 0 6px;">${escapeHtml(descText)}</div>
           <div style="display:flex;align-items:center;gap:8px;">
             <div>${pips}</div>
-            <div style="font-family:${F.mono};font-size:10px;color:rgba(245,239,225,0.55);letter-spacing:0.08em;">Lv ${lifetimeLevel}/${p.maxLevel}</div>
+            <div style="font-family:${F.mono};font-size:calc(var(--kk-font-scale, 1) * 10px);color:rgba(245,239,225,0.55);letter-spacing:0.08em;">Lv ${lifetimeLevel}/${p.maxLevel}</div>
           </div>
         </div>
       `;
@@ -2587,21 +2589,21 @@ export function showGrimoire() {
       `;
       if (found) {
         card.innerHTML = `
-          <div style="font-size:40px;text-align:center;filter:drop-shadow(0 3px 6px rgba(0,0,0,0.5));">${evo.icon}</div>
+          <div style="font-size:calc(var(--kk-font-scale, 1) * 40px);text-align:center;filter:drop-shadow(0 3px 6px rgba(0,0,0,0.5));">${evo.icon}</div>
           <div>
-            <div style="font-family:${F.display};font-size:15px;font-weight:700;letter-spacing:0.10em;color:${C.amber};">${escapeHtml(evo.name)}</div>
-            <div style="font-size:11.5px;color:rgba(245,239,225,0.78);line-height:1.5;margin:4px 0 8px;">${escapeHtml(evo.desc)}</div>
-            <div style="font-family:${F.body};font-size:11px;color:rgba(245,239,225,0.62);letter-spacing:0.08em;">
+            <div style="font-family:${F.display};font-size:calc(var(--kk-font-scale, 1) * 15px);font-weight:700;letter-spacing:0.10em;color:${C.amber};">${escapeHtml(evo.name)}</div>
+            <div style="font-size:calc(var(--kk-font-scale, 1) * 11.5px);color:rgba(245,239,225,0.78);line-height:1.5;margin:4px 0 8px;">${escapeHtml(evo.desc)}</div>
+            <div style="font-family:${F.body};font-size:calc(var(--kk-font-scale, 1) * 11px);color:rgba(245,239,225,0.62);letter-spacing:0.08em;">
               <span style="color:${C.amber};">Recipe</span> · ${base.icon || '★'} ${escapeHtml(base.name || baseId)} (max) + ${evo.requires.count}× ${escapeHtml(evo.requires.filler)}
             </div>
           </div>
         `;
       } else {
         card.innerHTML = `
-          <div style="font-size:40px;text-align:center;color:rgba(120,120,120,0.55);">?</div>
+          <div style="font-size:calc(var(--kk-font-scale, 1) * 40px);text-align:center;color:rgba(120,120,120,0.55);">?</div>
           <div>
-            <div style="font-family:${F.display};font-size:15px;font-weight:700;letter-spacing:0.10em;color:rgba(120,120,120,0.7);">Undiscovered</div>
-            <div style="font-size:11.5px;color:rgba(120,120,120,0.55);line-height:1.5;margin-top:4px;">Max a base weapon and stack the right passive to reveal this evolution.</div>
+            <div style="font-family:${F.display};font-size:calc(var(--kk-font-scale, 1) * 15px);font-weight:700;letter-spacing:0.10em;color:rgba(120,120,120,0.7);">Undiscovered</div>
+            <div style="font-size:calc(var(--kk-font-scale, 1) * 11.5px);color:rgba(120,120,120,0.55);line-height:1.5;margin-top:4px;">Max a base weapon and stack the right passive to reveal this evolution.</div>
           </div>
         `;
       }
@@ -2615,7 +2617,7 @@ export function showGrimoire() {
   close.style.cssText = `margin-top: 28px; padding: 10px 26px; cursor: pointer;
     background: linear-gradient(180deg, rgba(20,28,22,0.78), rgba(8,14,12,0.86));
     border: 1px solid ${C.edge}; border-radius: 8px;
-    color: ${C.magenta}; font-family: ${F.display}; font-size: 13px; font-weight: 700;
+    color: ${C.magenta}; font-family: ${F.display}; font-size: calc(var(--kk-font-scale, 1) * 13px); font-weight: 700;
     letter-spacing: 0.28em;
     box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 20px rgba(0,0,0,0.5);`;
   close.onclick = hideGrimoire;
@@ -2661,14 +2663,14 @@ export function showShop() {
     padding: 48px 20px;
   `;
   const title = document.createElement('div');
-  title.style.cssText = `font-family: ${F.display}; font-size: 44px; font-weight: 900;
+  title.style.cssText = `font-family: ${F.display}; font-size: calc(var(--kk-font-scale, 1) * 44px); font-weight: 900;
     letter-spacing: 0.20em; color: ${C.amber};
     text-shadow: 0 2px 16px rgba(0,0,0,0.55), 0 0 24px rgba(255,210,127,0.18);
     margin-bottom: 6px;`;
   title.textContent = 'Shop';
 
   const subtitle = document.createElement('div');
-  subtitle.style.cssText = `font-family: ${F.body}; font-size: 11px; letter-spacing: 0.32em;
+  subtitle.style.cssText = `font-family: ${F.body}; font-size: calc(var(--kk-font-scale, 1) * 11px); letter-spacing: 0.32em;
     color: rgba(245,239,225,0.62); text-transform: uppercase; margin-bottom: 22px;`;
   subtitle.textContent = 'Spend sigils on a permanent meta tree — carry between runs';
 
@@ -2676,18 +2678,18 @@ export function showShop() {
   // tree-shop currency; coins remain visible for context (legacy shops, codex).
   const SIGIL_C = '#c87bff';
   const coinsLine = document.createElement('div');
-  coinsLine.style.cssText = `font-family: ${F.display}; font-size: 22px; color: ${C.amber};
+  coinsLine.style.cssText = `font-family: ${F.display}; font-size: calc(var(--kk-font-scale, 1) * 22px); color: ${C.amber};
     margin-bottom: 28px; letter-spacing: 0.18em;
     display: flex; align-items: baseline; gap: 28px; flex-wrap: wrap; justify-content: center;`;
   function paintCoins() {
     const m = getMeta();
     coinsLine.innerHTML = `
       <span style="display:inline-flex; align-items:baseline; gap:10px;">
-        <span style="font-family:${F.body};font-size:13px;letter-spacing:0.32em;color:rgba(245,239,225,0.62);text-transform:uppercase;">Treasury</span>
+        <span style="font-family:${F.body};font-size:calc(var(--kk-font-scale, 1) * 13px);letter-spacing:0.32em;color:rgba(245,239,225,0.62);text-transform:uppercase;">Treasury</span>
         <span style="font-family:${F.mono};color:${C.amber};">${m.coins.toLocaleString()}</span>
       </span>
       <span style="display:inline-flex; align-items:baseline; gap:10px;">
-        <span style="font-family:${F.body};font-size:13px;letter-spacing:0.32em;color:rgba(245,239,225,0.62);text-transform:uppercase;">Sigils</span>
+        <span style="font-family:${F.body};font-size:calc(var(--kk-font-scale, 1) * 13px);letter-spacing:0.32em;color:rgba(245,239,225,0.62);text-transform:uppercase;">Sigils</span>
         <span style="font-family:${F.mono};color:${SIGIL_C};">✦ ${sigilCount().toLocaleString()}</span>
       </span>
     `;
@@ -2741,8 +2743,8 @@ export function showShop() {
       state === 'poor'  ? 'rgba(127,255,228,0.5)' :
                           'rgba(120,120,120,0.55)';
     const iconOverlay =
-      state === 'owned'  ? '<div style="position:absolute;top:8px;right:10px;font-size:18px;color:'+C.amber+';text-shadow:0 1px 4px rgba(0,0,0,0.6);">✓</div>' :
-      state === 'locked' ? '<div style="position:absolute;top:8px;right:10px;font-size:16px;opacity:0.75;">🔒</div>' :
+      state === 'owned'  ? '<div style="position:absolute;top:8px;right:10px;font-size:calc(var(--kk-font-scale, 1) * 18px);color:'+C.amber+';text-shadow:0 1px 4px rgba(0,0,0,0.6);">✓</div>' :
+      state === 'locked' ? '<div style="position:absolute;top:8px;right:10px;font-size:calc(var(--kk-font-scale, 1) * 16px);opacity:0.75;">🔒</div>' :
       '';
 
     const card = document.createElement('div');
@@ -2775,15 +2777,15 @@ export function showShop() {
 
     card.innerHTML = `
       ${iconOverlay}
-      <div style="font-size:34px;text-align:center;filter:drop-shadow(0 3px 6px rgba(0,0,0,0.5));opacity:${state === 'locked' ? 0.55 : 1};">${node.icon}</div>
+      <div style="font-size:calc(var(--kk-font-scale, 1) * 34px);text-align:center;filter:drop-shadow(0 3px 6px rgba(0,0,0,0.5));opacity:${state === 'locked' ? 0.55 : 1};">${node.icon}</div>
       <div>
         <div style="display:flex; align-items:baseline; gap:8px;">
-          <div style="font-family:${F.display};font-size:14px;font-weight:700;letter-spacing:0.10em;color:${txtC};">${escapeHtml(node.name)}</div>
-          <div style="font-family:${F.mono};font-size:10px;letter-spacing:0.18em;color:rgba(245,239,225,0.45);">${tierLabel}</div>
+          <div style="font-family:${F.display};font-size:calc(var(--kk-font-scale, 1) * 14px);font-weight:700;letter-spacing:0.10em;color:${txtC};">${escapeHtml(node.name)}</div>
+          <div style="font-family:${F.mono};font-size:calc(var(--kk-font-scale, 1) * 10px);letter-spacing:0.18em;color:rgba(245,239,225,0.45);">${tierLabel}</div>
         </div>
-        <div style="font-size:11px;color:${state === 'locked' ? 'rgba(120,120,120,0.55)' : 'rgba(245,239,225,0.72)'};line-height:1.45;margin-top:3px;">${escapeHtml(node.desc)}</div>
+        <div style="font-size:calc(var(--kk-font-scale, 1) * 11px);color:${state === 'locked' ? 'rgba(120,120,120,0.55)' : 'rgba(245,239,225,0.72)'};line-height:1.45;margin-top:3px;">${escapeHtml(node.desc)}</div>
         <div style="display:flex;gap:3px;margin-top:7px;">${pips}</div>
-        <div style="font-family:${F.mono};font-size:11px;color:${costC};margin-top:6px;letter-spacing:0.10em;">
+        <div style="font-family:${F.mono};font-size:calc(var(--kk-font-scale, 1) * 11px);color:${costC};margin-top:6px;letter-spacing:0.10em;">
           ${costLine}
         </div>
       </div>
@@ -2864,9 +2866,9 @@ export function showShop() {
       margin-bottom: 4px;
     `;
     header.innerHTML = `
-      <div style="font-size:28px;filter:drop-shadow(0 3px 6px rgba(0,0,0,0.55));">${meta.icon}</div>
-      <div style="font-family:${F.display}; font-size:18px; font-weight:700; letter-spacing:0.20em; color:${meta.accent}; margin-top:2px;">${escapeHtml(meta.name)}</div>
-      <div style="font-family:${F.body}; font-size:10.5px; letter-spacing:0.32em; text-transform:uppercase; color:rgba(245,239,225,0.55); margin-top:3px;">${escapeHtml(meta.tagline)}</div>
+      <div style="font-size:calc(var(--kk-font-scale, 1) * 28px);filter:drop-shadow(0 3px 6px rgba(0,0,0,0.55));">${meta.icon}</div>
+      <div style="font-family:${F.display}; font-size:calc(var(--kk-font-scale, 1) * 18px); font-weight:700; letter-spacing:0.20em; color:${meta.accent}; margin-top:2px;">${escapeHtml(meta.name)}</div>
+      <div style="font-family:${F.body}; font-size:calc(var(--kk-font-scale, 1) * 10.5px); letter-spacing:0.32em; text-transform:uppercase; color:rgba(245,239,225,0.55); margin-top:3px;">${escapeHtml(meta.tagline)}</div>
     `;
     col.appendChild(header);
 
@@ -2878,7 +2880,7 @@ export function showShop() {
       if (i < branchNodes.length - 1) {
         const conn = document.createElement('div');
         const lit = nodeOwned(node.id);
-        conn.style.cssText = `text-align:center; font-family:${F.mono}; font-size:16px; line-height:1;
+        conn.style.cssText = `text-align:center; font-family:${F.mono}; font-size:calc(var(--kk-font-scale, 1) * 16px); line-height:1;
           color:${lit ? meta.accent : 'rgba(245,239,225,0.22)'};
           text-shadow:${lit ? `0 0 8px ${meta.accent}55` : 'none'};
           margin: -2px 0;`;
@@ -2924,7 +2926,7 @@ export function showShop() {
   close.style.cssText = `margin-top: 28px; padding: 10px 26px; cursor: pointer;
     background: linear-gradient(180deg, rgba(20,28,22,0.78), rgba(8,14,12,0.86));
     border: 1px solid ${C.edge}; border-radius: 8px;
-    color: ${C.magenta}; font-family: ${F.display}; font-size: 13px; font-weight: 700;
+    color: ${C.magenta}; font-family: ${F.display}; font-size: calc(var(--kk-font-scale, 1) * 13px); font-weight: 700;
     letter-spacing: 0.28em;
     box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 20px rgba(0,0,0,0.5);`;
   close.onclick = hideShop;
@@ -2972,23 +2974,23 @@ export function showHouse() {
     padding: 48px 20px;
   `;
   const title = document.createElement('div');
-  title.style.cssText = `font-family: ${F.display}; font-size: 44px; font-weight: 900;
+  title.style.cssText = `font-family: ${F.display}; font-size: calc(var(--kk-font-scale, 1) * 44px); font-weight: 900;
     letter-spacing: 0.20em; color: #ffae6a;
     text-shadow: 0 2px 16px rgba(0,0,0,0.55), 0 0 24px rgba(255,160,90,0.20);
     margin-bottom: 6px;`;
   title.textContent = 'The House';
 
   const subtitle = document.createElement('div');
-  subtitle.style.cssText = `font-family: ${F.body}; font-size: 11px; letter-spacing: 0.32em;
+  subtitle.style.cssText = `font-family: ${F.body}; font-size: calc(var(--kk-font-scale, 1) * 11px); letter-spacing: 0.32em;
     color: rgba(245,239,225,0.62); text-transform: uppercase; margin-bottom: 22px;`;
   subtitle.textContent = 'Long-term renovations — fueled by Embers from past hunts';
 
   const emberLine = document.createElement('div');
-  emberLine.style.cssText = `font-family: ${F.display}; font-size: 22px; color: #ffae6a;
+  emberLine.style.cssText = `font-family: ${F.display}; font-size: calc(var(--kk-font-scale, 1) * 22px); color: #ffae6a;
     margin-bottom: 28px; letter-spacing: 0.18em;
     display: flex; align-items: baseline; gap: 12px;`;
   function paintEmbers() {
-    emberLine.innerHTML = `<span style="font-size:13px;letter-spacing:0.32em;color:rgba(245,239,225,0.62);text-transform:uppercase;">Embers</span> <span style="font-family:${F.mono};">${(getMeta().embers || 0).toLocaleString()}</span> 🔥`;
+    emberLine.innerHTML = `<span style="font-size:calc(var(--kk-font-scale, 1) * 13px);letter-spacing:0.32em;color:rgba(245,239,225,0.62);text-transform:uppercase;">Embers</span> <span style="font-family:${F.mono};">${(getMeta().embers || 0).toLocaleString()}</span> 🔥`;
   }
   paintEmbers();
 
@@ -3015,12 +3017,12 @@ export function showHouse() {
       `<span style="display:inline-block;width:14px;height:5px;border-radius:2px;background:${i < lvl ? '#ffae6a' : 'rgba(255,255,255,0.10)'};"></span>`
     ).join('');
     card.innerHTML = `
-      <div style="font-size:38px;text-align:center;filter:drop-shadow(0 3px 6px rgba(0,0,0,0.5));">${upg.icon}</div>
+      <div style="font-size:calc(var(--kk-font-scale, 1) * 38px);text-align:center;filter:drop-shadow(0 3px 6px rgba(0,0,0,0.5));">${upg.icon}</div>
       <div>
-        <div style="font-family:${F.display};font-size:15px;font-weight:700;letter-spacing:0.10em;color:${C.text};">${escapeHtml(upg.name)}</div>
-        <div style="font-size:11.5px;color:rgba(245,239,225,0.72);line-height:1.45;margin-top:3px;">${escapeHtml(upg.desc)}</div>
+        <div style="font-family:${F.display};font-size:calc(var(--kk-font-scale, 1) * 15px);font-weight:700;letter-spacing:0.10em;color:${C.text};">${escapeHtml(upg.name)}</div>
+        <div style="font-size:calc(var(--kk-font-scale, 1) * 11.5px);color:rgba(245,239,225,0.72);line-height:1.45;margin-top:3px;">${escapeHtml(upg.desc)}</div>
         <div style="display:flex;gap:3px;margin-top:8px;">${pips}</div>
-        <div style="font-family:${F.mono};font-size:11px;color:${accent};margin-top:6px;letter-spacing:0.08em;">
+        <div style="font-family:${F.mono};font-size:calc(var(--kk-font-scale, 1) * 11px);color:${accent};margin-top:6px;letter-spacing:0.08em;">
           ${maxed ? 'FULLY UPGRADED' : `${cost.toLocaleString()} 🔥`}
         </div>
       </div>
@@ -3055,7 +3057,7 @@ export function showHouse() {
   close.style.cssText = `margin-top: 28px; padding: 10px 26px; cursor: pointer;
     background: linear-gradient(180deg, rgba(20,28,22,0.78), rgba(8,14,12,0.86));
     border: 1px solid ${C.edge}; border-radius: 8px;
-    color: ${C.magenta}; font-family: ${F.display}; font-size: 13px; font-weight: 700;
+    color: ${C.magenta}; font-family: ${F.display}; font-size: calc(var(--kk-font-scale, 1) * 13px); font-weight: 700;
     letter-spacing: 0.28em;
     box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 20px rgba(0,0,0,0.5);`;
   close.onclick = hideHouse;
@@ -3100,14 +3102,14 @@ export function showQuestBoard() {
   `;
 
   const title = document.createElement('div');
-  title.style.cssText = `font-family: ${F.display}; font-size: 38px; font-weight: 900;
+  title.style.cssText = `font-family: ${F.display}; font-size: calc(var(--kk-font-scale, 1) * 38px); font-weight: 900;
     letter-spacing: 0.22em; color: ${lain ? '#4fd0ff' : '#2aff66'};
     text-shadow: 0 2px 16px rgba(0,0,0,0.55), 0 0 24px ${lain ? 'rgba(80,200,255,0.20)' : 'rgba(42,255,102,0.20)'};
     margin-bottom: 6px;`;
   title.textContent = lain ? 'NAVI · Quest Terminal' : 'KAKI-DOS · Bounty Board';
 
   const subtitle = document.createElement('div');
-  subtitle.style.cssText = `font-family: ${F.mono}; font-size: 11px; letter-spacing: 0.32em;
+  subtitle.style.cssText = `font-family: ${F.mono}; font-size: calc(var(--kk-font-scale, 1) * 11px); letter-spacing: 0.32em;
     color: rgba(245,239,225,0.6); text-transform: uppercase; margin-bottom: 22px;`;
   subtitle.textContent = `Active ${activeQuests().length} / ${maxActiveQuests()}    Completed lifetime: ${(meta.quests && meta.quests.completedCount) || 0}`;
 
@@ -3139,17 +3141,17 @@ export function showQuestBoard() {
         <div style="height:6px; background:rgba(255,255,255,0.08); border-radius:3px; margin-top:6px; overflow:hidden;">
           <div style="height:100%; width:${pct}%; background:${accent};"></div>
         </div>
-        <div style="font-family:${F.mono}; font-size:10px; color:${accent}; margin-top:4px; letter-spacing:0.08em;">
+        <div style="font-family:${F.mono}; font-size:calc(var(--kk-font-scale, 1) * 10px); color:${accent}; margin-top:4px; letter-spacing:0.08em;">
           ${q.progress} / ${tpl.goal}${complete ? '   ·   READY TO CLAIM' : ''}
         </div>
       `;
     }
     card.innerHTML = `
-      <div style="font-size:28px; line-height:1; filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));">${tpl.icon}</div>
+      <div style="font-size:calc(var(--kk-font-scale, 1) * 28px); line-height:1; filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));">${tpl.icon}</div>
       <div>
-        <div style="font-family:${F.display}; font-size:13px; font-weight:700; letter-spacing:0.10em; color:${C.text};">${escapeHtml(tpl.name)}</div>
-        <div style="font-size:11.5px; color:rgba(245,239,225,0.72); line-height:1.45; margin-top:3px;">${escapeHtml(tpl.desc)}</div>
-        <div style="font-family:${F.mono}; font-size:11px; color:${C.amber}; margin-top:6px; letter-spacing:0.06em;">
+        <div style="font-family:${F.display}; font-size:calc(var(--kk-font-scale, 1) * 13px); font-weight:700; letter-spacing:0.10em; color:${C.text};">${escapeHtml(tpl.name)}</div>
+        <div style="font-size:calc(var(--kk-font-scale, 1) * 11.5px); color:rgba(245,239,225,0.72); line-height:1.45; margin-top:3px;">${escapeHtml(tpl.desc)}</div>
+        <div style="font-family:${F.mono}; font-size:calc(var(--kk-font-scale, 1) * 11px); color:${C.amber}; margin-top:6px; letter-spacing:0.06em;">
           Reward: ${tpl.coins} coins  ·  ${tpl.embers} 🔥
         </div>
         ${progressBar}
@@ -3164,7 +3166,7 @@ export function showQuestBoard() {
       b.textContent = label;
       b.style.cssText = `padding:7px 14px; cursor:pointer;
         background:rgba(20,28,22,0.78); border:1px solid ${color}; border-radius:6px;
-        color:${color}; font-family:${F.display}; font-size:11px; letter-spacing:0.22em;`;
+        color:${color}; font-family:${F.display}; font-size:calc(var(--kk-font-scale, 1) * 11px); letter-spacing:0.22em;`;
       b.addEventListener('click', (e) => { e.stopPropagation(); fn(); });
       return b;
     };
@@ -3191,11 +3193,11 @@ export function showQuestBoard() {
   }
 
   function repaint() {
-    activeCol.innerHTML = `<div style="font-family:${F.display};font-size:12px;letter-spacing:0.30em;color:${lain ? '#4fd0ff' : '#2aff66'};margin-bottom:10px;text-transform:uppercase;">Active</div>`;
+    activeCol.innerHTML = `<div style="font-family:${F.display};font-size:calc(var(--kk-font-scale, 1) * 12px);letter-spacing:0.30em;color:${lain ? '#4fd0ff' : '#2aff66'};margin-bottom:10px;text-transform:uppercase;">Active</div>`;
     const active = activeQuests();
     if (active.length === 0) {
       const empty = document.createElement('div');
-      empty.style.cssText = `padding:18px; border:1px dashed ${C.edge}; border-radius:8px; color:rgba(245,239,225,0.5); font-size:13px; text-align:center;`;
+      empty.style.cssText = `padding:18px; border:1px dashed ${C.edge}; border-radius:8px; color:rgba(245,239,225,0.5); font-size:calc(var(--kk-font-scale, 1) * 13px); text-align:center;`;
       empty.textContent = 'No active bounties. Accept one from the offer pool →';
       activeCol.appendChild(empty);
     } else {
@@ -3204,7 +3206,7 @@ export function showQuestBoard() {
         if (tpl) activeCol.appendChild(questCard(tpl, q));
       }
     }
-    offerCol.innerHTML = `<div style="font-family:${F.display};font-size:12px;letter-spacing:0.30em;color:${C.amber};margin-bottom:10px;text-transform:uppercase;">Offer Pool</div>`;
+    offerCol.innerHTML = `<div style="font-family:${F.display};font-size:calc(var(--kk-font-scale, 1) * 12px);letter-spacing:0.30em;color:${C.amber};margin-bottom:10px;text-transform:uppercase;">Offer Pool</div>`;
     const offers = availableQuests();
     for (const tpl of offers) offerCol.appendChild(questCard(tpl, null));
     // Update header counter
@@ -3218,7 +3220,7 @@ export function showQuestBoard() {
   close.style.cssText = `margin-top: 28px; padding: 10px 26px; cursor: pointer;
     background: linear-gradient(180deg, rgba(20,28,22,0.78), rgba(8,14,12,0.86));
     border: 1px solid ${C.edge}; border-radius: 8px;
-    color: ${C.magenta}; font-family: ${F.display}; font-size: 13px; font-weight: 700;
+    color: ${C.magenta}; font-family: ${F.display}; font-size: calc(var(--kk-font-scale, 1) * 13px); font-weight: 700;
     letter-spacing: 0.28em;`;
   close.onclick = hideQuestBoard;
 
@@ -3740,7 +3742,7 @@ function _showResetConfirmModal(onConfirm) {
   box.style.cssText = `
     background: linear-gradient(180deg, rgba(40,15,15,0.95), rgba(20,8,8,0.97));
     border: 2px solid ${C.red}; border-radius: 12px;
-    padding: 24px 30px; min-width: 360px; max-width: 460px;
+    padding: 24px 30px; min-width: min(360px, 90vw); max-width: 460px;
     color: ${C.text};
     box-shadow: 0 16px 36px rgba(0,0,0,0.65), 0 0 22px rgba(255,94,94,0.25);
     display: flex; flex-direction: column; gap: 12px;
@@ -3841,10 +3843,10 @@ function _updateWeaponPanel() {
         color: ${C.text};
       `;
       const icon = document.createElement('div');
-      icon.style.cssText = 'font-size: 24px;';
+      icon.style.cssText = 'font-size: calc(var(--kk-font-scale, 1) * 24px);';
       icon.textContent = entry.icon || '★';
       const lvl = document.createElement('div');
-      lvl.style.cssText = `font-size: 10px; color: ${evolved ? C.amber : C.cyan}; letter-spacing: 1px;`;
+      lvl.style.cssText = `font-size: calc(var(--kk-font-scale, 1) * 10px); color: ${evolved ? C.amber : C.cyan}; letter-spacing: 1px;`;
       lvl.textContent = evolved ? 'EVO' : `LV${w.level}`;
       wrap.appendChild(icon); wrap.appendChild(lvl);
       _weaponPanel.appendChild(wrap);
@@ -3923,18 +3925,18 @@ function _showNextAchievement() {
       0 1px 0 rgba(255,255,255,0.06) inset,
       0 14px 30px rgba(0,0,0,0.55),
       0 0 22px rgba(255,210,127,0.18);
-    padding: 14px 18px; min-width: 280px;
+    padding: 14px 18px; min-width: min(280px, 90vw);
     font-family: ${F.body};
     color: ${C.text}; pointer-events: none; z-index: 65;
     transform: translateX(120%); transition: transform 0.4s ease-out;
     display: flex; gap: 14px; align-items: center;
   `;
   _achToast.innerHTML = `
-    <div style="font-size:38px;filter:drop-shadow(0 3px 8px rgba(0,0,0,0.5));">${def.icon}</div>
+    <div style="font-size:calc(var(--kk-font-scale, 1) * 38px);filter:drop-shadow(0 3px 8px rgba(0,0,0,0.5));">${def.icon}</div>
     <div>
-      <div style="font-family:${F.display};font-size:10px;color:${C.amber};letter-spacing:0.36em;text-transform:uppercase;">Achievement</div>
-      <div style="font-family:${F.display};font-size:18px;font-weight:700;color:${C.text};letter-spacing:0.10em;margin-top:2px;">${escapeHtml(def.name)}</div>
-      <div style="font-size:11.5px;opacity:0.78;margin-top:3px;line-height:1.45;">${escapeHtml(def.desc)}</div>
+      <div style="font-family:${F.display};font-size:calc(var(--kk-font-scale, 1) * 10px);color:${C.amber};letter-spacing:0.36em;text-transform:uppercase;">Achievement</div>
+      <div style="font-family:${F.display};font-size:calc(var(--kk-font-scale, 1) * 18px);font-weight:700;color:${C.text};letter-spacing:0.10em;margin-top:2px;">${escapeHtml(def.name)}</div>
+      <div style="font-size:calc(var(--kk-font-scale, 1) * 11.5px);opacity:0.78;margin-top:3px;line-height:1.45;">${escapeHtml(def.desc)}</div>
     </div>
   `;
   _root.appendChild(_achToast);
@@ -3978,18 +3980,18 @@ function _showNextSecret() {
       0 1px 0 rgba(255,255,255,0.06) inset,
       0 14px 30px rgba(0,0,0,0.55),
       0 0 24px rgba(200,123,255,0.28);
-    padding: 14px 18px; min-width: 300px;
+    padding: 14px 18px; min-width: min(300px, 90vw);
     font-family: ${F.body};
     color: ${C.text}; pointer-events: none; z-index: 66;
     transform: translateX(120%); transition: transform 0.4s ease-out;
     display: flex; gap: 14px; align-items: center;
   `;
   _secretToast.innerHTML = `
-    <div style="font-size:38px;filter:drop-shadow(0 3px 10px rgba(200,123,255,0.45));">${def.icon}</div>
+    <div style="font-size:calc(var(--kk-font-scale, 1) * 38px);filter:drop-shadow(0 3px 10px rgba(200,123,255,0.45));">${def.icon}</div>
     <div>
-      <div style="font-family:${F.display};font-size:10px;color:${purple};letter-spacing:0.36em;text-transform:uppercase;">★ Secret Found</div>
-      <div style="font-family:${F.display};font-size:18px;font-weight:700;color:${C.text};letter-spacing:0.10em;margin-top:2px;">${escapeHtml(def.name)}</div>
-      <div style="font-size:11.5px;opacity:0.78;margin-top:3px;line-height:1.45;">${escapeHtml(def.desc)}</div>
+      <div style="font-family:${F.display};font-size:calc(var(--kk-font-scale, 1) * 10px);color:${purple};letter-spacing:0.36em;text-transform:uppercase;">★ Secret Found</div>
+      <div style="font-family:${F.display};font-size:calc(var(--kk-font-scale, 1) * 18px);font-weight:700;color:${C.text};letter-spacing:0.10em;margin-top:2px;">${escapeHtml(def.name)}</div>
+      <div style="font-size:calc(var(--kk-font-scale, 1) * 11.5px);opacity:0.78;margin-top:3px;line-height:1.45;">${escapeHtml(def.desc)}</div>
     </div>
   `;
   _root.appendChild(_secretToast);
@@ -4019,21 +4021,21 @@ export function showTutorial() {
     background: rgba(6,16,8,0.92);
     border: 1px solid ${C.cyan};
     box-shadow: 0 0 16px rgba(68,255,204,0.55);
-    padding: 16px 28px; min-width: 460px;
+    padding: 16px 28px; min-width: min(460px, 90vw);
     font-family: ${F.body}; color: ${C.text};
-    font-size: 13px; letter-spacing: 1px; line-height: 1.8;
+    font-size: calc(var(--kk-font-scale, 1) * 13px); letter-spacing: 1px; line-height: 1.8;
     pointer-events: auto; z-index: 70;
     opacity: 0; transition: opacity 0.35s ease-out;
     text-align: left;
   `;
   _tutorial.innerHTML = `
-    <div style="font-size:18px;color:${C.cyan};text-shadow:0 0 8px ${C.cyan};letter-spacing:4px;text-align:center;margin-bottom:10px;">CONTROLS</div>
+    <div style="font-size:calc(var(--kk-font-scale, 1) * 18px);color:${C.cyan};text-shadow:0 0 8px ${C.cyan};letter-spacing:4px;text-align:center;margin-bottom:10px;">CONTROLS</div>
     <div><span style="color:${C.amber}">WASD / Arrows</span> &mdash; Move</div>
     <div><span style="color:${C.amber}">Space</span> &mdash; Jump</div>
     <div><span style="color:${C.amber}">Shift</span> &mdash; Dash <span style="opacity:0.6">(unlocks via filler)</span></div>
     <div><span style="color:${C.amber}">Mouse wheel</span> &mdash; Zoom <span style="opacity:0.6">(unlocks via filler)</span></div>
     <div><span style="color:${C.amber}">ESC</span> &mdash; Options</div>
-    <div style="text-align:center;margin-top:8px;opacity:0.7;font-size:11px;">[click or any key to dismiss]</div>
+    <div style="text-align:center;margin-top:8px;opacity:0.7;font-size:calc(var(--kk-font-scale, 1) * 11px);">[click or any key to dismiss]</div>
   `;
   _root.appendChild(_tutorial);
   // Fade in on next frame
@@ -4151,14 +4153,14 @@ export function showHallOfRecords() {
   `;
 
   const title = document.createElement('div');
-  title.style.cssText = `font-family: ${F.display}; font-size: 44px; font-weight: 900;
+  title.style.cssText = `font-family: ${F.display}; font-size: calc(var(--kk-font-scale, 1) * 44px); font-weight: 900;
     letter-spacing: 0.20em; color: ${C.magenta};
     text-shadow: 0 2px 16px rgba(0,0,0,0.55), 0 0 24px rgba(255,122,216,0.22);
     margin-bottom: 6px;`;
   title.textContent = 'Hall of Records';
 
   const subtitle = document.createElement('div');
-  subtitle.style.cssText = `font-family: ${F.body}; font-size: 11px; letter-spacing: 0.32em;
+  subtitle.style.cssText = `font-family: ${F.body}; font-size: calc(var(--kk-font-scale, 1) * 11px); letter-spacing: 0.32em;
     color: rgba(245,239,225,0.62); text-transform: uppercase; margin-bottom: 22px;`;
   subtitle.textContent = `Top ${Math.min(runs.length, 20)} runs across all categories · click a seed to replay`;
 
@@ -4179,7 +4181,7 @@ export function showHallOfRecords() {
     grid-template-columns: 48px 1.2fr 1.2fr 0.9fr 0.8fr 0.9fr 1.6fr;
     column-gap: 12px;
     padding: 8px 10px;
-    font-family: ${F.display}; font-size: 10.5px; letter-spacing: 0.30em;
+    font-family: ${F.display}; font-size: calc(var(--kk-font-scale, 1) * 10.5px); letter-spacing: 0.30em;
     text-transform: uppercase; color: ${C.amber};
     border-bottom: 1px solid ${C.edge};
   `;
@@ -4190,7 +4192,7 @@ export function showHallOfRecords() {
 
   if (runs.length === 0) {
     const empty = document.createElement('div');
-    empty.style.cssText = `padding: 28px; text-align: center; color: rgba(245,239,225,0.62); font-size: 13px; letter-spacing: 0.16em;`;
+    empty.style.cssText = `padding: 28px; text-align: center; color: rgba(245,239,225,0.62); font-size: calc(var(--kk-font-scale, 1) * 13px); letter-spacing: 0.16em;`;
     empty.textContent = 'No records yet. Survive a run to appear here.';
     table.appendChild(empty);
   } else {
@@ -4204,7 +4206,7 @@ export function showHallOfRecords() {
         column-gap: 12px;
         padding: 8px 10px;
         align-items: center;
-        font-family: ${F.mono}; font-size: 12px;
+        font-family: ${F.mono}; font-size: calc(var(--kk-font-scale, 1) * 12px);
         color: ${C.text};
         border-bottom: 1px solid rgba(255,232,188,0.06);
         ${isTop3 ? 'background: linear-gradient(90deg, rgba(255,210,127,0.05), transparent);' : ''}
@@ -4219,7 +4221,7 @@ export function showHallOfRecords() {
         border: 1px solid ${C.cyan};
         border-radius: 6px;
         color: ${C.cyan};
-        font-family: ${F.mono}; font-size: 11px; letter-spacing: 0.04em;
+        font-family: ${F.mono}; font-size: calc(var(--kk-font-scale, 1) * 11px); letter-spacing: 0.04em;
       `;
       seedBtn.addEventListener('mouseenter', () => { try { sfx.uiHover(); } catch (_) {} });
       seedBtn.addEventListener('click', (ev) => {
@@ -4248,10 +4250,10 @@ export function showHallOfRecords() {
       const stageLabel = (r.stage || '?').toUpperCase();
       const modeLabel = (r.mode || 'normal').toUpperCase();
       row.innerHTML = `
-        <div style="color:${accentC};font-family:${F.mono};font-size:14px;">#${i + 1}</div>
-        <div style="font-family:${F.display};font-size:12px;letter-spacing:0.10em;color:${C.text};">${escapeHtml(charLabel)}</div>
-        <div style="font-family:${F.body};font-size:11px;letter-spacing:0.12em;color:rgba(245,239,225,0.82);text-transform:uppercase;">${escapeHtml(stageLabel)}</div>
-        <div style="font-family:${F.body};font-size:10.5px;letter-spacing:0.16em;color:${r.mode === 'daily' ? '#c87bff' : r.mode === 'weekly' ? C.magenta : r.mode === 'hyper' ? C.red : C.cyan};text-transform:uppercase;">${escapeHtml(modeLabel)}</div>
+        <div style="color:${accentC};font-family:${F.mono};font-size:calc(var(--kk-font-scale, 1) * 14px);">#${i + 1}</div>
+        <div style="font-family:${F.display};font-size:calc(var(--kk-font-scale, 1) * 12px);letter-spacing:0.10em;color:${C.text};">${escapeHtml(charLabel)}</div>
+        <div style="font-family:${F.body};font-size:calc(var(--kk-font-scale, 1) * 11px);letter-spacing:0.12em;color:rgba(245,239,225,0.82);text-transform:uppercase;">${escapeHtml(stageLabel)}</div>
+        <div style="font-family:${F.body};font-size:calc(var(--kk-font-scale, 1) * 10.5px);letter-spacing:0.16em;color:${r.mode === 'daily' ? '#c87bff' : r.mode === 'weekly' ? C.magenta : r.mode === 'hyper' ? C.red : C.cyan};text-transform:uppercase;">${escapeHtml(modeLabel)}</div>
         <div style="color:${C.amber};">${(r.kills | 0).toLocaleString()}</div>
         <div style="color:${C.text};">${fmtTime(r.timeSurvived | 0)}</div>
       `;
@@ -4269,7 +4271,7 @@ export function showHallOfRecords() {
   close.style.cssText = `margin-top: 22px; padding: 10px 26px; cursor: pointer;
     background: linear-gradient(180deg, rgba(20,28,22,0.78), rgba(8,14,12,0.86));
     border: 1px solid ${C.edge}; border-radius: 8px;
-    color: ${C.magenta}; font-family: ${F.display}; font-size: 13px; font-weight: 700;
+    color: ${C.magenta}; font-family: ${F.display}; font-size: calc(var(--kk-font-scale, 1) * 13px); font-weight: 700;
     letter-spacing: 0.28em;`;
   close.addEventListener('mouseenter', () => { try { sfx.uiHover(); } catch (_) {} });
   close.onclick = hideHallOfRecords;
@@ -4300,27 +4302,27 @@ export function showHallOfRecords() {
     `;
     helltidePanel.innerHTML = `
       <div style="display:flex;flex-direction:column;gap:2px;">
-        <div style="font-family:${F.display};font-size:13px;font-weight:900;letter-spacing:0.28em;color:#ffae6a;text-transform:uppercase;">
+        <div style="font-family:${F.display};font-size:calc(var(--kk-font-scale, 1) * 13px);font-weight:900;letter-spacing:0.28em;color:#ffae6a;text-transform:uppercase;">
           🔥 Helltide
         </div>
-        <div style="font-family:${F.body};font-size:10.5px;letter-spacing:0.22em;color:rgba(245,239,225,0.55);text-transform:uppercase;">
+        <div style="font-family:${F.body};font-size:calc(var(--kk-font-scale, 1) * 10.5px);letter-spacing:0.22em;color:rgba(245,239,225,0.55);text-transform:uppercase;">
           Hellfire embers — lifetime tally
         </div>
       </div>
       <div style="display:flex;gap:28px;align-items:baseline;">
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;">
-          <div style="font-family:${F.mono};font-size:22px;color:#ff8a5a;letter-spacing:0.04em;">
+          <div style="font-family:${F.mono};font-size:calc(var(--kk-font-scale, 1) * 22px);color:#ff8a5a;letter-spacing:0.04em;">
             ${totalEmbers.toLocaleString()} ⚜
           </div>
-          <div style="font-family:${F.body};font-size:9.5px;letter-spacing:0.24em;color:rgba(245,239,225,0.62);text-transform:uppercase;">
+          <div style="font-family:${F.body};font-size:calc(var(--kk-font-scale, 1) * 9.5px);letter-spacing:0.24em;color:rgba(245,239,225,0.62);text-transform:uppercase;">
             Embers banked (lifetime)
           </div>
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;">
-          <div style="font-family:${F.mono};font-size:22px;color:#ff8a5a;letter-spacing:0.04em;">
+          <div style="font-family:${F.mono};font-size:calc(var(--kk-font-scale, 1) * 22px);color:#ff8a5a;letter-spacing:0.04em;">
             ${maxBanked.toLocaleString()} ⚜
           </div>
-          <div style="font-family:${F.body};font-size:9.5px;letter-spacing:0.24em;color:rgba(245,239,225,0.62);text-transform:uppercase;">
+          <div style="font-family:${F.body};font-size:calc(var(--kk-font-scale, 1) * 9.5px);letter-spacing:0.24em;color:rgba(245,239,225,0.62);text-transform:uppercase;">
             Most banked in one Helltide
           </div>
         </div>
@@ -4415,14 +4417,14 @@ export function showCredits() {
   `;
 
   const title = document.createElement('div');
-  title.style.cssText = `font-family: ${F.display}; font-size: 44px; font-weight: 900;
+  title.style.cssText = `font-family: ${F.display}; font-size: calc(var(--kk-font-scale, 1) * 44px); font-weight: 900;
     letter-spacing: 0.20em; color: ${C.amber};
     text-shadow: 0 2px 16px rgba(0,0,0,0.55), 0 0 24px rgba(255,210,127,0.22);
     margin-bottom: 6px;`;
   title.textContent = 'Credits';
 
   const subtitle = document.createElement('div');
-  subtitle.style.cssText = `font-family: ${F.body}; font-size: 11px; letter-spacing: 0.32em;
+  subtitle.style.cssText = `font-family: ${F.body}; font-size: calc(var(--kk-font-scale, 1) * 11px); letter-spacing: 0.32em;
     color: rgba(245,239,225,0.62); text-transform: uppercase; margin-bottom: 26px;`;
   subtitle.textContent = `Made with care · ${KK_VERSION}`;
 
@@ -4439,12 +4441,12 @@ export function showCredits() {
       padding: 16px 20px;
     `;
     const h = document.createElement('div');
-    h.style.cssText = `font-family: ${F.display}; font-size: 13px; font-weight: 700;
+    h.style.cssText = `font-family: ${F.display}; font-size: calc(var(--kk-font-scale, 1) * 13px); font-weight: 700;
       letter-spacing: 0.28em; text-transform: uppercase; color: ${accent}; margin-bottom: 8px;`;
     h.textContent = heading;
     card.appendChild(h);
     const body = document.createElement('div');
-    body.style.cssText = `font-size: 13px; line-height: 1.65; color: ${C.text};`;
+    body.style.cssText = `font-size: calc(var(--kk-font-scale, 1) * 13px); line-height: 1.65; color: ${C.text};`;
     body.innerHTML = lines.join('<br>');
     card.appendChild(body);
     return card;
@@ -4481,7 +4483,7 @@ export function showCredits() {
   close.style.cssText = `margin-top: 26px; padding: 10px 26px; cursor: pointer;
     background: linear-gradient(180deg, rgba(20,28,22,0.78), rgba(8,14,12,0.86));
     border: 1px solid ${C.edge}; border-radius: 8px;
-    color: ${C.amber}; font-family: ${F.display}; font-size: 13px; font-weight: 700;
+    color: ${C.amber}; font-family: ${F.display}; font-size: calc(var(--kk-font-scale, 1) * 13px); font-weight: 700;
     letter-spacing: 0.28em;
     box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 20px rgba(0,0,0,0.5);`;
   close.onclick = hideCredits;
@@ -4519,7 +4521,7 @@ function _ensureVersionLabel() {
   _versionLabel.style.cssText = `
     position: fixed; right: 12px; bottom: 12px;
     font-family: ${F.mono};
-    font-size: 10px; letter-spacing: 0.12em;
+    font-size: calc(var(--kk-font-scale, 1) * 10px); letter-spacing: 0.12em;
     color: rgba(245,239,225,0.42);
     pointer-events: none; z-index: 5;
     user-select: none;
@@ -4570,7 +4572,7 @@ function _spawnErrorToast(opts) {
       0 1px 0 rgba(255,255,255,0.06) inset,
       0 14px 30px rgba(0,0,0,0.55),
       0 0 22px ${col}33;
-    padding: 12px 16px; min-width: 280px; max-width: 360px;
+    padding: 12px 16px; min-width: min(280px, 90vw); max-width: 360px;
     font-family: ${F.body};
     color: ${C.text}; pointer-events: ${opts.sticky ? 'auto' : 'none'};
     z-index: 220;
@@ -4585,14 +4587,14 @@ function _spawnErrorToast(opts) {
         margin-top:6px;padding:5px 12px;cursor:pointer;
         background:linear-gradient(180deg,rgba(20,28,22,0.78),rgba(8,14,12,0.86));
         border:1px solid ${col};border-radius:6px;
-        color:${col};font-family:${F.display};font-size:11px;font-weight:700;
+        color:${col};font-family:${F.display};font-size:calc(var(--kk-font-scale, 1) * 11px);font-weight:700;
         letter-spacing:0.22em;text-transform:uppercase;
       ">Dismiss</button>` : '';
   toast.innerHTML = `
-    <div style="font-size:22px;line-height:1;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));">${escapeHtml(icon)}</div>
+    <div style="font-size:calc(var(--kk-font-scale, 1) * 22px);line-height:1;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));">${escapeHtml(icon)}</div>
     <div style="flex:1;">
-      <div style="font-family:${F.display};font-size:11px;color:${col};letter-spacing:0.28em;text-transform:uppercase;">${safeTitle}</div>
-      <div style="font-size:12px;opacity:0.86;margin-top:4px;line-height:1.5;">${safeBody}</div>
+      <div style="font-family:${F.display};font-size:calc(var(--kk-font-scale, 1) * 11px);color:${col};letter-spacing:0.28em;text-transform:uppercase;">${safeTitle}</div>
+      <div style="font-size:calc(var(--kk-font-scale, 1) * 12px);opacity:0.86;margin-top:4px;line-height:1.5;">${safeBody}</div>
       ${dismissHtml}
     </div>
   `;
@@ -4717,20 +4719,20 @@ export function showContextLossModal() {
       0 1px 0 rgba(255,255,255,0.06) inset,
       0 24px 48px rgba(0,0,0,0.6),
       0 0 28px ${C.red}33;
-    padding: 28px 36px; min-width: 360px; max-width: 480px; text-align: center;
+    padding: 28px 36px; min-width: min(360px, 90vw); max-width: 480px; text-align: center;
   `;
 
   const icon = document.createElement('div');
-  icon.style.cssText = `font-size: 44px; margin-bottom: 8px; filter: drop-shadow(0 3px 10px ${C.red}66);`;
+  icon.style.cssText = `font-size: calc(var(--kk-font-scale, 1) * 44px); margin-bottom: 8px; filter: drop-shadow(0 3px 10px ${C.red}66);`;
   icon.textContent = '⚠';
 
   const title = document.createElement('div');
-  title.style.cssText = `font-family: ${F.display}; font-size: 22px; font-weight: 700;
+  title.style.cssText = `font-family: ${F.display}; font-size: calc(var(--kk-font-scale, 1) * 22px); font-weight: 700;
     letter-spacing: 0.22em; color: ${C.red}; text-transform: uppercase; margin-bottom: 8px;`;
   title.textContent = 'Graphics Disconnected';
 
   const body = document.createElement('div');
-  body.style.cssText = `font-size: 13.5px; color: ${C.text}; line-height: 1.6; margin-bottom: 18px; opacity: 0.88;`;
+  body.style.cssText = `font-size: calc(var(--kk-font-scale, 1) * 13.5px); color: ${C.text}; line-height: 1.6; margin-bottom: 18px; opacity: 0.88;`;
   body.textContent = 'Your GPU device was disconnected (driver reset, tab throttling, or a system event). Reconnecting…';
 
   const reload = document.createElement('button');
@@ -4740,7 +4742,7 @@ export function showContextLossModal() {
   reload.style.cssText = `padding: 12px 28px; cursor: pointer;
     background: linear-gradient(180deg, rgba(40,18,18,0.94), rgba(20,8,8,0.96));
     border: 1px solid ${C.red}; border-radius: 8px;
-    color: ${C.red}; font-family: ${F.display}; font-size: 13px; font-weight: 700;
+    color: ${C.red}; font-family: ${F.display}; font-size: calc(var(--kk-font-scale, 1) * 13px); font-weight: 700;
     letter-spacing: 0.28em; text-transform: uppercase;
     box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 20px rgba(0,0,0,0.5);`;
   reload.onclick = () => { try { window.location.reload(); } catch (_) {} };
@@ -4781,7 +4783,7 @@ export function showHelltideBar(remainingSec, totalSec, embers) {
       border-radius: 8px;
       box-shadow: 0 0 18px rgba(255,90,40,0.45),
                   0 6px 22px rgba(0,0,0,0.65);
-      font-family: ${F.display}; min-width: 320px;
+      font-family: ${F.display}; min-width: min(320px, 90vw);
     `;
     const header = document.createElement('div');
     header.style.cssText = `
