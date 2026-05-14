@@ -258,29 +258,81 @@ function _makeLightningRing(color = '#ffe14a') {
   return t;
 }
 
-/** Shockwave — thick double-edge ring for explosions. */
+/** Shockwave — thick double-edge ring for explosions (legacy basic). */
 function _makeShockwave(color = '#ffd078') {
-  const ctx = _ctx();
-  const cx = SIZE / 2, cy = SIZE / 2;
-  // Outer wider band
-  const g1 = ctx.createRadialGradient(cx, cy, SIZE * 0.30, cx, cy, SIZE * 0.50);
+  // High-detail version: alpha-envelope band + hot inner stripe + 32 short
+  // crackle veins riding the rim + outer halo stipple. Same canvas as the
+  // particle pool (128²); rendered with extra layers for impact.
+  const S = 256; // bump local canvas for shockwave detail
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0, 0, S, S);
+  const cx = S / 2, cy = S / 2;
+
+  // Outer wide band
+  const g1 = ctx.createRadialGradient(cx, cy, S * 0.30, cx, cy, S * 0.50);
   g1.addColorStop(0.00, color + '00');
   g1.addColorStop(0.55, color + '00');
-  g1.addColorStop(0.78, color + 'ff');
-  g1.addColorStop(0.92, color + 'aa');
+  g1.addColorStop(0.74, color + 'ff');
+  g1.addColorStop(0.86, color + 'cc');
+  g1.addColorStop(0.95, color + '55');
   g1.addColorStop(1.00, color + '00');
   ctx.fillStyle = g1;
-  ctx.fillRect(0, 0, SIZE, SIZE);
-  // Inner thin hot edge
+  ctx.fillRect(0, 0, S, S);
+
+  // Inner thin hot stripe
   ctx.globalCompositeOperation = 'lighter';
-  const g2 = ctx.createRadialGradient(cx, cy, SIZE * 0.36, cx, cy, SIZE * 0.42);
+  const g2 = ctx.createRadialGradient(cx, cy, S * 0.34, cx, cy, S * 0.42);
   g2.addColorStop(0.00, '#ffffff00');
   g2.addColorStop(0.55, '#ffffffff');
   g2.addColorStop(1.00, '#ffffff00');
   ctx.fillStyle = g2;
-  ctx.fillRect(0, 0, SIZE, SIZE);
+  ctx.fillRect(0, 0, S, S);
+
+  // 32 short crackle veins riding the rim — gives the blast wave fracture
+  // detail rather than a smooth gradient. Style-bible secondary line weight.
+  ctx.translate(cx, cy);
+  ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 32; i++) {
+    const a = (i / 32) * Math.PI * 2 + Math.random() * 0.08;
+    const r0 = S * (0.38 + Math.random() * 0.02);
+    const r1 = r0 + S * (0.04 + Math.random() * 0.035);
+    ctx.lineWidth = 1.4 + Math.random() * 0.8;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a) * r0, Math.sin(a) * r0);
+    const midA = a + (Math.random() - 0.5) * 0.10;
+    const midR = (r0 + r1) * 0.5;
+    ctx.lineTo(Math.cos(midA) * midR, Math.sin(midA) * midR);
+    ctx.lineTo(Math.cos(a + (Math.random() - 0.5) * 0.06) * r1,
+               Math.sin(a + (Math.random() - 0.5) * 0.06) * r1);
+    ctx.stroke();
+  }
+
+  // Outer halo stipple — feathers the bloom pass
+  ctx.strokeStyle = 'rgba(255,255,255,0.45)';
+  ctx.lineWidth = 0.9;
+  for (let i = 0; i < 48; i++) {
+    const a = (i / 48) * Math.PI * 2;
+    const r0 = S * 0.485;
+    const r1 = r0 + S * (0.006 + (i % 3 === 0 ? 0.014 : 0.004));
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a) * r0, Math.sin(a) * r0);
+    ctx.lineTo(Math.cos(a) * r1, Math.sin(a) * r1);
+    ctx.stroke();
+  }
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalCompositeOperation = 'source-over';
-  return _toTex(ctx);
+
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  t.generateMipmaps = true;
+  t.minFilter = THREE.LinearMipmapLinearFilter;
+  t.magFilter = THREE.LinearFilter;
+  t.needsUpdate = true;
+  return t;
 }
 
 /** Multi-point flash star — hot white core with 6 long flares. */

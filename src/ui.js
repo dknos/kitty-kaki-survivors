@@ -58,7 +58,7 @@ const F = {
 // ── Build version ────────────────────────────────────────────────────────────
 // Flipped to '1.0.0' on the iter-11 ship commit (Shop Tree Live Wires —
 // the broken-tier-1-3-consumers gap was the last v1.0 blocker).
-export const KK_VERSION = '1.3.5';
+export const KK_VERSION = '1.3.6';
 
 // ── Module-local DOM refs ────────────────────────────────────────────────────
 let _root = null;

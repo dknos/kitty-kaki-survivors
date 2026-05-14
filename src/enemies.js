@@ -502,8 +502,11 @@ export function killEnemy(enemy) {
   }
   enemy._telegraphInit = false;
 
-  // Kill ring fx (no ring on final boss — covered by victory cinematic)
-  if (!enemy.isFinalBoss) {
+  // Kill ring fx (no ring on final boss — covered by victory cinematic).
+  // Volatile-flagged elites skip the standard kill ring; the pre-detonation
+  // tell below is the sole pre-pop visual so the player sees ONE ring, not
+  // a stacked double-yellow.
+  if (!enemy.isFinalBoss && !enemy._volatile) {
     spawnKillRing(enemy.mesh.position.x, enemy.mesh.position.z, enemy.elite);
   }
 
@@ -518,7 +521,8 @@ export function killEnemy(enemy) {
       z: enemy.mesh.position.z,
       t: state.time.game + 0.2,
     });
-    // Visual: a second ring so the player sees "this one is going to pop".
+    // Visual: a single elite-scale lightning ring as the "this one is about
+    // to pop" cue. Replaces the old double-kill-ring stack.
     spawnKillRing(enemy.mesh.position.x, enemy.mesh.position.z, true);
   }
 
