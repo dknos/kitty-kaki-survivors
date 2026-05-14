@@ -81,9 +81,44 @@ Used by `src/arenaDecor.js` twilight pack.
 Used by `src/catacomb.js` wall torches (`torch_wall`) and any future
 free-standing brazier set-dress.
 
+---
+
+## Iter 22A (2026-05-14) — `assets/kits/home/`
+
+Cozy-room furniture for the cabin interior (`src/interior.js` +
+`src/homeDecor.js`). Player-decoratable via the new `H`-key Decorate
+overlay; placements persist via `meta.homePlacements`. All Quaternius CC0.
+
+### `assets/kits/home/` — cozy home furniture
+
+| File                | Author     | License | Size   | Source slug                |
+|---------------------|------------|---------|--------|----------------------------|
+| `rug.glb`           | Quaternius | CC0     | 7 KB   | https://poly.pizza/m/ZYBzMHnSbM |
+| `plant.glb`         | Quaternius | CC0     | 683 KB | https://poly.pizza/m/MbhbP7JrTI |
+| `lamp.glb`          | Quaternius | CC0     | 10 KB  | https://poly.pizza/m/RsWYHKkDhD |
+| `bed.glb`           | Quaternius | CC0     | 252 KB | https://poly.pizza/m/BuRay4fVFr |
+| `bookshelf.glb`     | Quaternius | CC0     | 29 KB  | https://poly.pizza/m/TDgvIuorcX |
+| `cauldron.glb`      | Quaternius | CC0     | 46 KB  | https://poly.pizza/m/QaWJOPa6Gt |
+| `chair.glb`         | Quaternius | CC0     | 27 KB  | https://poly.pizza/m/IRLaR71Pyn |
+| `side_table.glb`    | Quaternius | CC0     | 45 KB  | https://poly.pizza/m/rAEBvfb1FT |
+| `sofa.glb`          | Quaternius | CC0     | 15 KB  | https://poly.pizza/m/lmePppSu8a |
+| `cat.glb`           | Quaternius | CC0     | 233 KB | https://poly.pizza/m/qKICY6xla2 |
+| `chest.glb`         | Quaternius | CC0     | 159 KB | https://poly.pizza/m/RfSBvgcZUD |
+| `banner_wall.glb`   | Quaternius | CC0     | 5 KB   | https://poly.pizza/m/Kd94xlw5aj |
+| `banner_alt.glb`    | Quaternius | CC0     | 34 KB  | https://poly.pizza/m/svYG8KZxjq |
+| `sword_mount.glb`   | Quaternius | CC0     | 133 KB | https://poly.pizza/m/3LyJaWgoJG |
+| `shield_mount.glb`  | Quaternius | CC0     | 46 KB  | https://poly.pizza/m/neNWPt8WAx |
+| `skull_mount.glb`   | Quaternius | CC0     | 91 KB  | https://poly.pizza/m/VGtSTNRf2O |
+
+Catalog entry IDs and unlock-flag bindings live in
+`src/homeDecor.js#HOME_CATALOG`. Wall items (`banner_*`, `*_mount`)
+anchor to one of 4 walls × 8 fixed slot positions; floor items snap to
+a 10×10 tile grid that masks out the existing fixture footprints (door,
+desk, easel, kettle, computer, yarn basket, fireplace).
+
 ## Totals
-- 20 new GLBs, **2.8 MB** added (post-CDN download).
-- Combined `assets/` size after iter 14: ~58 MB.
+- 36 new GLBs, **4.7 MB** added (post-CDN download).
+- Combined `assets/` size after iter 22A: ~60 MB.
 - All CC0 — no `ui.js` credit-modal changes required.
 
 ## Re-fetch

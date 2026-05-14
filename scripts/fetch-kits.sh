@@ -60,6 +60,26 @@ echo "[torches]"
 fetch_one WGsvr4KOZd torch_wall.glb        assets/kits/torches
 fetch_one Gq38E7hFZw torch_stand.glb       assets/kits/torches
 
+echo "[home]"
+# Iter 22A — cozy home furniture (Quaternius Ultimate Furniture, CC0).
+# Used by src/homeDecor.js + src/interior.js for the placement-based decorate mode.
+fetch_one ZYBzMHnSbM rug.glb               assets/kits/home
+fetch_one MbhbP7JrTI plant.glb             assets/kits/home
+fetch_one RsWYHKkDhD lamp.glb              assets/kits/home
+fetch_one BuRay4fVFr bed.glb               assets/kits/home
+fetch_one TDgvIuorcX bookshelf.glb         assets/kits/home
+fetch_one QaWJOPa6Gt cauldron.glb          assets/kits/home
+fetch_one IRLaR71Pyn chair.glb             assets/kits/home
+fetch_one rAEBvfb1FT side_table.glb        assets/kits/home
+fetch_one lmePppSu8a sofa.glb              assets/kits/home
+fetch_one qKICY6xla2 cat.glb               assets/kits/home
+fetch_one RfSBvgcZUD chest.glb             assets/kits/home
+fetch_one Kd94xlw5aj banner_wall.glb       assets/kits/home
+fetch_one svYG8KZxjq banner_alt.glb        assets/kits/home
+fetch_one 3LyJaWgoJG sword_mount.glb       assets/kits/home
+fetch_one neNWPt8WAx shield_mount.glb      assets/kits/home
+fetch_one VGtSTNRf2O skull_mount.glb       assets/kits/home
+
 echo
 echo "[summary]"
 find assets/kits -name '*.glb' | wc -l | xargs printf "  %s GLBs total\n"

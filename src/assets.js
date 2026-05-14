@@ -314,6 +314,25 @@ export function preloadAll() {
     // Torches (Quaternius, CC0).
     ['kit_torch_wall','assets/kits/torches/torch_wall.glb'],
     ['kit_torch_stand','assets/kits/torches/torch_stand.glb'],
+    // ── Iter 22A cozy home furniture (Quaternius, CC0). Used by
+    // src/homeDecor.js for the H-key Decorate overlay. Keys mirror the
+    // HOME_CATALOG entry ids.
+    ['home_rug',           'assets/kits/home/rug.glb'],
+    ['home_plant',         'assets/kits/home/plant.glb'],
+    ['home_lamp',          'assets/kits/home/lamp.glb'],
+    ['home_bed',           'assets/kits/home/bed.glb'],
+    ['home_bookshelf',     'assets/kits/home/bookshelf.glb'],
+    ['home_cauldron',      'assets/kits/home/cauldron.glb'],
+    ['home_chair',         'assets/kits/home/chair.glb'],
+    ['home_side_table',    'assets/kits/home/side_table.glb'],
+    ['home_sofa',          'assets/kits/home/sofa.glb'],
+    ['home_cat',           'assets/kits/home/cat.glb'],
+    ['home_chest',         'assets/kits/home/chest.glb'],
+    ['home_banner_wall',   'assets/kits/home/banner_wall.glb'],
+    ['home_banner_alt',    'assets/kits/home/banner_alt.glb'],
+    ['home_sword_mount',   'assets/kits/home/sword_mount.glb'],
+    ['home_shield_mount',  'assets/kits/home/shield_mount.glb'],
+    ['home_skull_mount',   'assets/kits/home/skull_mount.glb'],
   ];
   return Promise.all(list.map(([k, p]) => _preload(k, p)));
 }
