@@ -23,122 +23,66 @@ const SCATTER_TWILIGHT = [
 ];
 
 // ── Kingdom-district buildings (forest-only) ──
-// TODO(assets): swap these primitive placeholders for Kenney "Fantasy Town Kit"
-// GLBs when the pack is downloaded. The Kenney URL hash rotated and 404s as of
-// 2026-05-13; until a fresh pack is pulled into assets/fantasy_town/, the
-// _makeBuilding() factory below generates BoxGeometry + cone-roof primitives
-// sized for silhouette-readability under the 60° top-down camera. All
-// buildings sit > 25u from origin (combat lane is preserved) and only render
-// in the `forest` stage.
-//
-// Composition spec (from the level-design advisor brief):
+// Iter 14: swapped the BoxGeometry/ConeGeometry placeholders for real CC0
+// Quaternius town kit GLBs (assets/kits/town/). Composition preserved from
+// the level-design brief:
 //   1× Keep landmark   ~ (0, 0, -50)
 //   3-4× Market cluster   ~ (40, 0, -30)
 //   2-3× Barracks cluster ~ (-40, 0, -30)
 //   2-3× Old Ruins        ~ (60, 0, 80)
 //   1-2× Gate / arch      ~ (0, 0, 60)
+// All buildings sit > 25u from origin (combat lane is preserved) and only
+// render in the `forest` stage (twilight + cinder + void hide them via
+// forestProps[] toggle in applyStageTint).
+//
+// `kit` keys → assets/kits/town/ GLBs registered in src/assets.js.
+// `lift` is a small y-offset applied per kit because Quaternius authors
+// some bases below the world origin and some flush.
+// `s` is the scale multiplier baked into the spec (kits ship at ~1u
+// reference height; our world units want ~5-9u tall buildings).
 const BUILDINGS = [
   // Central keep — the silhouette anchor of the district.
-  { kind: 'keep',  x:   0, z: -50, rot: 0.00, scale: 1.20 },
-  // Market cluster (3 houses) — clumped around (40, -30).
-  { kind: 'house', x:  36, z: -24, rot: 0.30, scale: 1.00 },
-  { kind: 'house', x:  46, z: -34, rot: -0.40, scale: 1.10 },
-  { kind: 'house', x:  42, z: -42, rot: 0.95, scale: 0.95 },
-  { kind: 'house', x:  32, z: -36, rot: 1.65, scale: 1.05 },
-  // Barracks cluster (2 houses + 1 keep-ish tower) — clumped around (-40, -30).
-  { kind: 'house', x: -36, z: -26, rot: -0.20, scale: 1.05 },
-  { kind: 'house', x: -44, z: -36, rot: 0.55, scale: 1.00 },
-  { kind: 'keep',  x: -38, z: -44, rot: 0.10, scale: 0.85 },
-  // Old Ruins — broken stumps near (60, 80).
-  { kind: 'ruin',  x:  56, z:  74, rot: 0.20, scale: 1.10 },
-  { kind: 'ruin',  x:  64, z:  84, rot: 1.10, scale: 0.95 },
-  { kind: 'ruin',  x:  52, z:  88, rot: -0.60, scale: 1.20 },
+  { kit: 'kit_keep',     x:   0, z: -50, rot: 0.00, s: 7.5,  lift: 0 },
+  // Market cluster (4 houses) — clumped around (40, -30).
+  { kit: 'kit_house',    x:  36, z: -24, rot: 0.30, s: 4.0,  lift: 0 },
+  { kit: 'kit_house2',   x:  46, z: -34, rot: -0.40, s: 4.2, lift: 0 },
+  { kit: 'kit_inn',      x:  42, z: -42, rot: 0.95, s: 4.0,  lift: 0 },
+  { kit: 'kit_house',    x:  32, z: -36, rot: 1.65, s: 3.8,  lift: 0 },
+  // Barracks cluster (2 houses + 1 barracks) — clumped around (-40, -30).
+  { kit: 'kit_house2',   x: -36, z: -26, rot: -0.20, s: 4.0, lift: 0 },
+  { kit: 'kit_barracks', x: -44, z: -36, rot: 0.55, s: 4.6,  lift: 0 },
+  { kit: 'kit_house',    x: -38, z: -44, rot: 0.10, s: 3.6,  lift: 0 },
+  // Old Ruins — broken stumps near (60, 80). Reuse town_house tilted +
+  // half-buried for a "collapsed homestead" silhouette without a dedicated
+  // ruin asset; the kit_pillar_broken set-dresses next to it.
+  { kit: 'kit_house',    x:  56, z:  74, rot: 0.20, s: 3.4,  lift: -0.8, tilt: 0.2 },
+  { kit: 'kit_house2',   x:  64, z:  84, rot: 1.10, s: 3.0,  lift: -1.0, tilt: 0.35 },
+  { kit: 'kit_pillar_broken', x: 52, z: 88, rot: -0.60, s: 2.0, lift: 0 },
+  { kit: 'kit_pillar_broken', x: 60, z: 80, rot: 1.20, s: 1.8, lift: 0 },
   // Gate / arch leading south toward the player's hunting grounds.
-  { kind: 'gate',  x:   0, z:  60, rot: 0.00, scale: 1.15 },
-  { kind: 'gate',  x:  10, z:  58, rot: -0.25, scale: 0.85 },
+  { kit: 'kit_gate',     x:   0, z:  60, rot: 0.00, s: 4.8,  lift: 0 },
 ];
 
-// ── Shared building materials ──
-// Three flat-shaded materials, reused across every building to keep draw-call
-// state changes low. Palette pulled from STYLE_BIBLE.md (warm tan / ink /
-// sage). MeshStandardMaterial picks up the HDRI envMap for subtle lighting.
-const BUILDING_MATS = {
-  wall: new THREE.MeshStandardMaterial({
-    color: 0xd9c79a, roughness: 0.85, metalness: 0.0, flatShading: true,
-  }),
-  roof: new THREE.MeshStandardMaterial({
-    color: 0x8a4a2a, roughness: 0.75, metalness: 0.0, flatShading: true,
-  }),
-  trim: new THREE.MeshStandardMaterial({
-    color: 0x3a2a1a, roughness: 0.90, metalness: 0.0, flatShading: true,
-  }),
-};
-
 /**
- * Build a single primitive-placeholder building of the requested kind.
- * Each call returns a Group with a UNIQUE geometry-set so it costs one mesh
- * per part (the brief disallows InstancedMesh for buildings — they're meant
- * to feel authored). Triangle budget per building stays small (~600-1200 tris)
- * so the full district stays well under the 80k allotment.
- *
- * @param {'keep'|'house'|'ruin'|'gate'} kind
- * @returns {THREE.Group}
+ * Build one authored building from a GLB kit. Falls back to a tiny
+ * box silhouette if cloneCached fails (asset missing in preload), so the
+ * world never has empty holes where a keep should be.
  */
-function _makeBuilding(kind) {
-  const g = new THREE.Group();
-  g.userData._kkBuilding = kind;
-  const W = BUILDING_MATS.wall, R = BUILDING_MATS.roof, T = BUILDING_MATS.trim;
-
-  if (kind === 'keep') {
-    // Tall stone keep — square base + tapered tower + conical cap.
-    const base = new THREE.Mesh(new THREE.BoxGeometry(8, 6, 8), W);
-    base.position.y = 3; g.add(base);
-    const tower = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 3.0, 12, 12), W);
-    tower.position.set(0, 12, 0); g.add(tower);
-    const cap = new THREE.Mesh(new THREE.ConeGeometry(3.4, 5, 12), R);
-    cap.position.set(0, 20.5, 0); g.add(cap);
-    // Ink-dark door for silhouette punch.
-    const door = new THREE.Mesh(new THREE.BoxGeometry(1.6, 2.4, 0.2), T);
-    door.position.set(0, 1.2, 4.05); g.add(door);
-  } else if (kind === 'house') {
-    // Small townhouse — box body + ridged roof + chimney.
-    const body = new THREE.Mesh(new THREE.BoxGeometry(6, 4, 5), W);
-    body.position.y = 2; g.add(body);
-    // Roof: two-sided prism via a rotated 4-sided cone.
-    const roof = new THREE.Mesh(new THREE.ConeGeometry(4.2, 3.2, 4), R);
-    roof.position.set(0, 5.6, 0);
-    roof.rotation.y = Math.PI / 4;
-    g.add(roof);
-    const chimney = new THREE.Mesh(new THREE.BoxGeometry(0.7, 2.2, 0.7), T);
-    chimney.position.set(1.8, 6.4, -1.0); g.add(chimney);
-    const door = new THREE.Mesh(new THREE.BoxGeometry(1.2, 2.0, 0.15), T);
-    door.position.set(0, 1.0, 2.55); g.add(door);
-  } else if (kind === 'ruin') {
-    // Half-collapsed stone wall fragment — a few broken upright pieces.
-    const w1 = new THREE.Mesh(new THREE.BoxGeometry(5, 3.2, 0.8), W);
-    w1.position.set(0, 1.6, 0); g.add(w1);
-    const w2 = new THREE.Mesh(new THREE.BoxGeometry(0.8, 2.4, 4), W);
-    w2.position.set(2.6, 1.2, 2.4); g.add(w2);
-    // A toppled stump — short and tilted.
-    const stump = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.4, 0.7), W);
-    stump.position.set(-2.4, 0.7, 1.8);
-    stump.rotation.z = 0.35;
-    g.add(stump);
-  } else if (kind === 'gate') {
-    // Stone arch — two pillars + lintel beam.
-    const pL = new THREE.Mesh(new THREE.BoxGeometry(1.6, 7, 1.6), W);
-    pL.position.set(-3.2, 3.5, 0); g.add(pL);
-    const pR = new THREE.Mesh(new THREE.BoxGeometry(1.6, 7, 1.6), W);
-    pR.position.set( 3.2, 3.5, 0); g.add(pR);
-    const lintel = new THREE.Mesh(new THREE.BoxGeometry(8.0, 1.4, 1.6), T);
-    lintel.position.set(0, 7.7, 0); g.add(lintel);
-    const cap = new THREE.Mesh(new THREE.BoxGeometry(9.0, 0.6, 2.0), R);
-    cap.position.set(0, 8.7, 0); g.add(cap);
+function _spawnBuilding(spec) {
+  let g = cloneCached(spec.kit);
+  if (!g) {
+    // Last-resort placeholder — short dark box so the failure is visible
+    // but doesn't make the level unplayable.
+    g = new THREE.Group();
+    const box = new THREE.Mesh(
+      new THREE.BoxGeometry(3, 4, 3),
+      new THREE.MeshStandardMaterial({ color: 0x3a2418, roughness: 0.95 }),
+    );
+    box.position.y = 2;
+    g.add(box);
   }
-
-  // Buildings are large authored geometry: cast + receive shadows per the
-  // selective-shadow rule (PERF.md §6). Mark _castSet so any later pool
-  // walker skips re-setting these.
+  g.userData._kkBuilding = spec.kit;
+  // Authored shadow rule (PERF.md §6).
   g.traverse(o => {
     if (o.isMesh) {
       o.castShadow = true;
@@ -243,13 +187,15 @@ export function buildEnv(scene, renderer) {
   scatterInto(SCATTER_TWILIGHT, 'twilightOnly');
 
   // ── Kingdom-district buildings (forest-only) ──
-  // Authored placements — unique meshes, no instancing. Tagged forestOnly so
-  // applyStageTint hides the whole district in twilight + cinder stages.
+  // Iter 14: real Quaternius CC0 town kit GLBs. cloneCached returns a fresh
+  // scene per call so we can rotate/scale/position uniquely while sharing
+  // the underlying GLTF in GLTF_CACHE.
   for (const spec of BUILDINGS) {
-    const b = _makeBuilding(spec.kind);
-    b.position.set(spec.x, 0, spec.z);
+    const b = _spawnBuilding(spec);
+    b.position.set(spec.x, spec.lift || 0, spec.z);
     b.rotation.y = spec.rot;
-    b.scale.setScalar(spec.scale);
+    if (spec.tilt) b.rotation.z = spec.tilt;
+    b.scale.setScalar(spec.s);
     b.userData._stageTag = 'forestOnly';
     b.userData._kkBaseColor = null;
     group.add(b);
@@ -288,16 +234,29 @@ export function buildEnv(scene, renderer) {
   scene.add(group);
   // Stash the sun on the group so main.js can re-point it each frame.
   group.userData.sun = sun;
+  group.userData.hemi = hemi;
+  group.userData.fill = fill;
   // Stash the ground mesh + scene ref so applyStageTint can recolor on demand.
   group.userData.ground = ground;
   group.userData.scene = scene;
   group.userData.baseFogColor = scene.fog ? scene.fog.color.getHex() : null;
+  // Capture baseline lighting once so per-stage swaps can restore on forest.
+  const BASE_LIGHT = {
+    sunColor:    sun.color.getHex(),
+    sunIntensity: sun.intensity,
+    hemiSky:     hemi.color.getHex(),
+    hemiGround:  hemi.groundColor.getHex(),
+    hemiIntensity: hemi.intensity,
+    fillColor:   fill.color.getHex(),
+    fillIntensity: fill.intensity,
+  };
   group.userData.applyStageTint = (stage) => {
     if (!stage) return;
     const id = stage.id;
     const isForest   = id === 'forest';
     const isTwilight = id === 'twilight';
     const isCinder   = id === 'cinder';
+    const isVoid     = id === 'void';
     // Ground pack: forest uses its own; twilight and cinder share brown_mud
     // (cinder gets a much hotter color tint on top so it reads as basalt/clay).
     const packKey = isForest ? 'forest' : 'twilight';
@@ -322,6 +281,43 @@ export function buildEnv(scene, renderer) {
     // Twilight's extra dead trees + rocks appear in BOTH twilight and cinder:
     // a charred ex-forest reads as cinder's natural ancestor.
     for (const p of twilightProps) p.visible = isTwilight || isCinder;
+    // ── Per-stage lighting (iter 14) ──
+    // Reset to forest baseline, then mutate.
+    sun.color.setHex(BASE_LIGHT.sunColor);
+    sun.intensity = BASE_LIGHT.sunIntensity;
+    hemi.color.setHex(BASE_LIGHT.hemiSky);
+    hemi.groundColor.setHex(BASE_LIGHT.hemiGround);
+    hemi.intensity = BASE_LIGHT.hemiIntensity;
+    fill.color.setHex(BASE_LIGHT.fillColor);
+    fill.intensity = BASE_LIGHT.fillIntensity;
+    if (isTwilight) {
+      // Cooler dusk: dim sun, blue-violet hemi.
+      sun.color.setHex(0x9fb0e0);
+      sun.intensity = 1.1;
+      hemi.color.setHex(0x6a78a8);
+      hemi.groundColor.setHex(0x1a1422);
+      hemi.intensity = 0.20;
+      fill.color.setHex(0x6a78c8);
+      fill.intensity = 0.30;
+    } else if (isCinder) {
+      // Hot orange sun, scorched hemi.
+      sun.color.setHex(0xff8a4a);
+      sun.intensity = 1.8;
+      hemi.color.setHex(0x884030);
+      hemi.groundColor.setHex(0x2a0c08);
+      hemi.intensity = 0.40;
+      fill.color.setHex(0xaa3320);
+      fill.intensity = 0.45;
+    } else if (isVoid) {
+      // Crypt-light: sun almost off, violet hemi — torches must carry it.
+      sun.color.setHex(0x4a3a6a);
+      sun.intensity = 0.4;
+      hemi.color.setHex(0x553388);
+      hemi.groundColor.setHex(0x0a0612);
+      hemi.intensity = 0.35;
+      fill.color.setHex(0x6644aa);
+      fill.intensity = 0.20;
+    }
   };
   return group;
 }
