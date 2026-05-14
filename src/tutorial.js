@@ -66,11 +66,6 @@ function _endTutorial() {
   T._didPause = false;
 }
 
-function _skipAll() {
-  _markDone();
-  _endTutorial();
-}
-
 function _showCard({ title, body, pauseGame = false, highlightWeapons = false }) {
   _removeCard();
   const div = document.createElement('div');
@@ -104,24 +99,6 @@ function _showCard({ title, body, pauseGame = false, highlightWeapons = false })
   requestAnimationFrame(() => { div.style.opacity = '1'; });
   T.card = div;
 
-  // "Skip tutorial" button bottom-right (re-created each card so it stays on top)
-  let skipBtn = document.getElementById('kk-tutorial-skip');
-  if (!skipBtn) {
-    skipBtn = document.createElement('button');
-    skipBtn.id = 'kk-tutorial-skip';
-    skipBtn.textContent = 'Skip tutorial';
-    skipBtn.style.cssText = `
-      position: fixed; right: 18px; bottom: 18px;
-      padding: 8px 14px; font-family: 'Inter', sans-serif; font-size: 12px;
-      letter-spacing: 0.16em; text-transform: uppercase;
-      background: rgba(8,12,14,0.85); color: #b4cfc3;
-      border: 1px solid rgba(120,220,200,0.4); border-radius: 6px;
-      cursor: pointer; z-index: ${Z_INDEX + 1};
-    `;
-    skipBtn.onclick = _skipAll;
-    document.body.appendChild(skipBtn);
-  }
-
   // Stage 1 pauses, stages 2-6 do not.
   T._didPause = false;
   if (pauseGame && state.time) {
@@ -149,11 +126,6 @@ function _showCard({ title, body, pauseGame = false, highlightWeapons = false })
   }
 
   T.stageStartTime = (state.time && state.time.real) || 0;
-}
-
-function _removeSkipButton() {
-  const btn = document.getElementById('kk-tutorial-skip');
-  if (btn && btn.parentNode) btn.parentNode.removeChild(btn);
 }
 
 function _gotoStage(n) {
@@ -207,12 +179,10 @@ function _gotoStage(n) {
       // Stage 6 auto-dismisses after a short read.
       setTimeout(() => {
         if (T.stage === 6) _endTutorial();
-        _removeSkipButton();
       }, 8000);
       break;
     default:
       _endTutorial();
-      _removeSkipButton();
   }
 }
 
@@ -235,7 +205,9 @@ export function initTutorial() {
   Object.assign(T, DEFAULTS);
   _removeCard();
   _clearWeaponGlow();
-  _removeSkipButton();
+  // Defensive: clean up any orphan skip button from older builds.
+  const orphan = document.getElementById('kk-tutorial-skip');
+  if (orphan && orphan.parentNode) orphan.parentNode.removeChild(orphan);
 
   const meta = getMeta();
   if (meta.tutorialDone) {
