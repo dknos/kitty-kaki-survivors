@@ -134,6 +134,14 @@ export function spawnChest(x, z) {
   _chests.push({ group: mesh, x, z, alive: true, t: 0 });
 }
 
+// Iter 10b — canonical chest-spawn helper for callers that don't want the
+// near-hero randomized placement. Thin wrapper so the Treasure Map capstone in
+// _primeRunStart can drop a chest at a stable offset from the hero spawn.
+// Same return contract as spawnChest (void; chest is pushed onto _chests).
+export function spawnAt(x, z) {
+  return spawnChest(x, z);
+}
+
 function _tickOpenFlashes(dt) {
   for (let i = _openFlashes.length - 1; i >= 0; i--) {
     const f = _openFlashes[i];

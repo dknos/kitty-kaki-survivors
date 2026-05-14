@@ -15,6 +15,12 @@ import * as THREE from 'three';
 import { state } from './state.js';
 import { getMeta } from './meta.js';
 import { bindPrompt, setPromptLabel } from './buttonPrompts.js';
+import { BLOOM_LAYER } from './postfx.js';
+import { makeRuneRingTexture } from './enemyTells.js';
+
+// Shared rune texture for interior FX (furnace ring). Lazy-cached.
+let _runeTex = null;
+function _getRuneTex() { return _runeTex || (_runeTex = makeRuneRingTexture()); }
 
 // Room dimensions (in world units)
 const ROOM_W = 14;   // x
@@ -143,10 +149,24 @@ function _makeTeaKettle() {
   stove.position.y = 0.35;
   stove.castShadow = true;
   g.add(stove);
-  // Burner ring
-  const ring = new THREE.Mesh(new THREE.RingGeometry(0.18, 0.28, 24), new THREE.MeshBasicMaterial({ color: 0xff7a3a, transparent: true, opacity: 0.55 }));
-  ring.rotation.x = -Math.PI / 2;
+  // Burner ring — iter 10b FX residue cleanup. PlaneGeometry +
+  // makeRuneRingTexture, warm-orange tint, slow spin (driven via userData
+  // hook so tickInterior can yaw it without us touching that function's
+  // ownership). Bloom layer so it ping the eye when the kettle is hot.
+  const ringGeo = new THREE.PlaneGeometry(0.56, 0.56);
+  ringGeo.rotateX(-Math.PI / 2);
+  const ring = new THREE.Mesh(
+    ringGeo,
+    new THREE.MeshBasicMaterial({
+      map: _getRuneTex(),
+      color: 0xff7a3a, transparent: true, opacity: 0.80,
+      depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    }),
+  );
   ring.position.y = 0.72;
+  ring.layers.enable(BLOOM_LAYER);
+  ring.userData._spin = 0.5; // rad/sec — read by tickInterior at the kettle's userData hook
+  g.userData._furnaceRing = ring;
   g.add(ring);
   // Kettle body — squat sphere
   const kettle = new THREE.Mesh(
@@ -510,12 +530,17 @@ export function tickInterior(dt) {
     return;
   }
 
-  // Flicker fire light gently for atmosphere
+  // Flicker fire light gently for atmosphere + slow-spin the furnace rune ring
+  // (iter 10b FX residue cleanup — the kettle stove ring is now a rune mesh
+  // with userData._spin set to its yaw rate in rad/sec).
   if (_group) {
+    const t = state.time.real;
     _group.traverse(o => {
       if (o.userData && o.userData._fireLight) {
-        const t = state.time.real;
         o.userData._fireLight.intensity = 1.4 + 0.4 * Math.sin(t * 6.7) + 0.2 * Math.sin(t * 13.1);
+      }
+      if (o.userData && typeof o.userData._spin === 'number') {
+        o.rotation.y += dt * o.userData._spin;
       }
     });
   }

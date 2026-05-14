@@ -168,6 +168,14 @@ export const state = {
   victory: false,
   dyingUntil: 0,         // real-time at which death animation ends + death screen shows
   started: false,        // false until "press start" cleared
+
+  // ── Iter 10a accessibility caches (mirrored from meta for per-frame reads) ──
+  // Main.js boot + the Options menu both stamp these so per-frame readers
+  // (vfxBurst, postfx, hero.takeDamage flash) can skip a getMeta() call.
+  // `_optShakeMul` (existing) is forced to 0 by callers when _optReduceMotion
+  // is true — see main.js boot apply + ui.showOptions onChange paths.
+  _optReduceMotion: false,
+  _optReducedFlashing: false,
 };
 
 /**
@@ -262,8 +270,18 @@ export function resetState() {
   state.run.passive_chestRate      = 0;   // additive chest spawn rate bonus
   state.run.passive_miniBossSigilBonus = 0; // extra sigils per mini-boss kill
   state.run.passive_revives        = 0;   // free revives banked for this run
-  state.run.passive_overdrive      = false; // TODO(iter6-wire): Power t4 frenzy
-  state.run.passive_treasureMap    = false; // TODO(iter6-wire): Greed t4 starter chest
+  state.run.passive_overdrive      = false; // Power t4 capstone: ticks main-loop overdrive cycle
+  state.run.passive_treasureMap    = false; // Greed t4 capstone: free starter chest in _primeRunStart
+  state.run._treasureMapSpawned    = false; // one-shot guard so the chest isn't double-spawned across run-entry paths
+  // Overdrive cycle state (Power tier-4 capstone). Ticked from main.js run loop
+  // when passive_overdrive is true: every 60s of game time, flip active=true for
+  // 5s. During the active window we stash + multiply h.statMul.cooldown/dmg and
+  // restore on deactivation. Stash fields live alongside so an early death or
+  // restart can't strand the multipliers (resetState wipes them).
+  state.run.overdriveActive        = false;
+  state.run.overdriveTimer         = 0;
+  state.run._overdrivePrevCD       = null;
+  state.run._overdrivePrevDmg      = null;
   // Iter 8 affix per-frame scratch (re-stamped each frame by updateEnemies).
   state.run.affix_frostSlow        = 1;
   // Totem-of-Swarm bookkeeping — see src/totems.js

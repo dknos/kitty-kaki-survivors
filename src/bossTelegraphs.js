@@ -38,6 +38,66 @@ import { makeRuneRingTexture } from './enemyTells.js';
 let _runeTex = null;
 function _getRuneTex() { return _runeTex || (_runeTex = makeRuneRingTexture()); }
 
+// Iter 10b — geometry pool. PERF.md flagged this as a per-windup allocation
+// hotspot (RingGeometry/PlaneGeometry constructors run every tell). We share
+// ONE PlaneGeometry per visual class — ring (2u plane, pre-rotated flat),
+// quake bar (6u×2u plane, pre-rotated flat), and cone (BufferGeometry built
+// lazily). Each mesh still gets its own MeshBasicMaterial (opacity is
+// per-windup state, so per-instance materials are correct). Active mesh
+// count caps at 4 simultaneous boss windups (3 mini-boss patterns + the
+// Nightmare final boss); resolve recycles them via the _activeRings fade-out
+// path which already removes from scene + drops the mesh ref.
+//
+// The actual win: ~4-8 PlaneGeometry constructors per boss-windup-cycle
+// replaced with property assignments. Material creation is left per-call
+// because each pattern instance needs its own opacity / color state.
+const POOL_MAX_SIMULTANEOUS = 4;
+let _ringPoolGeo = null;
+let _quakeBarPoolGeo = null;
+let _conePoolGeo = null;
+function _getRingPoolGeo() {
+  if (!_ringPoolGeo) {
+    _ringPoolGeo = new THREE.PlaneGeometry(2.0, 2.0);
+    _ringPoolGeo.rotateX(-Math.PI / 2);
+  }
+  return _ringPoolGeo;
+}
+function _getQuakeBarPoolGeo() {
+  if (!_quakeBarPoolGeo) {
+    _quakeBarPoolGeo = new THREE.PlaneGeometry(6.0, 2.0);
+    _quakeBarPoolGeo.rotateX(-Math.PI / 2);
+  }
+  return _quakeBarPoolGeo;
+}
+function _getConePoolGeo() {
+  if (!_conePoolGeo) {
+    // Cone built as a TriangleFan: 1 center vert + N+1 rim verts. Pre-baked
+    // once, scaled per-windup. 90° wedge total (±45° around forward +X).
+    const segs = 16;
+    const halfAng = Math.PI / 4;
+    const r = 1.0;
+    const verts = [0, 0, 0];
+    const uvs   = [0.5, 0.5];
+    for (let i = 0; i <= segs; i++) {
+      const k = i / segs;
+      const a = -halfAng + k * (halfAng * 2);
+      const x = Math.cos(a) * r;
+      const z = Math.sin(a) * r;
+      verts.push(x, 0, z);
+      uvs.push(0.5 + Math.cos(a) * 0.5, 0.5 + Math.sin(a) * 0.5);
+    }
+    const idx = [];
+    for (let i = 1; i <= segs; i++) idx.push(0, i, i + 1);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+    g.setAttribute('uv',       new THREE.Float32BufferAttribute(uvs, 2));
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    _conePoolGeo = g;
+  }
+  return _conePoolGeo;
+}
+
 export const MINI_BOSS_NAMES = [
   { name: 'GROTHAR THE GLUTTON',     subtitle: 'awakens hungering' },
   { name: 'VEXMAW THE SHRIEKER',     subtitle: 'splits the canopy' },
@@ -86,8 +146,8 @@ export function resetBossTelegraphs() {
 // the same "runic warning" art language as the rest of the FX.
 // ──────────────────────────────────────────────────────────────────────────
 function _makeRingMesh(color, opacity) {
-  const g = new THREE.PlaneGeometry(2.0, 2.0);
-  g.rotateX(-Math.PI / 2);
+  // Pooled geometry — one PlaneGeometry shared across all ring tells.
+  const g = _getRingPoolGeo();
   const m = new THREE.MeshBasicMaterial({
     map: _getRuneTex(),
     color: color, transparent: true, opacity: opacity != null ? opacity : 0.95,
@@ -101,35 +161,11 @@ function _makeRingMesh(color, opacity) {
 }
 
 function _makeConeMesh(color) {
-  // 90° wedge: take a square plane and clip via custom UVs in a fragment-
-  // friendly way — but we'd need a custom shader. Cheaper: build a half-disc
-  // PlaneGeometry mask and rely on the rune texture's radial falloff to sell
-  // the danger. We use a TriangleFan-shaped geometry (BufferGeometry with
-  // 1 center vertex + N points along ±45°) so the geometry itself is the cone.
-  const segs = 16;
-  const halfAng = Math.PI / 4; // 90° total = 45° each side of forward
-  const r = 1.0; // unit radius — caller scales
-  const verts = [0, 0, 0]; // center
-  const uvs   = [0.5, 0.5];
-  for (let i = 0; i <= segs; i++) {
-    const k = i / segs;
-    const a = -halfAng + k * (halfAng * 2);
-    // Cone points forward along +X locally so the boss-facing-hero rotation
-    // can use atan2(dz, dx) directly with rotation.y = -atan2.
-    const x = Math.cos(a) * r;
-    const z = Math.sin(a) * r;
-    verts.push(x, 0, z);
-    // UV map onto the rune texture: center at (0.5, 0.5), edges at the
-    // texture's bright band.
-    uvs.push(0.5 + Math.cos(a) * 0.5, 0.5 + Math.sin(a) * 0.5);
-  }
-  const idx = [];
-  for (let i = 1; i <= segs; i++) idx.push(0, i, i + 1);
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
-  g.setAttribute('uv',       new THREE.Float32BufferAttribute(uvs, 2));
-  g.setIndex(idx);
-  g.computeVertexNormals();
+  // Pooled cone geometry — TriangleFan built once via _getConePoolGeo,
+  // 90° wedge (±45° around forward +X). Per-mesh material so the magenta
+  // tint + opacity pulse is independent per windup. Boss-facing-hero
+  // rotation is applied by the caller via rotation.y = -atan2(z, x).
+  const g = _getConePoolGeo();
   const m = new THREE.MeshBasicMaterial({
     map: _getRuneTex(),
     color: color, transparent: true, opacity: 0.85,
@@ -143,11 +179,10 @@ function _makeConeMesh(color) {
 }
 
 function _makeQuakeBar(color, opacity) {
-  // 6u long × 2u wide bar — covers the full shockwave line. Bars share the
-  // rune texture so it doesn't read as a flat placeholder; tiling looks
-  // intentional ("rune line", same art language as the rings).
-  const g = new THREE.PlaneGeometry(6.0, 2.0);
-  g.rotateX(-Math.PI / 2);
+  // Pooled 6u×2u plane (rune-textured). Quake bar shares the same geometry
+  // across all 4 cardinal directions × multiple bosses simultaneously — the
+  // per-bar position + rotation are mesh-level transforms.
+  const g = _getQuakeBarPoolGeo();
   const m = new THREE.MeshBasicMaterial({
     map: _getRuneTex(),
     color: color, transparent: true, opacity: opacity != null ? opacity : 0.85,

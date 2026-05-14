@@ -104,10 +104,30 @@ export function spawnDashStreak(x, z, dirX, dirZ, color = 0x7fffe4) {
 
 function _push(arr, cap, obj) { if (arr.length >= cap) arr.shift(); arr.push(obj); }
 
+// Iter 10a — reduced-flashing throttle: cap to 4 flashes/sec (250ms gap) and
+// dampen alpha to 0.4 when state._optReducedFlashing is on. Tracked per
+// module so we don't add a global timer.
+let _lastFlashAt = 0;
 function _spawnFlash(x, z, scale, color) {
+  // Reduce-motion strips flashes outright (the screen-warp + camera punch is
+  // what reads as "motion" — the 250ms star pop also counts).
+  if (state._optReduceMotion) return;
+  if (state._optReducedFlashing) {
+    const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    if (now - _lastFlashAt < 250) return;
+    _lastFlashAt = now;
+    // Dampen by tinting the spawn color toward 40% alpha-equivalent. Flash
+    // material is additive so multiplying the spawn color is the path.
+    const c = (color >>> 0);
+    const r = ((c >> 16) & 0xff) * 0.4;
+    const g = ((c >>  8) & 0xff) * 0.4;
+    const b = ( c        & 0xff) * 0.4;
+    color = ((r & 0xff) << 16) | ((g & 0xff) << 8) | (b & 0xff);
+  }
   _push(_flashes, FLASH_CAP, { x, z, t: 0, life: 0.25, baseScale: 4.5 * scale, color });
 }
 function _spawnShock(x, z, scale, color) {
+  if (state._optReduceMotion) return;
   _push(_shocks, SHOCK_CAP, { x, z, t: 0, life: 0.55, baseScale: 1.0 * scale, color });
 }
 function _spawnSmoke(x, y, z, vx, vy, vz, scale, color) {
@@ -120,6 +140,9 @@ function _spawnEmber(x, y, z, vx, vy, vz, color) {
 /**
  * One-call layered burst. `radius` ≈ how far embers travel.
  * Colors: warmTint applied to flash/shock; smoke/ember stay on their atlases.
+ * Iter 10a — when state._optReduceMotion is set, the flash + shock layers
+ * are skipped via _spawnFlash/_spawnShock early-returns; smoke/embers still
+ * fire so the explosion has visual presence without the screen-punching pulse.
  */
 export function burstExplosion(x, z, radius = 6, warmTint = 0xffd078) {
   const scale = radius / 6;

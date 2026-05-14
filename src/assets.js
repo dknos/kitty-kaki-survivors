@@ -34,6 +34,20 @@ function _preload(key, path) {
       err => {
         console.warn(`[assets] failed: ${path}`, err);
         GLTF_CACHE[key] = null;
+        // Iter 10b — surface asset-load failures via a window CustomEvent so
+        // 10c's UI layer can show a user-facing toast instead of leaving the
+        // game silently spawnless. We accumulate failures on a shared list
+        // so a late listener still sees the full picture (and we dispatch
+        // each time so an early listener picks them up immediately too).
+        try {
+          if (typeof window !== 'undefined') {
+            window._kkAssetFailures = window._kkAssetFailures || [];
+            window._kkAssetFailures.push({ key, path, err: String(err && err.message || err) });
+            window.dispatchEvent(new CustomEvent('kk-asset-load-failed', {
+              detail: { failures: window._kkAssetFailures.slice() },
+            }));
+          }
+        } catch (_) { /* event dispatch must never block the load resolve */ }
         resolve(false);
       }
     );

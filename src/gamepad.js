@@ -7,14 +7,28 @@
  *   - gamepadState         live snapshot { lx, ly, rx, ry, buttons{...}, connected, name }
  *
  * Notes:
- *   - Sticks use radial deadzone 0.18 with smooth rescale; triggers use 0.05.
+ *   - Sticks use radial deadzone meta.optControllerDeadzone (default 0.18) with
+ *     smooth rescale; triggers use a fixed 0.05.
  *   - Buttons expose .pressed (held) and .justPressed (this frame edge).
  *   - Right stick aims (top-down: x→x, y→z). Left stick moves.
  *   - First connected pad wins. Disconnect falls back to the next available.
  */
 
-const STICK_DEAD = 0.18;
+import { getMeta } from './meta.js';
+
+// Iter 10a: stick deadzone is now configurable via meta.optControllerDeadzone
+// (0.0..0.30 surfaced in Options ▸ Controls). Trigger threshold stays hard-
+// coded — players don't usually customise it and it's already permissive.
+const STICK_DEAD_DEFAULT = 0.18;
 const TRIGGER_DEAD = 0.05;
+
+function _stickDead() {
+  try {
+    const v = Number(getMeta().optControllerDeadzone);
+    if (Number.isFinite(v) && v >= 0 && v <= 0.5) return v;
+  } catch (_) {}
+  return STICK_DEAD_DEFAULT;
+}
 
 // Standard XInput button indices (Gamepad API "standard" mapping).
 const BTN = {
@@ -55,10 +69,11 @@ let _initialized = false;
 
 /** Apply radial deadzone + smooth rescale so output starts at 0 just past the dead band. */
 function _deadzoneStick(x, y) {
+  const dead = _stickDead();
   const mag = Math.hypot(x, y);
-  if (mag < STICK_DEAD) return [0, 0];
-  // Rescale [STICK_DEAD..1] → [0..1] so motion past the deadzone is smooth.
-  const scaled = (mag - STICK_DEAD) / (1 - STICK_DEAD);
+  if (mag < dead) return [0, 0];
+  // Rescale [dead..1] → [0..1] so motion past the deadzone is smooth.
+  const scaled = (mag - dead) / (1 - dead);
   const clamped = Math.min(1, scaled);
   const nx = (x / mag) * clamped;
   const ny = (y / mag) * clamped;

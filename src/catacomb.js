@@ -19,6 +19,13 @@ import { state } from './state.js';
 import { grantEmbers } from './meta.js';
 import { ENEMY_TIERS } from './config.js';
 import { bindPrompt, setPromptLabel } from './buttonPrompts.js';
+import { BLOOM_LAYER } from './postfx.js';
+import { makeRuneRingTexture } from './enemyTells.js';
+
+// Shared rune-ring texture for catacomb glyphs (entrance lip + stair foot).
+// Lazy-cached so we don't re-render the canvas every build.
+let _runeTex = null;
+function _getRuneTex() { return _runeTex || (_runeTex = makeRuneRingTexture()); }
 
 // Chamber dims (world units)
 const CHAMBER_W = 30;
@@ -178,16 +185,25 @@ function _makeEntranceStairs() {
     rock.castShadow = true;
     g.add(rock);
   }
-  // Glowing rune at the lip
+  // Glowing rune at the lip — iter 10b FX residue cleanup: PlaneGeometry +
+  // makeRuneRingTexture (purple-orange entrance glow, slow yaw, bloom layer).
+  // The original brief calls for "purple", but this is the surface-side
+  // entrance into the catacomb — the existing warm 0xff7a3a hue cues "danger
+  // below" better than a cold purple. Catacomb-internal glyph (stair-foot
+  // rune below) uses the purple per brief.
+  const runeGeo = new THREE.PlaneGeometry(1.56, 1.56);
+  runeGeo.rotateX(-Math.PI / 2);
   const rune = new THREE.Mesh(
-    new THREE.RingGeometry(0.55, 0.78, 24),
-    new THREE.MeshStandardMaterial({
-      color: 0xff7a3a, emissive: 0xff7a3a, emissiveIntensity: 1.8,
-      transparent: true, opacity: 0.85, side: THREE.DoubleSide,
+    runeGeo,
+    new THREE.MeshBasicMaterial({
+      map: _getRuneTex(),
+      color: 0xff7a3a, transparent: true, opacity: 0.85,
+      depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
     }),
   );
-  rune.rotation.x = -Math.PI / 2;
-  rune.position.set(0, 0.04, -0.85);
+  rune.position.set(0, 0.05, -0.85);
+  rune.layers.enable(BLOOM_LAYER);
+  rune.userData._spin = 0.35;
   g.add(rune);
   g.userData._rune = rune;
   // Soft glow
@@ -209,17 +225,27 @@ function _makeStairs() {
     step.receiveShadow = true; step.castShadow = true;
     g.add(step);
   }
-  // Glowing rune at the foot of the stairs — visual cue
+  // Glowing rune at the foot of the stairs — iter 10b FX residue cleanup.
+  // Purple-magenta tint per brief: catacomb-internal glyphs should read as
+  // necromantic + "you are deeper now", distinct from the warm-orange
+  // surface entrance. Slow yaw + bloom layer + additive blending to match
+  // the rest of the runic-tell art language. Opacity-pulse anim hook left
+  // for a future tick if needed; no consumer reads this _rune ref today
+  // outside the entrance, so emissive→opacity port is a static glow.
+  const runeGeo = new THREE.PlaneGeometry(1.70, 1.70);
+  runeGeo.rotateX(-Math.PI / 2);
   const rune = new THREE.Mesh(
-    new THREE.RingGeometry(0.6, 0.85, 24),
-    new THREE.MeshStandardMaterial({
-      color: 0xffd24a, emissive: 0xffd24a, emissiveIntensity: 1.6,
-      transparent: true, opacity: 0.85, side: THREE.DoubleSide,
+    runeGeo,
+    new THREE.MeshBasicMaterial({
+      map: _getRuneTex(),
+      color: 0xc87bff, transparent: true, opacity: 0.85,
+      depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
     }),
   );
-  rune.rotation.x = -Math.PI / 2;
-  rune.position.y = 0.02;
+  rune.position.y = 0.03;
   rune.position.z = -0.8;
+  rune.layers.enable(BLOOM_LAYER);
+  rune.userData._spin = 0.45;
   g.add(rune);
   g.userData._rune = rune;
   return g;
@@ -351,10 +377,13 @@ export function tickCatacombEntrance(dt) {
     return;
   }
   if (!_entranceMesh.visible) _entranceMesh.visible = true;
-  // Pulse the rune
-  if (_entranceMesh.userData._rune) {
-    _entranceMesh.userData._rune.material.emissiveIntensity =
-      1.4 + 0.6 * Math.sin(state.time.real * 3.2);
+  // Pulse the rune (iter 10b — the rune is now MeshBasicMaterial-on-PlaneGeometry,
+  // so we drive opacity instead of emissiveIntensity for the same "breathing
+  // ward" cue. Bloom layer makes the opacity changes read at distance).
+  const rune = _entranceMesh.userData._rune;
+  if (rune) {
+    rune.material.opacity = 0.55 + 0.30 * Math.sin(state.time.real * 3.2);
+    rune.rotation.y += dt * (rune.userData._spin || 0.35);
   }
   const dx = state.hero.pos.x - ENTRANCE_POS.x;
   const dz = state.hero.pos.z - ENTRANCE_POS.z;

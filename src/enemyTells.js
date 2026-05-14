@@ -26,6 +26,9 @@ import { BLOOM_LAYER } from './postfx.js';
 const ELITE_RING_CAP   = 32;
 const RANGED_TELL_CAP  = 16;
 const THREAT_DOT_CAP   = 8;
+// Iter 10b — Leaping-affix landing-zone marker. 16 slots covers the worst
+// case (8a's affix-roll keeps Leaping rare — 1/elite, never > 8 in flight).
+const LEAP_MARKER_CAP  = 16;
 
 // ── Tunables ──────────────────────────────────────────────────────────────
 // Inner/outer widened so the textured rune art has room to breathe.
@@ -56,7 +59,19 @@ const COL_VOLATILE     = new THREE.Color(0x66ddff);   // cyan ring — "don't da
 const COL_FROST        = new THREE.Color(0x88ddff);   // cool blue — slow aura
 const COL_SHIELD_GOLD  = new THREE.Color(0xffd24a);   // gold base for flicker modulation
 const COL_VAMP_RED     = new THREE.Color(0xff3344);   // reuse COL_FINAL hue for vampiric blend
+const COL_LEAP_MARKER  = new THREE.Color(0xff66cc);   // magenta — "land spot, get out"
 const _ringColTmp      = new THREE.Color();           // scratch for blend math (reused)
+
+// ── Leap-marker tunables ──────────────────────────────────────────────────
+// Brief tunings: scale 0.6 → 1.4 as windup remaining drops to 0, with a
+// ±0.2 pulse keyed to wall time so the marker reads as "alive / charging"
+// instead of a static decal. Y is parked just above the ground ring layer
+// so the magenta sells over the ground tile texture.
+const LEAP_MARKER_Y       = 0.06;
+const LEAP_SCALE_MIN      = 0.6;
+const LEAP_SCALE_MAX      = 1.4;
+const LEAP_PULSE_AMP      = 0.3;
+const LEAP_PULSE_HZ       = 12.0;
 
 // ── Module-scope temps (reuse — zero per-frame allocations) ───────────────
 const _mat       = new THREE.Matrix4();
@@ -75,6 +90,16 @@ let _scene       = null;
 let _eliteRings  = /** @type {THREE.InstancedMesh|null} */ (null);
 let _rangedTells = /** @type {THREE.InstancedMesh|null} */ (null);
 let _threatDots  = /** @type {THREE.InstancedMesh|null} */ (null);
+let _leapMarkers = /** @type {THREE.InstancedMesh|null} */ (null);
+
+// Leap-marker slot table. One slot per leaping enemy in flight; the writer
+// (enemies.js leap update branch) calls setLeapMarker every tick during
+// windup, clearLeapMarker on resolve / kill. The "touched-this-frame" flag
+// lets updateEnemyTells prune slots whose owning enemy died mid-windup
+// without an explicit clearLeapMarker call (safety net).
+const _leapSlots = new Array(LEAP_MARKER_CAP); // {used, x, z, remaining, total, key, touchedFrame}
+for (let i = 0; i < LEAP_MARKER_CAP; i++) _leapSlots[i] = { used: false, x: 0, z: 0, remaining: 0, total: 0.6, key: null, touchedFrame: -1 };
+let _leapFrame = 0;
 
 // ──────────────────────────────────────────────────────────────────────────
 // Procedural rune-ring texture — sharp inner pulse + outer band of ticks +
@@ -232,6 +257,124 @@ export function initEnemyTells(scene) {
   _threatDots.instanceMatrix.needsUpdate = true;
   if (_threatDots.instanceColor) _threatDots.instanceColor.needsUpdate = true;
   _scene.add(_threatDots);
+
+  // ── Leap-marker InstancedMesh (iter 10b) ──
+  // Magenta rune-ring on the ground at the captured leap-target. Reuses the
+  // existing makeRuneRingTexture art so the affix family reads as "magical
+  // warning, same as the other tells". Additive blending + BLOOM_LAYER so
+  // it glows through the swarm's silhouette clutter.
+  const leapGeo = new THREE.PlaneGeometry(RING_OUTER * 2, RING_OUTER * 2);
+  leapGeo.rotateX(-Math.PI / 2);
+  const leapMat = new THREE.MeshBasicMaterial({
+    map: _makeRuneRingTexture(),
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.95,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+  });
+  _leapMarkers = new THREE.InstancedMesh(leapGeo, leapMat, LEAP_MARKER_CAP);
+  _leapMarkers.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  _leapMarkers.frustumCulled = false;
+  _leapMarkers.renderOrder = 5;
+  _leapMarkers.layers.enable(BLOOM_LAYER);
+  if (_leapMarkers.instanceColor === null) {
+    const colors = new Float32Array(LEAP_MARKER_CAP * 3);
+    _leapMarkers.instanceColor = new THREE.InstancedBufferAttribute(colors, 3);
+  }
+  for (let i = 0; i < LEAP_MARKER_CAP; i++) {
+    _leapMarkers.setMatrixAt(i, _hideMat);
+    _leapMarkers.setColorAt(i, COL_LEAP_MARKER);
+  }
+  _leapMarkers.instanceMatrix.needsUpdate = true;
+  if (_leapMarkers.instanceColor) _leapMarkers.instanceColor.needsUpdate = true;
+  _scene.add(_leapMarkers);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Leap-marker imperative API (iter 10b)
+// ──────────────────────────────────────────────────────────────────────────
+// setLeapMarker(x, z, remaining, total) — called from enemies.js per tick
+// while a Leaping-affix enemy is in its 0.6s windup. The marker scales from
+// LEAP_SCALE_MIN to LEAP_SCALE_MAX as `remaining` → 0 (1 - remaining/total),
+// with a small pulse so the eye locks on. We slot by `key` (enemy reference)
+// so repeat calls re-use the same slot.
+//
+// The 4-argument signature lines up with the locked contract; we allow `key`
+// as an optional 5th arg for callers that want explicit clear-on-kill (the
+// brief asks `clearLeapMarker(enemyId?)` so the symmetric pattern is to let
+// setLeapMarker also accept the key — if absent we fall back to (x,z) match).
+export function setLeapMarker(x, z, remaining, total, key) {
+  if (!_leapMarkers) return;
+  const remainingClamped = Math.max(0, remaining);
+  const totalClamped     = Math.max(0.0001, total);
+  // Find existing slot for this key (or x,z within 0.5u) so per-tick calls
+  // don't bleed into adjacent slots.
+  let slot = -1;
+  for (let i = 0; i < LEAP_MARKER_CAP; i++) {
+    const s = _leapSlots[i];
+    if (!s.used) continue;
+    if (key != null && s.key === key) { slot = i; break; }
+    if (key == null && Math.abs(s.x - x) < 0.5 && Math.abs(s.z - z) < 0.5) { slot = i; break; }
+  }
+  if (slot < 0) {
+    // Allocate a free slot.
+    for (let i = 0; i < LEAP_MARKER_CAP; i++) {
+      if (!_leapSlots[i].used) { slot = i; break; }
+    }
+  }
+  if (slot < 0) return; // cap reached, gameplay-safe
+  const s = _leapSlots[slot];
+  s.used        = true;
+  s.x           = x;
+  s.z           = z;
+  s.remaining   = remainingClamped;
+  s.total       = totalClamped;
+  s.key         = key != null ? key : null;
+  s.touchedFrame = _leapFrame;
+
+  // Compute scale: progress 0 → 1 maps to LEAP_SCALE_MIN → LEAP_SCALE_MAX.
+  const progress = 1 - (remainingClamped / totalClamped);
+  const baseScale = LEAP_SCALE_MIN + (LEAP_SCALE_MAX - LEAP_SCALE_MIN) * progress;
+  // Pulse via wall time so all markers share rhythm; sin(t*12) ± 0.3 = ±20%.
+  const pulse = 1.0 + LEAP_PULSE_AMP * Math.sin(state.time.real * LEAP_PULSE_HZ);
+  const finalScale = baseScale * pulse;
+
+  _pos.set(x, LEAP_MARKER_Y, z);
+  _scl.set(finalScale, 1, finalScale);
+  _quat.setFromAxisAngle(_axisY, state.time.real * 1.2 + slot * 0.7);
+  _mat.compose(_pos, _quat, _scl);
+  _leapMarkers.setMatrixAt(slot, _mat);
+  _leapMarkers.setColorAt(slot, COL_LEAP_MARKER);
+  _leapMarkers.instanceMatrix.needsUpdate = true;
+  if (_leapMarkers.instanceColor) _leapMarkers.instanceColor.needsUpdate = true;
+}
+
+// clearLeapMarker(enemyId?) — called from enemies.js on leap resolve. If
+// enemyId is omitted, clears ALL markers (used by resetEnemyTells).
+export function clearLeapMarker(enemyId) {
+  if (!_leapMarkers) return;
+  if (enemyId == null) {
+    for (let i = 0; i < LEAP_MARKER_CAP; i++) {
+      _leapSlots[i].used = false;
+      _leapSlots[i].key  = null;
+      _leapMarkers.setMatrixAt(i, _hideMat);
+    }
+    _leapMarkers.instanceMatrix.needsUpdate = true;
+    return;
+  }
+  for (let i = 0; i < LEAP_MARKER_CAP; i++) {
+    const s = _leapSlots[i];
+    if (!s.used) continue;
+    if (s.key === enemyId) {
+      s.used = false;
+      s.key  = null;
+      _leapMarkers.setMatrixAt(i, _hideMat);
+      _leapMarkers.instanceMatrix.needsUpdate = true;
+      return;
+    }
+  }
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -371,6 +514,27 @@ export function updateEnemyTells(dt) {
   _rangedTells.instanceMatrix.needsUpdate = true;
   _threatDots.instanceMatrix.needsUpdate = true;
   if (_threatDots.instanceColor) _threatDots.instanceColor.needsUpdate = true;
+
+  // Leap-marker per-frame prune: any slot whose touchedFrame isn't this frame
+  // belongs to an enemy that didn't call setLeapMarker this tick (killed, leap
+  // resolved without calling clear, etc.). Hide + free.
+  if (_leapMarkers) {
+    let leapDirty = false;
+    for (let i = 0; i < LEAP_MARKER_CAP; i++) {
+      const s = _leapSlots[i];
+      if (s.used && s.touchedFrame !== _leapFrame) {
+        s.used = false;
+        s.key  = null;
+        _leapMarkers.setMatrixAt(i, _hideMat);
+        leapDirty = true;
+      }
+    }
+    if (leapDirty) _leapMarkers.instanceMatrix.needsUpdate = true;
+  }
+  // Advance frame counter LAST so the next updateEnemies → setLeapMarker
+  // tick stamps with the next frame's index, and our next pass prunes anyone
+  // who didn't refresh.
+  _leapFrame++;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -384,4 +548,13 @@ export function resetEnemyTells() {
   _eliteRings.instanceMatrix.needsUpdate = true;
   _rangedTells.instanceMatrix.needsUpdate = true;
   _threatDots.instanceMatrix.needsUpdate = true;
+  // Wipe leap markers + free all slots so the next run starts clean.
+  if (_leapMarkers) {
+    for (let i = 0; i < LEAP_MARKER_CAP; i++) {
+      _leapSlots[i].used = false;
+      _leapSlots[i].key  = null;
+      _leapMarkers.setMatrixAt(i, _hideMat);
+    }
+    _leapMarkers.instanceMatrix.needsUpdate = true;
+  }
 }

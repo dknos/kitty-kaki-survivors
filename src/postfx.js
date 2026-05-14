@@ -31,17 +31,52 @@ const PostFXShader = {
     lift:      { value: new THREE.Vector3(0.00, 0.00, 0.02) },
     gamma:     { value: new THREE.Vector3(1.00, 1.00, 1.05) },
     gain:      { value: new THREE.Vector3(1.02, 1.00, 0.98) },
+    // ── Iter 10a accessibility uniforms ──
+    // uReduceMotion: 0 = motion ON (default), 1 = strip chromatic warp.
+    //   We multiply the per-pixel chromatic offset by (1 - uReduceMotion).
+    //   The chromaticPulse field still gets written by callers we don't
+    //   own (hero/spawnDirector/pickups) — gating in the fragment shader
+    //   is the cheapest way to honor reduce-motion without touching them.
+    // uColorblind: 0=off, 1=deuteranopia, 2=protanopia, 3=tritanopia. Each
+    //   non-zero value triggers a Brettel-style channel mix that nudges
+    //   reds/greens/blues into safe-confusion-line bands. Subtle (≈30%)
+    //   so the player keeps the aesthetic but reds/greens become readable.
+    // uHighContrast: 0..1, lerps the final color toward a stretched range
+    //   (lift→0, gain→1.15) to boost HUD/text legibility.
+    uReduceMotion: { value: 0.0 },
+    uColorblind:   { value: 0.0 },
+    uHighContrast: { value: 0.0 },
   },
   vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
   fragmentShader: `
     uniform sampler2D tDiffuse;
     uniform float chromatic, vignette, grain, time, fogAmount;
+    uniform float uReduceMotion, uColorblind, uHighContrast;
     uniform vec3 fogTint, lift, gamma, gain;
     varying vec2 vUv;
+
+    vec3 applyColorblind(vec3 c, float mode) {
+      // mode rounded to nearest int: 1=deut, 2=prot, 3=trit.
+      // Linear daltonization-style channel rebalance — keeps the picture
+      // looking like itself while pushing confusion-line colors apart.
+      if (mode < 0.5) return c;
+      if (mode < 1.5) {
+        // Deuteranopia (green-weak) — shift red+green toward separable bands.
+        return vec3(c.r * 0.85 + c.g * 0.15, c.r * 0.20 + c.g * 0.80, c.b);
+      }
+      if (mode < 2.5) {
+        // Protanopia (red-weak) — boost green into red channel for visibility.
+        return vec3(c.r * 0.70 + c.g * 0.30, c.g * 0.95 + c.r * 0.05, c.b);
+      }
+      // Tritanopia (blue-weak) — pull blue toward yellow-friendly bands.
+      return vec3(c.r, c.g * 0.85 + c.b * 0.15, c.b * 0.65 + c.g * 0.35);
+    }
+
     void main(){
       vec2 d = vUv - 0.5;
       float dist = length(d);
-      vec2 off = d * chromatic * dist * 2.0;
+      // Reduce-motion gate: zero out the chromatic warp when toggled on.
+      vec2 off = d * chromatic * dist * 2.0 * (1.0 - uReduceMotion);
       float r = texture2D(tDiffuse, vUv + off).r;
       float g = texture2D(tDiffuse, vUv).g;
       float b = texture2D(tDiffuse, vUv - off).b;
@@ -51,6 +86,11 @@ const PostFXShader = {
       col = mix(col, fogTint, hFog);
       // LGG color grade
       col = pow(max(col + lift, vec3(0.0)), vec3(1.0) / max(gamma, vec3(0.001))) * gain;
+      // Colorblind remap (no-op when uColorblind == 0).
+      col = applyColorblind(col, uColorblind);
+      // High-contrast lerp: push to a stretched range so HUD reads brighter.
+      vec3 hc = clamp((col - 0.04) * 1.18, vec3(0.0), vec3(1.0));
+      col = mix(col, hc, clamp(uHighContrast, 0.0, 1.0));
       float vig = 1.0 - smoothstep(0.35, 0.95, dist * 1.4) * vignette;
       float n = (fract(sin(dot(vUv*time, vec2(12.9898,78.233)))*43758.5453)-0.5) * grain;
       gl_FragColor = vec4((col + n) * vig, 1.0);
@@ -104,4 +144,26 @@ export function resizeComposer(composer, bloomPass, postFXPass, W, H, bloomCompo
     bloomComposer.setSize(W, H);
   }
   bloomPass.setSize(W * 0.5, H * 0.5);
+}
+
+/**
+ * Iter 10a: apply accessibility-related meta options to the post-FX uniforms.
+ * Cheap to call repeatedly (just uniform writes), so the options menu calls
+ * it after every toggle/slider change. Boot also calls it once after loadMeta.
+ *
+ * Inputs:
+ *   - postFXPass: the ShaderPass returned by createComposer.
+ *   - opts: { reduceMotion, colorblind, highContrast } from meta.
+ *     colorblind values: 'off' | 'deuteranopia' | 'protanopia' | 'tritanopia'.
+ */
+export function applyAccessibilityOptions(postFXPass, opts) {
+  if (!postFXPass || !postFXPass.uniforms) return;
+  const u = postFXPass.uniforms;
+  if (u.uReduceMotion) u.uReduceMotion.value = opts && opts.reduceMotion ? 1.0 : 0.0;
+  if (u.uHighContrast) u.uHighContrast.value = opts && opts.highContrast ? 1.0 : 0.0;
+  if (u.uColorblind) {
+    const map = { off: 0, deuteranopia: 1, protanopia: 2, tritanopia: 3 };
+    const key = (opts && opts.colorblind) || 'off';
+    u.uColorblind.value = map[key] != null ? map[key] : 0;
+  }
 }

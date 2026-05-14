@@ -18,6 +18,13 @@ import { CHARACTERS } from './config.js';
 import { getMeta, setOption } from './meta.js';
 import { initChatBindings, tickBubbles } from './chatBubble.js';
 import { bindPrompt, setPromptLabel, formatPrompt } from './buttonPrompts.js';
+import { BLOOM_LAYER } from './postfx.js';
+import { makeRuneRingTexture } from './enemyTells.js';
+
+// Shared rune-ring texture for town FX (statue selection ring). Cached on
+// first call so every statue + the catacomb / interior swaps share one upload.
+let _runeTex = null;
+function _getRuneTex() { return _runeTex || (_runeTex = makeRuneRingTexture()); }
 
 const PLAZA_R = 18;
 const FENCE_R = 22;
@@ -139,16 +146,25 @@ function _makeLamp() {
 // Statue pedestal — `ch` is a CHARACTERS entry. `unlocked` toggles dim/lit.
 function _makeCharStatue(ch, unlocked) {
   const g = new THREE.Group();
-  // Selection ring under base (shown only for currently-picked character)
+  // Selection ring under base (shown only for currently-picked character).
+  // Iter 10b FX residue cleanup: swapped from flat RingGeometry +
+  // MeshBasicMaterial to PlaneGeometry + makeRuneRingTexture so the statue
+  // selection cue matches the rest of the game's "rune-warning" art
+  // language (chest halo, elite tells, boss telegraphs all share the same tex).
+  // Gold tint per brief — Hades-style "you are the chosen one" warmth.
+  const ringGeo = new THREE.PlaneGeometry(3.1, 3.1);
+  ringGeo.rotateX(-Math.PI / 2);
   const ring = new THREE.Mesh(
-    new THREE.RingGeometry(1.05, 1.55, 32),
+    ringGeo,
     new THREE.MeshBasicMaterial({
-      color: 0x7fffd4, transparent: true, opacity: 0.6, depthWrite: false, blending: THREE.AdditiveBlending,
+      map: _getRuneTex(),
+      color: 0xffd24a, transparent: true, opacity: 0.85,
+      depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
     }),
   );
-  ring.rotation.x = -Math.PI / 2;
-  ring.position.y = 0.03;
+  ring.position.y = 0.04;
   ring.visible = false;
+  ring.layers.enable(BLOOM_LAYER);
   g.add(ring);
   g.userData._selRing = ring;
 
@@ -419,13 +435,16 @@ export function tickTown(dt) {
     _portal.scale.set(s, s, s);
     _portal.material.opacity = 0.50 + 0.18 * Math.sin(t * 2.6 + 0.4);
   }
-  // Animate selected statue ring (rotate + opacity pulse) and gentle bob
+  // Animate selected statue ring (rotate + opacity pulse) and gentle bob.
+  // After the iter 10b swap, the X-rotation is baked into the PlaneGeometry,
+  // so we yaw the rune by mutating rotation.y (the world-up axis) — same
+  // visual feel as the original rotation.z spin on the un-baked RingGeometry.
   const sel = getMeta().selectedChar;
   if (sel && _statueRefs[sel]) {
     const ring = _statueRefs[sel].userData._selRing;
     if (ring) {
-      ring.rotation.z += dt * 0.6;
-      ring.material.opacity = 0.45 + 0.25 * Math.sin(t * 3.2);
+      ring.rotation.y += dt * 0.6;
+      ring.material.opacity = 0.55 + 0.30 * Math.sin(t * 3.2);
       const rs = 1 + 0.08 * Math.sin(t * 2.4);
       ring.scale.set(rs, rs, rs);
     }

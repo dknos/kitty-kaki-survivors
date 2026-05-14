@@ -22,6 +22,7 @@ import { spawnHeart, spawnStar, spawnBomb, spawnFreeze, spawnChicken } from './p
 import { sfx } from './audio.js';
 import { notifyStageEnemySpawn, notifyStageEnemyKill } from './stageRules.js';
 import { rollAffixes } from './enemyAffixes.js';
+import { setLeapMarker, clearLeapMarker } from './enemyTells.js';
 
 // ── Module-scope temp vectors (reuse, never `new` in update loops) ────────────
 const _tmpDir   = new THREE.Vector3();
@@ -941,10 +942,25 @@ export function updateEnemies(dt) {
               ep.x += ldx * k;
               ep.z += ldz * k;
             }
+            // Iter 10b — leap resolved; release the landing-zone marker.
+            try { clearLeapMarker(e); } catch (_) {}
             e._leapWindup = 0;
             e._leapCD = 4.0;
             e._leapTargetX = undefined;
             e._leapTargetZ = undefined;
+          } else {
+            // Iter 10b — refresh the marker each tick so the per-frame prune
+            // in updateEnemyTells doesn't sweep it. setLeapMarker scales the
+            // ring as windup remaining → 0 (grows = "about to land").
+            try {
+              setLeapMarker(
+                e._leapTargetX !== undefined ? e._leapTargetX : heroPos.x,
+                e._leapTargetZ !== undefined ? e._leapTargetZ : heroPos.z,
+                e._leapWindup,
+                0.6,
+                e,
+              );
+            } catch (_) {}
           }
         } else {
           e._leapCD -= dt;
@@ -954,6 +970,9 @@ export function updateEnemies(dt) {
             e._leapWindup = 0.6;
             e._leapTargetX = heroPos.x;
             e._leapTargetZ = heroPos.z;
+            // Iter 10b — paint the marker at full windup (small scale, will
+            // grow toward landing).
+            try { setLeapMarker(heroPos.x, heroPos.z, 0.6, 0.6, e); } catch (_) {}
           }
         }
       }

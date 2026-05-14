@@ -20,9 +20,26 @@ const DEFAULT = {
   bestKills: 0,
   totalKills: 0,
   // ── Options ──
-  optVolume: 0.7,
+  optVolume: 0.7,             // legacy single-slider value; kept for back-compat
   optShake: 1.0,
   optMusic: false,    // user prefers silence by default; opt-in via options menu
+  // ── Iter 10a audio mix split — Master/Music/SFX (defaults: combat readability) ──
+  optMasterVolume: 1.0,
+  optMusicVolume: 0.5,
+  optSfxVolume: 0.7,
+  // ── Iter 10a accessibility ──
+  // Reduce Motion: skip screen shake, chromatic aberration, VFX bursts.
+  // ReduceMotionUserSet sentinel = true once the user explicitly toggled the
+  // option; this lets boot honor `prefers-reduced-motion` only on first run.
+  optReduceMotion: false,
+  optReduceMotionUserSet: false,
+  optReducedFlashing: false,
+  optHighContrast: false,
+  optColorblind: 'off',          // 'off' | 'deuteranopia' | 'protanopia' | 'tritanopia'
+  optFontScale: 1.0,             // 0.85..1.30, surfaced via --kk-font-scale CSS var
+  optFrameCap: 0,                // 0=unlocked; 30/60/144 valid
+  optControllerDeadzone: 0.15,   // 0..0.30 — gamepad.js reads this
+  optLanguage: 'en',             // i18n stub for v1.1+
   // First-run tutorial seen flag (legacy single-card overlay)
   seenTutorial: false,
   // Guided 6-stage tutorial completion (src/tutorial.js)
@@ -885,7 +902,23 @@ export function loadMeta() {
     const raw = localStorage.getItem(SAVE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
+      // ── Iter 10a migration ──
+      // Detect legacy single-slider saves: optVolume present, new Master/
+      // Music/SFX keys absent. Must inspect `parsed` BEFORE the spread —
+      // otherwise DEFAULT seeds the new keys and we lose the signal.
+      const hasLegacy = (parsed.optVolume !== undefined)
+        && (parsed.optMasterVolume === undefined)
+        && (parsed.optMusicVolume  === undefined)
+        && (parsed.optSfxVolume    === undefined);
       _data = { ...DEFAULT, ...parsed };
+      if (hasLegacy) {
+        const v = Number(parsed.optVolume);
+        if (Number.isFinite(v)) {
+          _data.optMasterVolume = Math.max(0, Math.min(1, v));
+          _data.optMusicVolume  = Math.max(0, Math.min(1, v * 0.6));
+          _data.optSfxVolume    = Math.max(0, Math.min(1, v));
+        }
+      }
       return _data;
     }
   } catch (e) {
@@ -990,6 +1023,50 @@ export function setOption(key, val) {
   const meta = getMeta();
   meta[key] = val;
   saveMeta();
+}
+
+/**
+ * Iter 10a — Save Export. Returns the meta blob as a formatted JSON string.
+ * Used by the Options ▸ Data ▸ Export workflow (copy-to-clipboard + file
+ * download). Safe to inspect by users; no secrets.
+ */
+export function exportMeta() {
+  const meta = getMeta();
+  try {
+    return JSON.stringify(meta, null, 2);
+  } catch (e) {
+    console.warn('[meta] exportMeta failed', e);
+    return JSON.stringify(DEFAULT, null, 2);
+  }
+}
+
+/**
+ * Iter 10a — Save Import. Parse a previously-exported JSON blob, validate it
+ * has a `version` field, merge over DEFAULT (so unknown keys are tolerated
+ * and missing keys get defaults), persist, and reset cached _data so callers
+ * see the imported value via getMeta().
+ *
+ * Returns `{ ok: true }` on success or `{ ok: false, reason }` on failure.
+ * Reasons: `'empty'`, `'parse'`, `'shape'`, `'no_version'`.
+ */
+export function importMeta(str) {
+  if (typeof str !== 'string' || !str.trim()) return { ok: false, reason: 'empty' };
+  let parsed;
+  try {
+    parsed = JSON.parse(str);
+  } catch (e) {
+    return { ok: false, reason: 'parse' };
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { ok: false, reason: 'shape' };
+  }
+  if (typeof parsed.version === 'undefined') {
+    return { ok: false, reason: 'no_version' };
+  }
+  // Merge over DEFAULT so a partial save still produces a usable state.
+  _data = { ...DEFAULT, ...parsed };
+  saveMeta();
+  return { ok: true };
 }
 
 /**

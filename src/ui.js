@@ -16,7 +16,14 @@ import {
   SHOP_TREE, purchaseTreeNode, nodeUnlocked, nodeOwned, sigilCount,
   addPreset, removePreset, listPresets, applyPreset,
   weeklyMutatorConfig,
+  // Iter 10a — settings overhaul
+  exportMeta, importMeta, resetMeta,
 } from './meta.js';
+// Iter 10a — accessibility uniform pusher + audio mix setters routed from
+// the Options menu sliders. Imported eagerly so the Options modal sliders
+// don't have to await a dynamic import on every drag event.
+import { applyAccessibilityOptions } from './postfx.js';
+import { setMasterVolume, setMusicVolume, setSfxVolume } from './audio.js';
 import { CHARACTERS, STAGES } from './config.js';
 import { SLOT_SYMBOLS, rollReel, resolveOutcome, applyOutcome } from './slotMachine.js';
 import { pushFocusScope, popFocusScope } from './uiFocus.js';
@@ -47,6 +54,11 @@ const F = {
   body:    '"Inter", "Segoe UI", "Helvetica Neue", -apple-system, system-ui, sans-serif',
   mono:    '"JetBrains Mono", "Fira Code", "Consolas", monospace',
 };
+
+// ── Build version ────────────────────────────────────────────────────────────
+// Flipped to '1.0.0' on the iter-10 ship commit. Until then, '-rc1' surfaces
+// "release candidate" in the bottom-right + how-to-play footer + credits modal.
+export const KK_VERSION = '1.0.0-rc1';
 
 // ── Module-local DOM refs ────────────────────────────────────────────────────
 let _root = null;
@@ -523,6 +535,13 @@ export function initUI() {
   if (!_root) {
     console.error('[ui] #ui-root not found');
     return;
+  }
+  // Iter 10a accessibility: make ui-root a polite live region so screen
+  // readers announce toasts (achievements, secrets, run-end summaries)
+  // without interrupting the user's current focus.
+  if (!_root.hasAttribute('aria-live')) {
+    _root.setAttribute('aria-live', 'polite');
+    _root.setAttribute('aria-relevant', 'additions text');
   }
 
   // Try to warm registry cache (non-blocking)
@@ -1520,6 +1539,27 @@ export function showStartScreen(text) {
   optsBtn.style.cssText = ghostBtn('Options', C.cyan);
   optsBtn.addEventListener('click', (e) => { e.stopPropagation(); showOptions(); });
 
+  // ── Credits + How To Play ──
+  // Credits opens an in-game modal (showCredits, defined later in this file).
+  // How To Play opens the static `how-to-play.html` page in a new tab so the
+  // game-side focus scope stays intact and players can scroll the reference.
+  const creditsBtn = document.createElement('button');
+  creditsBtn.type = 'button';
+  creditsBtn.textContent = 'Credits';
+  creditsBtn.setAttribute('aria-label', 'View credits');
+  creditsBtn.style.cssText = ghostBtn('Credits', C.amber);
+  creditsBtn.addEventListener('click', (e) => { e.stopPropagation(); showCredits(); });
+
+  const howToBtn = document.createElement('button');
+  howToBtn.type = 'button';
+  howToBtn.textContent = 'How To Play';
+  howToBtn.setAttribute('aria-label', 'Open How To Play in a new tab');
+  howToBtn.style.cssText = ghostBtn('How To Play', C.cyan);
+  howToBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    try { window.open('how-to-play.html', '_blank', 'noopener'); } catch (_) {}
+  });
+
   // ── Daily / Weekly toggle pair ──
   // Mutually exclusive with each other and with BossRush; toggling one ON
   // untoggles the other two so the run-mode pipeline stays deterministic.
@@ -1732,6 +1772,8 @@ export function showStartScreen(text) {
   btnRow.appendChild(recordsBtn);
   btnRow.appendChild(dailyBtn);
   btnRow.appendChild(weeklyBtn);
+  btnRow.appendChild(howToBtn);
+  btnRow.appendChild(creditsBtn);
   btnRow.appendChild(optsBtn);
 
   // URL-replay header — appended first so it floats above the title when
@@ -2135,6 +2177,9 @@ export function showStartScreen(text) {
   _startBtnRowRef = btnRow;
   _root.appendChild(_startScreen);
   _refreshStartFocus();
+  // Surface the build version in the bottom-right corner. Attached to body so
+  // it survives modal stacks AND doesn't fight the start-screen flex layout.
+  _setVersionLabelVisible(true);
 }
 
 export function hideStartScreen() {
@@ -2147,6 +2192,9 @@ export function hideStartScreen() {
     _startScreen.parentNode.removeChild(_startScreen);
   }
   _startScreen = null;
+  // Hide the version pill in-run — it's only contextually useful on the menu /
+  // start screen, where the player might want to share a bug report with build.
+  _setVersionLabelVisible(false);
 }
 
 // ── Slot machine helpers ─────────────────────────────────────────────────────
@@ -3138,166 +3186,574 @@ export function hideQuestBoard() {
 }
 export function isShopOpen() { return !!_shopModal; }
 
-// ── Options panel ────────────────────────────────────────────────────────────
+// ── Options panel (iter 10a — sectioned + accessibility-complete) ────────────
+// Sections: Audio · Display · Controls · Accessibility · Modes · Data.
+// Every control writes via setOption AND applies live so the change is
+// visible immediately (font scale, colorblind palette, etc.).
 let _optionsPanel = null;
+
+// Font-scale bucket classes — applied to wrapper containers (NOT per-element
+// rewrites). Multiplied via calc(var(--kk-font-scale) * Npx) so the player's
+// slider mutates --kk-font-scale at :root (see main.js boot + index.html).
+function _ensureFontScaleStyle() {
+  if (typeof document === 'undefined') return;
+  if (document.getElementById('kk-font-scale-css')) return;
+  const s = document.createElement('style');
+  s.id = 'kk-font-scale-css';
+  s.textContent = `
+    .kk-fs-mono { font-size: calc(var(--kk-font-scale, 1) * 11px); }
+    .kk-fs-sm   { font-size: calc(var(--kk-font-scale, 1) * 13px); }
+    .kk-fs-md   { font-size: calc(var(--kk-font-scale, 1) * 16px); }
+    .kk-fs-lg   { font-size: calc(var(--kk-font-scale, 1) * 22px); }
+    .kk-fs-xl   { font-size: calc(var(--kk-font-scale, 1) * 44px); }
+  `;
+  document.head.appendChild(s);
+}
+
+function _applyFontScale(v) {
+  const fs = Math.max(0.6, Math.min(1.6, Number(v) || 1));
+  if (typeof document !== 'undefined' && document.documentElement) {
+    document.documentElement.style.setProperty('--kk-font-scale', String(fs));
+  }
+}
+
+// Re-push the postfx uniforms + state caches after any accessibility toggle
+// so the change reads immediately (no app reload required).
+function _applyAccessibilityLive() {
+  const m = getMeta();
+  state._optReduceMotion = !!m.optReduceMotion;
+  state._optReducedFlashing = !!m.optReducedFlashing;
+  // Reduce-motion forces shake to 0; otherwise honor the slider value.
+  state._optShakeMul = state._optReduceMotion ? 0 : Number(m.optShake);
+  applyAccessibilityOptions(state.postFXPass, {
+    reduceMotion: state._optReduceMotion,
+    colorblind:   m.optColorblind,
+    highContrast: !!m.optHighContrast,
+  });
+}
+
 export function showOptions() {
   if (_optionsPanel) return;
+  _ensureFontScaleStyle();
   const meta = getMeta();
 
   _optionsPanel = document.createElement('div');
+  _optionsPanel.setAttribute('role', 'dialog');
+  _optionsPanel.setAttribute('aria-label', 'Options');
   _optionsPanel.style.cssText = `
     position: fixed; inset: 0;
     background:
-      radial-gradient(ellipse at center, rgba(0,0,0,0.5), rgba(0,0,0,0.88) 80%);
+      radial-gradient(ellipse at center, rgba(0,0,0,0.55), rgba(0,0,0,0.9) 80%);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
     display: flex; flex-direction: column;
-    align-items: center; justify-content: center;
+    align-items: center; justify-content: flex-start;
     pointer-events: auto;
     font-family: ${F.body};
     z-index: 120;
+    overflow-y: auto;
+    padding: 40px 20px;
   `;
 
   const title = document.createElement('div');
   title.textContent = 'Options';
-  title.style.cssText = `font-family: ${F.display}; font-size: 40px; font-weight: 900;
+  title.className = 'kk-fs-xl';
+  title.style.cssText = `font-family: ${F.display}; font-weight: 900;
     letter-spacing: 0.20em; color: ${C.cyan};
     text-shadow: 0 2px 14px rgba(0,0,0,0.5);
-    margin-bottom: 24px;`;
+    margin-bottom: 18px;`;
 
-  const panel = document.createElement('div');
-  panel.className = 'kk-panel';
-  panel.style.cssText += `
-    display: flex; flex-direction: column; gap: 14px;
-    min-width: 380px; color: ${C.text};
+  // Wrapper that hosts all sections, scrollable when long.
+  const wrap = document.createElement('div');
+  wrap.style.cssText = `
+    display: flex; flex-direction: column; gap: 18px;
+    width: min(560px, 100%); color: ${C.text};
   `;
 
-  function row(labelText, controlEl) {
+  // ── helpers ──
+  function sectionBox(label) {
+    const box = document.createElement('div');
+    box.className = 'kk-panel';
+    box.style.cssText = `
+      background: linear-gradient(180deg, rgba(20,28,22,0.85), rgba(8,14,12,0.92));
+      border: 1px solid ${C.edge}; border-radius: 10px;
+      padding: 14px 18px;
+      display: flex; flex-direction: column; gap: 10px;
+      box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 6px 16px rgba(0,0,0,0.45);
+    `;
+    const hdr = document.createElement('div');
+    hdr.textContent = label;
+    hdr.className = 'kk-fs-sm';
+    hdr.style.cssText = `font-family: ${F.display}; font-weight: 700;
+      letter-spacing: 0.32em; color: ${C.amber};
+      text-transform: uppercase;
+      border-bottom: 1px solid rgba(255,210,127,0.18);
+      padding-bottom: 6px; margin-bottom: 4px;`;
+    box.appendChild(hdr);
+    return box;
+  }
+
+  function row(labelText, controlEl, hint) {
     const r = document.createElement('div');
     r.style.cssText = `display: flex; justify-content: space-between; align-items: center;
-      gap: 18px; padding: 4px 0;`;
+      gap: 18px; padding: 3px 0;`;
+    const labWrap = document.createElement('div');
+    labWrap.style.cssText = `display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto;`;
     const lab = document.createElement('span');
     lab.textContent = labelText;
-    lab.style.cssText = `font-family: ${F.body}; font-size: 12px;
-      letter-spacing: 0.24em; text-transform: uppercase;
-      color: rgba(245,239,225,0.78);`;
-    r.appendChild(lab); r.appendChild(controlEl);
+    lab.className = 'kk-fs-sm';
+    lab.style.cssText = `font-family: ${F.body};
+      letter-spacing: 0.22em; text-transform: uppercase;
+      color: rgba(245,239,225,0.82);`;
+    labWrap.appendChild(lab);
+    if (hint) {
+      const h = document.createElement('span');
+      h.textContent = hint;
+      h.className = 'kk-fs-mono';
+      h.style.cssText = `font-family: ${F.mono};
+        color: rgba(245,239,225,0.45);
+        letter-spacing: 0.06em;`;
+      labWrap.appendChild(h);
+    }
+    r.appendChild(labWrap);
+    r.appendChild(controlEl);
     return r;
   }
+
+  const sliderStyle = 'width: 180px; accent-color:' + C.cyan;
   const toggleStyle = (accent) => `padding: 6px 22px; cursor: pointer;
     background: linear-gradient(180deg, rgba(20,28,22,0.78), rgba(8,14,12,0.86));
     border: 1px solid ${C.edge}; border-radius: 6px;
-    color: ${accent}; font-family: ${F.display}; font-size: 12px; font-weight: 700;
+    color: ${accent}; font-family: ${F.display}; font-weight: 700;
     letter-spacing: 0.24em;
     box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset;`;
-
-  // Volume
-  const vol = document.createElement('input');
-  vol.type = 'range'; vol.min = '0'; vol.max = '1'; vol.step = '0.05';
-  vol.value = String(meta.optVolume);
-  vol.style.cssText = 'width: 180px; accent-color:' + C.cyan;
-  vol.addEventListener('input', () => {
-    setOption('optVolume', parseFloat(vol.value));
-    import('./audio.js').then(m => m.setVolume(parseFloat(vol.value)));
-  });
-
-  // Shake
-  const shk = document.createElement('input');
-  shk.type = 'range'; shk.min = '0'; shk.max = '1.5'; shk.step = '0.1';
-  shk.value = String(meta.optShake);
-  shk.style.cssText = 'width: 180px; accent-color:' + C.cyan;
-  shk.addEventListener('input', () => {
-    const v = parseFloat(shk.value);
-    setOption('optShake', v);
-    state._optShakeMul = v;
-  });
-
-  // Music toggle
-  const mus = document.createElement('button');
-  mus.type = 'button';
-  function paintMus() { mus.textContent = getMeta().optMusic ? 'On' : 'Off'; }
-  paintMus();
-  mus.style.cssText = toggleStyle(C.cyan);
-  mus.addEventListener('click', () => {
-    setOption('optMusic', !getMeta().optMusic);
-    paintMus();
-    import('./audio.js').then(m => getMeta().optMusic ? m.startMusic() : m.stopMusic());
-  });
-
-  // Close
-  const close = document.createElement('button');
-  close.type = 'button';
-  close.textContent = 'Close · Esc';
-  close.style.cssText = `margin-top: 16px; padding: 10px 26px; cursor: pointer;
+  const selectStyle = `padding: 6px 12px; cursor: pointer;
     background: linear-gradient(180deg, rgba(20,28,22,0.78), rgba(8,14,12,0.86));
-    border: 1px solid ${C.edge}; border-radius: 8px;
-    color: ${C.magenta}; font-family: ${F.display}; font-size: 13px; font-weight: 700;
-    letter-spacing: 0.28em;
-    box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 20px rgba(0,0,0,0.5);`;
-  close.addEventListener('click', hideOptions);
+    border: 1px solid ${C.edge}; border-radius: 6px;
+    color: ${C.cyan}; font-family: ${F.body};
+    letter-spacing: 0.10em; min-width: 180px;`;
 
-  // VFX intensity slider
-  const vfx = document.createElement('input');
-  vfx.type = 'range'; vfx.min = '0'; vfx.max = '1.0'; vfx.step = '0.05';
-  vfx.value = String(meta.optVfx !== undefined ? meta.optVfx : 1.0);
-  vfx.style.cssText = 'width: 180px; accent-color:' + C.cyan;
-  vfx.addEventListener('input', () => setOption('optVfx', parseFloat(vfx.value)));
+  function mkSlider(min, max, step, value, onChange) {
+    const s = document.createElement('input');
+    s.type = 'range';
+    s.min = String(min); s.max = String(max); s.step = String(step);
+    s.value = String(value);
+    s.style.cssText = sliderStyle;
+    s.className = 'kk-fs-sm';
+    s.addEventListener('input', () => onChange(parseFloat(s.value)));
+    return s;
+  }
+  function mkToggle(initial, accent, onText, offText, onClick) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'kk-fs-sm';
+    b.setAttribute('aria-pressed', String(!!initial));
+    b.style.cssText = toggleStyle(accent);
+    function paint(on) { b.textContent = on ? onText : offText; b.setAttribute('aria-pressed', String(!!on)); }
+    paint(initial);
+    b.addEventListener('click', () => { const nv = onClick(); paint(nv); });
+    return b;
+  }
+  function mkSelect(options, value, onChange) {
+    const sel = document.createElement('select');
+    sel.className = 'kk-fs-sm';
+    sel.style.cssText = selectStyle;
+    for (const o of options) {
+      const op = document.createElement('option');
+      op.value = o.value;
+      op.textContent = o.label;
+      if (o.value === value) op.selected = true;
+      sel.appendChild(op);
+    }
+    sel.addEventListener('change', () => onChange(sel.value));
+    return sel;
+  }
 
-  // Manual aim toggle (mouse → autoaim/volley target)
-  const aim = document.createElement('button');
-  aim.type = 'button';
-  function paintAim() { aim.textContent = getMeta().optManualAim ? 'On · 🎯' : 'Off'; }
-  paintAim();
-  aim.style.cssText = toggleStyle(C.cyan);
-  aim.addEventListener('click', () => {
-    setOption('optManualAim', !getMeta().optManualAim);
-    paintAim();
+  // ─── Section: Audio ───
+  const sAudio = sectionBox('Audio');
+  const masterSlider = mkSlider(0, 1, 0.05, meta.optMasterVolume != null ? meta.optMasterVolume : meta.optVolume, v => {
+    setOption('optMasterVolume', v); setMasterVolume(v);
   });
+  const musicSlider = mkSlider(0, 1, 0.05, meta.optMusicVolume != null ? meta.optMusicVolume : (meta.optVolume * 0.6), v => {
+    setOption('optMusicVolume', v); setMusicVolume(v);
+  });
+  const sfxSlider = mkSlider(0, 1, 0.05, meta.optSfxVolume != null ? meta.optSfxVolume : meta.optVolume, v => {
+    setOption('optSfxVolume', v); setSfxVolume(v);
+  });
+  const musicTgl = mkToggle(!!meta.optMusic, C.cyan, 'On', 'Off', () => {
+    const nv = !getMeta().optMusic;
+    setOption('optMusic', nv);
+    import('./audio.js').then(m => nv ? m.startMusic() : m.stopMusic());
+    return nv;
+  });
+  sAudio.appendChild(row('Master Volume', masterSlider));
+  sAudio.appendChild(row('Music Volume',  musicSlider));
+  sAudio.appendChild(row('SFX Volume',    sfxSlider));
+  sAudio.appendChild(row('Music Track',   musicTgl, 'Procedural in-run music loop'));
 
-  panel.appendChild(row('Volume',     vol));
-  panel.appendChild(row('Shake',      shk));
-  panel.appendChild(row('Music',      mus));
-  panel.appendChild(row('VFX',        vfx));
-  panel.appendChild(row('Manual Aim', aim));
+  // ─── Section: Display ───
+  const sDisp = sectionBox('Display');
+  const vfxSlider = mkSlider(0, 1, 0.05, meta.optVfx != null ? meta.optVfx : 1.0, v => setOption('optVfx', v));
+  const shkSlider = mkSlider(0, 1.5, 0.1, meta.optShake, v => {
+    setOption('optShake', v);
+    state._optShakeMul = state._optReduceMotion ? 0 : v;
+  });
+  const reduceMotionTgl = mkToggle(!!meta.optReduceMotion, C.amber, 'On', 'Off', () => {
+    const nv = !getMeta().optReduceMotion;
+    setOption('optReduceMotion', nv);
+    // User explicitly chose — sentinel so boot won't override from prefers-reduced-motion.
+    setOption('optReduceMotionUserSet', true);
+    _applyAccessibilityLive();
+    return nv;
+  });
+  const reducedFlashTgl = mkToggle(!!meta.optReducedFlashing, C.amber, 'On', 'Off', () => {
+    const nv = !getMeta().optReducedFlashing;
+    setOption('optReducedFlashing', nv);
+    _applyAccessibilityLive();
+    return nv;
+  });
+  const hcTgl = mkToggle(!!meta.optHighContrast, C.amber, 'On', 'Off', () => {
+    const nv = !getMeta().optHighContrast;
+    setOption('optHighContrast', nv);
+    _applyAccessibilityLive();
+    return nv;
+  });
+  const cbSelect = mkSelect([
+    { value: 'off',           label: 'Off' },
+    { value: 'deuteranopia',  label: 'Deuteranopia (green-weak)' },
+    { value: 'protanopia',    label: 'Protanopia (red-weak)' },
+    { value: 'tritanopia',    label: 'Tritanopia (blue-weak)' },
+  ], meta.optColorblind || 'off', v => {
+    setOption('optColorblind', v);
+    _applyAccessibilityLive();
+  });
+  const fsSlider = mkSlider(0.85, 1.30, 0.05, meta.optFontScale != null ? meta.optFontScale : 1.0, v => {
+    setOption('optFontScale', v);
+    _applyFontScale(v);
+  });
+  const frameCapSel = mkSelect([
+    { value: '0',   label: 'Unlocked' },
+    { value: '30',  label: '30 fps' },
+    { value: '60',  label: '60 fps' },
+    { value: '144', label: '144 fps' },
+  ], String(meta.optFrameCap || 0), v => setOption('optFrameCap', parseInt(v, 10) || 0));
+  sDisp.appendChild(row('VFX Intensity',    vfxSlider));
+  sDisp.appendChild(row('Screen Shake',     shkSlider, 'Reduce Motion overrides to 0'));
+  sDisp.appendChild(row('Reduce Motion',    reduceMotionTgl, 'Skip flashes, warp, screen shake'));
+  sDisp.appendChild(row('Reduced Flashing', reducedFlashTgl, 'Cap to ~4 flashes/sec at 40% alpha'));
+  sDisp.appendChild(row('High Contrast',    hcTgl, 'Boost HUD + text legibility'));
+  sDisp.appendChild(row('Colorblind',       cbSelect));
+  sDisp.appendChild(row('Font Scale',       fsSlider, '0.85× to 1.30× (modals only)'));
+  sDisp.appendChild(row('Frame Cap',        frameCapSel, 'Hint only; v1.0 honors monitor refresh'));
 
-  // Mode toggles — only visible after unlock
+  // ─── Section: Controls ───
+  const sCtrl = sectionBox('Controls');
+  const aimTgl = mkToggle(!!meta.optManualAim, C.cyan, 'On · 🎯', 'Off', () => {
+    const nv = !getMeta().optManualAim;
+    setOption('optManualAim', nv);
+    return nv;
+  });
+  const deadzoneSlider = mkSlider(0, 0.30, 0.01, meta.optControllerDeadzone != null ? meta.optControllerDeadzone : 0.15, v => {
+    setOption('optControllerDeadzone', v);
+  });
+  sCtrl.appendChild(row('Manual Aim',         aimTgl, 'Mouse target for autoaim/volley'));
+  sCtrl.appendChild(row('Controller Deadzone', deadzoneSlider, '0.00 (twitchy) to 0.30 (lazy)'));
+
+  // ─── Section: Accessibility (i18n stub) ───
+  const sA11y = sectionBox('Accessibility');
+  const langSel = mkSelect([
+    { value: 'en', label: 'English' },
+  ], meta.optLanguage || 'en', v => setOption('optLanguage', v));
+  sA11y.appendChild(row('Language', langSel, 'More languages post-1.0'));
+
+  // ─── Section: Modes (unlock-gated) ───
+  const sMode = sectionBox('Modes');
+  let anyMode = false;
   if (meta.unlockedHyper) {
-    const hyperBtn = document.createElement('button');
-    hyperBtn.type = 'button';
-    function paintHyper() { hyperBtn.textContent = (getMeta().optHyper ? 'On · 🔥' : 'Off'); }
-    paintHyper();
-    hyperBtn.style.cssText = toggleStyle('#ff7a7a');
-    hyperBtn.addEventListener('click', () => { setOption('optHyper', !getMeta().optHyper); paintHyper(); });
-    panel.appendChild(row('Hyper Mode', hyperBtn));
+    anyMode = true;
+    const hyperBtn = mkToggle(!!meta.optHyper, '#ff7a7a', 'On · 🔥', 'Off', () => {
+      const nv = !getMeta().optHyper; setOption('optHyper', nv); return nv;
+    });
+    sMode.appendChild(row('Hyper Mode', hyperBtn, '1.5× difficulty + coins'));
   }
   if (meta.unlockedEndless) {
-    const endBtn = document.createElement('button');
-    endBtn.type = 'button';
-    function paintEnd() { endBtn.textContent = (getMeta().optEndless ? 'On · ♾' : 'Off'); }
-    paintEnd();
-    endBtn.style.cssText = toggleStyle(C.cyan);
-    endBtn.addEventListener('click', () => { setOption('optEndless', !getMeta().optEndless); paintEnd(); });
-    panel.appendChild(row('Endless', endBtn));
+    anyMode = true;
+    const endBtn = mkToggle(!!meta.optEndless, C.cyan, 'On · ♾', 'Off', () => {
+      const nv = !getMeta().optEndless; setOption('optEndless', nv); return nv;
+    });
+    sMode.appendChild(row('Endless', endBtn, 'No final boss timer'));
   }
-  // Boss Rush — unlocks alongside Hyper (first victory). Compressed schedule:
-  // mini-bosses at 25/75/135s, final boss at 200s, with ambient swarm pared
-  // back to ~4 enemies so the focus is the boss fights.
   if (meta.unlockedHyper) {
-    const brBtn = document.createElement('button');
-    brBtn.type = 'button';
-    function paintBR() { brBtn.textContent = (getMeta().optBossRush ? 'On · ⚔' : 'Off'); }
-    paintBR();
-    brBtn.style.cssText = toggleStyle('#ff7a7a');
-    brBtn.addEventListener('click', () => { setOption('optBossRush', !getMeta().optBossRush); paintBR(); });
-    panel.appendChild(row('Boss Rush', brBtn));
+    anyMode = true;
+    const brBtn = mkToggle(!!meta.optBossRush, '#ff7a7a', 'On · ⚔', 'Off', () => {
+      const nv = !getMeta().optBossRush; setOption('optBossRush', nv); return nv;
+    });
+    sMode.appendChild(row('Boss Rush', brBtn, 'Mini-bosses at 25/75/135s, final at 200s'));
+  }
+  if (!anyMode) {
+    const empty = document.createElement('div');
+    empty.className = 'kk-fs-mono';
+    empty.style.cssText = `font-family: ${F.mono}; color: rgba(245,239,225,0.5); padding: 4px 0;`;
+    empty.textContent = '— First victory unlocks Hyper, Endless, and Boss Rush —';
+    sMode.appendChild(empty);
   }
 
+  // ─── Section: Data ───
+  const sData = sectionBox('Data');
+  // Export — copy + download.
+  const exportRow = document.createElement('div');
+  exportRow.style.cssText = 'display: flex; gap: 10px; flex-wrap: wrap;';
+  const exportCopyBtn = document.createElement('button');
+  exportCopyBtn.type = 'button';
+  exportCopyBtn.className = 'kk-fs-sm';
+  exportCopyBtn.style.cssText = toggleStyle(C.cyan);
+  exportCopyBtn.textContent = 'Copy JSON';
+  exportCopyBtn.addEventListener('click', () => {
+    const json = exportMeta();
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(json);
+        exportCopyBtn.textContent = 'Copied ✓';
+      } else {
+        // Fallback: textarea + execCommand
+        const ta = document.createElement('textarea');
+        ta.value = json;
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); } catch (_) {}
+        document.body.removeChild(ta);
+        exportCopyBtn.textContent = 'Copied ✓';
+      }
+    } catch (e) { exportCopyBtn.textContent = 'Copy failed'; }
+    setTimeout(() => { exportCopyBtn.textContent = 'Copy JSON'; }, 1800);
+  });
+  const exportFileBtn = document.createElement('button');
+  exportFileBtn.type = 'button';
+  exportFileBtn.className = 'kk-fs-sm';
+  exportFileBtn.style.cssText = toggleStyle(C.cyan);
+  exportFileBtn.textContent = 'Download .json';
+  exportFileBtn.addEventListener('click', () => {
+    const json = exportMeta();
+    try {
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `kk-survivors-save-${Date.now()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {
+      console.warn('[exportMeta] download failed', e);
+    }
+  });
+  exportRow.appendChild(exportCopyBtn);
+  exportRow.appendChild(exportFileBtn);
+  sData.appendChild(row('Save Export', exportRow, 'Copy / download your meta progress'));
+
+  // Import — textarea OR file input.
+  const importWrap = document.createElement('div');
+  importWrap.style.cssText = 'display: flex; flex-direction: column; gap: 8px; width: 100%;';
+  const importStatus = document.createElement('div');
+  importStatus.className = 'kk-fs-mono';
+  importStatus.style.cssText = `font-family: ${F.mono}; color: rgba(245,239,225,0.6);`;
+  const importTa = document.createElement('textarea');
+  importTa.className = 'kk-fs-mono';
+  importTa.placeholder = 'Paste exported JSON here…';
+  importTa.style.cssText = `width: 100%; min-height: 80px;
+    background: rgba(8,14,12,0.92); color: ${C.text};
+    border: 1px solid ${C.edge}; border-radius: 6px;
+    padding: 8px 10px; font-family: ${F.mono};
+    resize: vertical;`;
+  const importBtnRow = document.createElement('div');
+  importBtnRow.style.cssText = 'display: flex; gap: 10px; flex-wrap: wrap;';
+  const importBtn = document.createElement('button');
+  importBtn.type = 'button';
+  importBtn.className = 'kk-fs-sm';
+  importBtn.style.cssText = toggleStyle(C.amber);
+  importBtn.textContent = 'Import Pasted';
+  importBtn.addEventListener('click', () => {
+    const r = importMeta(importTa.value);
+    if (r.ok) {
+      importStatus.style.color = C.green;
+      importStatus.textContent = '✓ Save imported. Restart recommended.';
+      // Re-apply live so the new settings show without a reload.
+      _applyAccessibilityLive();
+      _applyFontScale(getMeta().optFontScale != null ? getMeta().optFontScale : 1);
+    } else {
+      importStatus.style.color = C.red;
+      importStatus.textContent = `✗ Import failed: ${r.reason || 'unknown'}`;
+    }
+  });
+  const fileIn = document.createElement('input');
+  fileIn.type = 'file';
+  fileIn.accept = 'application/json,.json';
+  fileIn.style.cssText = `color: ${C.text}; font-family: ${F.mono};`;
+  fileIn.addEventListener('change', () => {
+    const f = fileIn.files && fileIn.files[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      importTa.value = String(reader.result || '');
+      const r = importMeta(importTa.value);
+      if (r.ok) {
+        importStatus.style.color = C.green;
+        importStatus.textContent = '✓ Save imported from file. Restart recommended.';
+        _applyAccessibilityLive();
+        _applyFontScale(getMeta().optFontScale != null ? getMeta().optFontScale : 1);
+      } else {
+        importStatus.style.color = C.red;
+        importStatus.textContent = `✗ Import failed: ${r.reason || 'unknown'}`;
+      }
+    };
+    reader.onerror = () => {
+      importStatus.style.color = C.red;
+      importStatus.textContent = '✗ Could not read file';
+    };
+    reader.readAsText(f);
+  });
+  importBtnRow.appendChild(importBtn);
+  importBtnRow.appendChild(fileIn);
+  importWrap.appendChild(importTa);
+  importWrap.appendChild(importBtnRow);
+  importWrap.appendChild(importStatus);
+  sData.appendChild(row('Save Import', importWrap));
+
+  // Reset — type-to-confirm.
+  const resetBtn = document.createElement('button');
+  resetBtn.type = 'button';
+  resetBtn.className = 'kk-fs-sm';
+  resetBtn.style.cssText = toggleStyle(C.red);
+  resetBtn.textContent = 'Reset Progress…';
+  resetBtn.addEventListener('click', () => {
+    _showResetConfirmModal(() => {
+      resetMeta();
+      _applyAccessibilityLive();
+      _applyFontScale(1);
+      hideOptions();
+      // Reload to ensure all module-level caches drop.
+      try { window.location.reload(); } catch (_) {}
+    });
+  });
+  sData.appendChild(row('Reset Progress', resetBtn, 'Wipes coins, embers, unlocks, runs'));
+
+  // Append sections
+  wrap.appendChild(sAudio);
+  wrap.appendChild(sDisp);
+  wrap.appendChild(sCtrl);
+  wrap.appendChild(sA11y);
+  wrap.appendChild(sMode);
+  wrap.appendChild(sData);
+
+  // Close button
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'kk-fs-sm';
+  close.textContent = 'Close · Esc';
+  close.style.cssText = `margin-top: 20px; padding: 10px 26px; cursor: pointer;
+    background: linear-gradient(180deg, rgba(20,28,22,0.78), rgba(8,14,12,0.86));
+    border: 1px solid ${C.edge}; border-radius: 8px;
+    color: ${C.magenta}; font-family: ${F.display}; font-weight: 700;
+    letter-spacing: 0.28em;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 20px rgba(0,0,0,0.5);`;
+  close.setAttribute('aria-label', 'Close options');
+  close.addEventListener('click', hideOptions);
+
   _optionsPanel.appendChild(title);
-  _optionsPanel.appendChild(panel);
+  _optionsPanel.appendChild(wrap);
   _optionsPanel.appendChild(close);
   _root.appendChild(_optionsPanel);
 
   state.time.paused = true;
+}
+
+// Reset-progress type-to-confirm modal — RESET text gate so a misclick can't
+// destroy years of progress. Calls `onConfirm()` only when the player types
+// the exact word and presses the confirm button.
+function _showResetConfirmModal(onConfirm) {
+  const overlay = document.createElement('div');
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-label', 'Confirm reset progress');
+  overlay.style.cssText = `
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.78);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 200; font-family: ${F.body};
+  `;
+  const box = document.createElement('div');
+  box.style.cssText = `
+    background: linear-gradient(180deg, rgba(40,15,15,0.95), rgba(20,8,8,0.97));
+    border: 2px solid ${C.red}; border-radius: 12px;
+    padding: 24px 30px; min-width: 360px; max-width: 460px;
+    color: ${C.text};
+    box-shadow: 0 16px 36px rgba(0,0,0,0.65), 0 0 22px rgba(255,94,94,0.25);
+    display: flex; flex-direction: column; gap: 12px;
+  `;
+  const h = document.createElement('div');
+  h.className = 'kk-fs-lg';
+  h.style.cssText = `font-family: ${F.display}; font-weight: 900; letter-spacing: 0.16em;
+    color: ${C.red}; text-transform: uppercase;`;
+  h.textContent = 'Reset progress';
+  const p = document.createElement('div');
+  p.className = 'kk-fs-sm';
+  p.style.cssText = `line-height: 1.5; color: rgba(245,239,225,0.85);`;
+  p.innerHTML = `This wipes <b>coins, embers, sigils, unlocks, run history, achievements, and presets</b>. There is no undo.<br><br>Type <b style="color:${C.red};">RESET</b> to confirm:`;
+  const inp = document.createElement('input');
+  inp.type = 'text';
+  inp.placeholder = 'RESET';
+  inp.className = 'kk-fs-md';
+  inp.style.cssText = `padding: 8px 12px; background: rgba(8,4,4,0.9);
+    color: ${C.text}; border: 1px solid ${C.edge}; border-radius: 6px;
+    font-family: ${F.mono}; letter-spacing: 0.2em; text-transform: uppercase;`;
+  const btnRow = document.createElement('div');
+  btnRow.style.cssText = 'display: flex; gap: 10px; margin-top: 6px;';
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.className = 'kk-fs-sm';
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.style.cssText = `padding: 8px 18px; cursor: pointer;
+    background: rgba(20,20,20,0.8); color: ${C.text};
+    border: 1px solid ${C.edge}; border-radius: 6px;
+    font-family: ${F.display}; font-weight: 700; letter-spacing: 0.20em;`;
+  cancelBtn.addEventListener('click', () => {
+    if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+  });
+  const confirmBtn = document.createElement('button');
+  confirmBtn.type = 'button';
+  confirmBtn.className = 'kk-fs-sm';
+  confirmBtn.textContent = 'Wipe Progress';
+  confirmBtn.disabled = true;
+  confirmBtn.style.cssText = `padding: 8px 18px; cursor: not-allowed;
+    background: rgba(80,20,20,0.6); color: rgba(245,239,225,0.5);
+    border: 1px solid ${C.red}; border-radius: 6px;
+    font-family: ${F.display}; font-weight: 700; letter-spacing: 0.20em;
+    opacity: 0.5;`;
+  function refreshGate() {
+    const ok = inp.value.trim().toUpperCase() === 'RESET';
+    confirmBtn.disabled = !ok;
+    confirmBtn.style.cursor = ok ? 'pointer' : 'not-allowed';
+    confirmBtn.style.background = ok ? `rgba(160,40,40,0.9)` : 'rgba(80,20,20,0.6)';
+    confirmBtn.style.color = ok ? C.text : 'rgba(245,239,225,0.5)';
+    confirmBtn.style.opacity = ok ? '1' : '0.5';
+  }
+  inp.addEventListener('input', refreshGate);
+  confirmBtn.addEventListener('click', () => {
+    if (inp.value.trim().toUpperCase() !== 'RESET') return;
+    if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+    try { onConfirm(); } catch (e) { console.warn('[resetMeta] confirm failed', e); }
+  });
+  btnRow.appendChild(cancelBtn);
+  btnRow.appendChild(confirmBtn);
+  box.appendChild(h);
+  box.appendChild(p);
+  box.appendChild(inp);
+  box.appendChild(btnRow);
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  setTimeout(() => inp.focus(), 0);
 }
 
 export function hideOptions() {
@@ -3807,4 +4263,374 @@ export function showBanner(text, durationSec = 3, color) {
     if (_banner && _banner.parentNode) _banner.parentNode.removeChild(_banner);
     _banner = null;
   }, durationSec * 1000);
+}
+
+// ── Credits modal ────────────────────────────────────────────────────────────
+// Mirrors the Grimoire / Shop / Codex modal aesthetic — gradient backdrop with
+// a radial highlight at the top, blur, gold-accented title. Lists the people +
+// libraries that made the game. Esc-friendly via uiFocus push.
+let _creditsModal = null;
+let _creditsFocusScope = null;
+
+export function showCredits() {
+  if (_creditsModal || !_root) return;
+
+  _creditsModal = document.createElement('div');
+  _creditsModal.setAttribute('role', 'dialog');
+  _creditsModal.setAttribute('aria-label', 'Credits');
+  _creditsModal.style.cssText = `
+    position: fixed; inset: 0;
+    background:
+      radial-gradient(ellipse at 50% 30%, rgba(255,210,127,0.08), transparent 60%),
+      radial-gradient(ellipse at center, rgba(0,0,0,0.55), rgba(0,0,0,0.92) 80%);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: flex-start;
+    padding: 48px 20px;
+    pointer-events: auto;
+    font-family: ${F.body};
+    z-index: 125; overflow-y: auto;
+  `;
+
+  const title = document.createElement('div');
+  title.style.cssText = `font-family: ${F.display}; font-size: 44px; font-weight: 900;
+    letter-spacing: 0.20em; color: ${C.amber};
+    text-shadow: 0 2px 16px rgba(0,0,0,0.55), 0 0 24px rgba(255,210,127,0.22);
+    margin-bottom: 6px;`;
+  title.textContent = 'Credits';
+
+  const subtitle = document.createElement('div');
+  subtitle.style.cssText = `font-family: ${F.body}; font-size: 11px; letter-spacing: 0.32em;
+    color: rgba(245,239,225,0.62); text-transform: uppercase; margin-bottom: 26px;`;
+  subtitle.textContent = `Made with care · ${KK_VERSION}`;
+
+  const sections = document.createElement('div');
+  sections.style.cssText = 'display: grid; grid-template-columns: 1fr; gap: 14px; max-width: 720px; width: 100%;';
+
+  const _section = (heading, accent, lines) => {
+    const card = document.createElement('div');
+    card.style.cssText = `
+      background: linear-gradient(180deg, rgba(20,28,22,0.94), rgba(8,14,12,0.96));
+      border: 1px solid ${accent};
+      border-radius: 10px;
+      box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 12px 26px rgba(0,0,0,0.55);
+      padding: 16px 20px;
+    `;
+    const h = document.createElement('div');
+    h.style.cssText = `font-family: ${F.display}; font-size: 13px; font-weight: 700;
+      letter-spacing: 0.28em; text-transform: uppercase; color: ${accent}; margin-bottom: 8px;`;
+    h.textContent = heading;
+    card.appendChild(h);
+    const body = document.createElement('div');
+    body.style.cssText = `font-size: 13px; line-height: 1.65; color: ${C.text};`;
+    body.innerHTML = lines.join('<br>');
+    card.appendChild(body);
+    return card;
+  };
+
+  sections.appendChild(_section('Made by', C.amber, [
+    `<a href="mailto:slopfactory9000@gmail.com" style="color:${C.amber};text-decoration:none;">@slopfactory9000</a> · code, gameplay, shaders, FX`,
+  ]));
+  sections.appendChild(_section('Tech', C.cyan, [
+    `<a href="https://threejs.org" target="_blank" rel="noopener" style="color:${C.cyan};text-decoration:none;">THREE.js 0.160</a> + addons (EffectComposer, GLTFLoader, DRACOLoader)`,
+    'No bundler — native ES modules + importmap',
+  ]));
+  sections.appendChild(_section('Art', C.amber, [
+    'Models — <span style="color:' + C.amber + ';">Quaternius</span> (Ultimate Monsters bundle, chest) — CC0',
+    'Models — <span style="color:' + C.amber + ';">Poly by Google</span> via Poly Pizza (Beetle, Ladybug, Grasshopper, Mantis, etc.) — CC-BY',
+    'Textures &amp; HDRI — <span style="color:' + C.amber + ';">Poly Haven</span> (forrest_ground_01, approaching_storm) — CC0',
+    'All FX, particles, post-processing — procedural / canvas-rendered',
+  ]));
+  sections.appendChild(_section('Inspiration', C.magenta, [
+    '<span style="color:' + C.magenta + ';">Vampire Survivors</span> — the loop, the slot machine, the joy of horde shaping',
+    '<span style="color:' + C.magenta + ';">Halls of Torment</span> — weapon evolutions, biome variety',
+    '<span style="color:' + C.magenta + ';">Hades</span> — accessibility bar, polish discipline, character signatures',
+  ]));
+  sections.appendChild(_section('Special Thanks', C.cyan, [
+    'Claude Opus 4.7 (1M context) — pair-programmer for the iter 1-11 sprint',
+    'The open-source three.js + WebGPU community',
+    'Everyone who tested an early build and said "the spider web is good"',
+  ]));
+
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.textContent = 'Close · Esc';
+  close.setAttribute('aria-label', 'Close credits');
+  close.style.cssText = `margin-top: 26px; padding: 10px 26px; cursor: pointer;
+    background: linear-gradient(180deg, rgba(20,28,22,0.78), rgba(8,14,12,0.86));
+    border: 1px solid ${C.edge}; border-radius: 8px;
+    color: ${C.amber}; font-family: ${F.display}; font-size: 13px; font-weight: 700;
+    letter-spacing: 0.28em;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 20px rgba(0,0,0,0.5);`;
+  close.onclick = hideCredits;
+
+  _creditsModal.appendChild(title);
+  _creditsModal.appendChild(subtitle);
+  _creditsModal.appendChild(sections);
+  _creditsModal.appendChild(close);
+  _root.appendChild(_creditsModal);
+
+  // Focus scope: trap arrow/enter to the close button (single focus target).
+  // onCancel fires when uiFocus.cancelFocus() is called (Esc).
+  _creditsFocusScope = pushFocusScope([close], { layout: 'auto', onCancel: hideCredits });
+}
+
+export function hideCredits() {
+  if (!_creditsModal) return;
+  if (_creditsFocusScope) { popFocusScope(_creditsFocusScope); _creditsFocusScope = null; }
+  if (_creditsModal.parentNode) _creditsModal.parentNode.removeChild(_creditsModal);
+  _creditsModal = null;
+}
+
+export function isCreditsOpen() { return !!_creditsModal; }
+
+// ── Version label (start screen bottom-right) ────────────────────────────────
+// Attached to <body> not _startScreen so it doesn't fight the start-screen
+// flex layout AND it doesn't disappear when start screen unmounts. Visibility
+// is toggled by start screen show/hide via the helper below.
+let _versionLabel = null;
+function _ensureVersionLabel() {
+  if (_versionLabel) return _versionLabel;
+  _versionLabel = document.createElement('div');
+  _versionLabel.id = 'kk-version-label';
+  _versionLabel.style.cssText = `
+    position: fixed; right: 12px; bottom: 12px;
+    font-family: ${F.mono};
+    font-size: 10px; letter-spacing: 0.12em;
+    color: rgba(245,239,225,0.42);
+    pointer-events: none; z-index: 5;
+    user-select: none;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.6);
+  `;
+  _versionLabel.textContent = `v${KK_VERSION}`;
+  document.body.appendChild(_versionLabel);
+  return _versionLabel;
+}
+function _setVersionLabelVisible(visible) {
+  const el = _ensureVersionLabel();
+  el.style.display = visible ? 'block' : 'none';
+}
+
+// ── Error toasts (kk-meta-load-failed, kk-asset-load-failed, error) ──────────
+// Bound at MODULE LOAD time (not initUI) so boot-time failures during
+// preloadAll()/loadMeta() — which fire before initUI() — still surface to the
+// player. _root may not exist yet; each emit-handler probes #ui-root lazily.
+let _errorListenersBound = false;
+let _lastWindowErrorAt = 0;
+
+function _getToastRoot() {
+  return _root || document.getElementById('ui-root') || document.body;
+}
+
+// Generic toast factory. Stacks vertically in the top-right corner with a
+// 8px gap. Sticky toasts get a Dismiss button + manual close; auto toasts
+// fade out after `durationMs` and remove themselves.
+//   opts: { color, durationMs, sticky, icon, title, body }
+let _toastSlot = 0;
+function _spawnErrorToast(opts) {
+  const root = _getToastRoot();
+  if (!root) return null;
+
+  const col = opts.color || C.amber;
+  const slot = _toastSlot++;
+  const top = 20 + (slot % 6) * 86; // 6-deep vertical stack, then wrap
+
+  const toast = document.createElement('div');
+  toast.setAttribute('role', 'alert');
+  toast.setAttribute('aria-live', 'assertive');
+  toast.style.cssText = `
+    position: fixed; right: 20px; top: ${top}px;
+    background: linear-gradient(180deg, rgba(20,28,22,0.96), rgba(8,14,12,0.98));
+    border: 1px solid ${col};
+    border-radius: 10px;
+    box-shadow:
+      0 1px 0 rgba(255,255,255,0.06) inset,
+      0 14px 30px rgba(0,0,0,0.55),
+      0 0 22px ${col}33;
+    padding: 12px 16px; min-width: 280px; max-width: 360px;
+    font-family: ${F.body};
+    color: ${C.text}; pointer-events: ${opts.sticky ? 'auto' : 'none'};
+    z-index: 220;
+    transform: translateX(120%); transition: transform 0.32s ease-out;
+    display: flex; gap: 12px; align-items: flex-start;
+  `;
+  const icon = String(opts.icon || '⚠');
+  const safeTitle = escapeHtml(String(opts.title || ''));
+  const safeBody  = escapeHtml(String(opts.body || ''));
+  const dismissHtml = opts.sticky
+    ? `<button type="button" class="kk-err-dismiss" style="
+        margin-top:6px;padding:5px 12px;cursor:pointer;
+        background:linear-gradient(180deg,rgba(20,28,22,0.78),rgba(8,14,12,0.86));
+        border:1px solid ${col};border-radius:6px;
+        color:${col};font-family:${F.display};font-size:11px;font-weight:700;
+        letter-spacing:0.22em;text-transform:uppercase;
+      ">Dismiss</button>` : '';
+  toast.innerHTML = `
+    <div style="font-size:22px;line-height:1;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));">${escapeHtml(icon)}</div>
+    <div style="flex:1;">
+      <div style="font-family:${F.display};font-size:11px;color:${col};letter-spacing:0.28em;text-transform:uppercase;">${safeTitle}</div>
+      <div style="font-size:12px;opacity:0.86;margin-top:4px;line-height:1.5;">${safeBody}</div>
+      ${dismissHtml}
+    </div>
+  `;
+  root.appendChild(toast);
+  requestAnimationFrame(() => { toast.style.transform = 'translateX(0)'; });
+
+  const removeToast = () => {
+    if (!toast.parentNode) return;
+    toast.style.transform = 'translateX(120%)';
+    setTimeout(() => {
+      if (toast.parentNode) toast.parentNode.removeChild(toast);
+      _toastSlot = Math.max(0, _toastSlot - 1);
+    }, 360);
+  };
+
+  if (opts.sticky) {
+    const btn = toast.querySelector('.kk-err-dismiss');
+    if (btn) btn.addEventListener('click', removeToast);
+  } else {
+    setTimeout(removeToast, Math.max(500, opts.durationMs || 4000));
+  }
+  return toast;
+}
+
+function _bindErrorListeners() {
+  if (_errorListenersBound) return;
+  _errorListenersBound = true;
+
+  // 10b emits this from meta.js loadMeta() on JSON.parse failure.
+  window.addEventListener('kk-meta-load-failed', (e) => {
+    const detail = (e && e.detail) || {};
+    if (detail && detail.reason) console.error('[meta] load failed:', detail.reason);
+    _spawnErrorToast({
+      color: C.red,
+      sticky: true,
+      icon: '⚠',
+      title: 'Save Load Failed',
+      body: "Save data couldn't be loaded. Your progress is reset to defaults. Check the console for details.",
+    });
+  });
+
+  // 10b emits this from assets.js _preload() on GLTF failure.
+  window.addEventListener('kk-asset-load-failed', (e) => {
+    const detail = (e && e.detail) || {};
+    if (detail && detail.key) console.warn('[assets] failed:', detail.key, detail.path || '');
+    _spawnErrorToast({
+      color: C.amber,
+      sticky: false,
+      durationMs: 6000,
+      icon: '⚠',
+      title: 'Asset Load Warning',
+      body: 'Some art assets failed to load. The game will still run but may show placeholders.',
+    });
+  });
+
+  // Generic window-level handlers. Throttled to one visible toast per 3s — a
+  // runaway RAF callback can fire hundreds of errors/sec; the throttle keeps
+  // the toast stack legible while still mirroring every error to the console.
+  const _handleWinError = (label, err) => {
+    try { console.error(`[${label}]`, err); } catch (_) {}
+    const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    if (now - _lastWindowErrorAt < 3000) return;
+    _lastWindowErrorAt = now;
+    _spawnErrorToast({
+      color: C.red,
+      sticky: false,
+      durationMs: 4000,
+      icon: '⚠',
+      title: 'Error',
+      body: 'An error occurred. Press F3 for diagnostics.',
+    });
+  };
+  window.addEventListener('error', (e) => {
+    _handleWinError('error', (e && (e.error || e.message)) || e);
+  });
+  window.addEventListener('unhandledrejection', (e) => {
+    _handleWinError('unhandledrejection', (e && (e.reason || e)) || e);
+  });
+}
+
+// Bind immediately at module-load time — boot-time asset/meta failures fire
+// BEFORE initUI() is called, so a listener registered inside initUI() would
+// miss them entirely.
+_bindErrorListeners();
+
+// ── WebGL context-loss modal ─────────────────────────────────────────────────
+// main.js installs the canvas-level webglcontextlost / webglcontextrestored
+// listeners and calls these helpers. Persistent modal — no auto-dismiss; the
+// player needs explicit acknowledgement (reload button) or a restore event.
+let _ctxLossModal = null;
+
+export function showContextLossModal() {
+  if (_ctxLossModal) return;
+  const root = _getToastRoot();
+  if (!root) return;
+
+  _ctxLossModal = document.createElement('div');
+  _ctxLossModal.setAttribute('role', 'dialog');
+  _ctxLossModal.setAttribute('aria-label', 'Graphics device disconnected');
+  _ctxLossModal.style.cssText = `
+    position: fixed; inset: 0;
+    background:
+      radial-gradient(ellipse at 50% 30%, rgba(255,80,80,0.10), transparent 60%),
+      radial-gradient(ellipse at center, rgba(0,0,0,0.65), rgba(0,0,0,0.95) 80%);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    pointer-events: auto;
+    font-family: ${F.body};
+    z-index: 240;
+  `;
+
+  const card = document.createElement('div');
+  card.style.cssText = `
+    background: linear-gradient(180deg, rgba(20,28,22,0.96), rgba(8,14,12,0.98));
+    border: 1px solid ${C.red};
+    border-radius: 12px;
+    box-shadow:
+      0 1px 0 rgba(255,255,255,0.06) inset,
+      0 24px 48px rgba(0,0,0,0.6),
+      0 0 28px ${C.red}33;
+    padding: 28px 36px; min-width: 360px; max-width: 480px; text-align: center;
+  `;
+
+  const icon = document.createElement('div');
+  icon.style.cssText = `font-size: 44px; margin-bottom: 8px; filter: drop-shadow(0 3px 10px ${C.red}66);`;
+  icon.textContent = '⚠';
+
+  const title = document.createElement('div');
+  title.style.cssText = `font-family: ${F.display}; font-size: 22px; font-weight: 700;
+    letter-spacing: 0.22em; color: ${C.red}; text-transform: uppercase; margin-bottom: 8px;`;
+  title.textContent = 'Graphics Disconnected';
+
+  const body = document.createElement('div');
+  body.style.cssText = `font-size: 13.5px; color: ${C.text}; line-height: 1.6; margin-bottom: 18px; opacity: 0.88;`;
+  body.textContent = 'Your GPU device was disconnected (driver reset, tab throttling, or a system event). Reconnecting…';
+
+  const reload = document.createElement('button');
+  reload.type = 'button';
+  reload.textContent = 'Reload Page';
+  reload.setAttribute('aria-label', 'Reload page to recover');
+  reload.style.cssText = `padding: 12px 28px; cursor: pointer;
+    background: linear-gradient(180deg, rgba(40,18,18,0.94), rgba(20,8,8,0.96));
+    border: 1px solid ${C.red}; border-radius: 8px;
+    color: ${C.red}; font-family: ${F.display}; font-size: 13px; font-weight: 700;
+    letter-spacing: 0.28em; text-transform: uppercase;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 20px rgba(0,0,0,0.5);`;
+  reload.onclick = () => { try { window.location.reload(); } catch (_) {} };
+
+  card.appendChild(icon);
+  card.appendChild(title);
+  card.appendChild(body);
+  card.appendChild(reload);
+  _ctxLossModal.appendChild(card);
+  root.appendChild(_ctxLossModal);
+}
+
+export function hideContextLossModal() {
+  if (!_ctxLossModal) return;
+  if (_ctxLossModal.parentNode) _ctxLossModal.parentNode.removeChild(_ctxLossModal);
+  _ctxLossModal = null;
 }

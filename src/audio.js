@@ -1,34 +1,46 @@
 /**
  * Procedural audio via Web Audio API. Minimal: no audio files needed.
  *
- * Layout:
- *   _ctx ─► _master (legacy master) ─► destination
- *                                       ▲
- *           sfx._gain (SFX submaster) ──┘
+ * Layout (iter 10a):
+ *   _ctx ─► _master ─► destination
+ *               ▲
+ *       _musicBus (music + ambient bed)
+ *       _sfxBus   (combat sfx submaster)
  *
- * - `_master` is the legacy gain used by music and original sfx helpers.
- * - `sfx._gain` is the new SFX submaster the combat layer routes through so
- *   loud actions (boss spawn, bomb) sit at the right level versus pickups
- *   without disturbing music balance.
+ * - `_master` is the master gain; `setMasterVolume` writes to it.
+ * - `_musicBus` carries procedural music + menu/town/interior ambient bed.
+ *   `setMusicVolume` writes to it.
+ * - `_sfxBus` carries combat/UI SFX. `setSfxVolume` writes to it.
+ * - Legacy `setVolume(v)` is a deprecated shim mapping to `setMasterVolume`.
  * - Every sfx.* is throttled: a 30ms minimum gap per-method prevents layering
  *   when e.g. an orbital hits 5 enemies in one frame.
  */
 
+import { state } from './state.js';
+
 let _ctx = null;
-let _master = null;       // music + legacy sfx bus
+let _master = null;       // master gain (everything funnels here)
+let _musicBus = null;     // procedural music + ambient bed submaster
 let _sfxBus = null;       // combat sfx submaster
 let _enabled = true;
+// Cached menu/town/interior mode detector — audio module polls state.mode
+// since we can't observe writes to it from town/interior/catacomb modules.
+let _modePollTimer = null;
+let _menuBedActive = false;
 
 function ensureCtx() {
   if (_ctx) return _ctx;
   _ctx = new (window.AudioContext || window.webkitAudioContext)();
   _master = _ctx.createGain();
-  _master.gain.value = 0.45;
+  _master.gain.value = 1.0;
   _master.connect(_ctx.destination);
-  // Dedicated SFX submaster; slightly below 1.0 so transient peaks (bomb,
-  // boss spawn) don't clip when stacked over music.
+  // Music submaster — default 0.5 (combat readability > music vibe).
+  _musicBus = _ctx.createGain();
+  _musicBus.gain.value = 0.5;
+  _musicBus.connect(_master);
+  // SFX submaster — default 0.7. Slightly louder than music so combat reads.
   _sfxBus = _ctx.createGain();
-  _sfxBus.gain.value = 0.85;
+  _sfxBus.gain.value = 0.7;
   _sfxBus.connect(_master);
   return _ctx;
 }
@@ -37,17 +49,48 @@ function ensureCtx() {
 export function unlockAudio() {
   const ctx = ensureCtx();
   if (ctx.state === 'suspended') ctx.resume();
+  // Kick off the mode poller once we have a live ctx. menuBed auto-starts
+  // when state.mode is in {menu, town, interior}.
+  _startModePoll();
 }
 
+/** Master volume (0..1). Controls every audible output. */
+export function setMasterVolume(v) {
+  const clamped = Math.max(0, Math.min(1, Number(v) || 0));
+  if (_master) _master.gain.value = clamped;
+}
+
+/** Music submaster volume (0..1). Affects procedural music + menu bed. */
+export function setMusicVolume(v) {
+  const clamped = Math.max(0, Math.min(1, Number(v) || 0));
+  if (_musicBus) _musicBus.gain.value = clamped;
+}
+
+/** SFX submaster volume (0..1). Affects combat + UI sounds. */
+export function setSfxVolume(v) {
+  const clamped = Math.max(0, Math.min(1, Number(v) || 0));
+  if (_sfxBus) _sfxBus.gain.value = clamped;
+}
+
+/**
+ * Deprecated — kept as a back-compat shim. Existing callers (main.js boot,
+ * ui.js legacy options slider) route through here so old `meta.optVolume`
+ * saves still produce audible output. New code should call setMasterVolume.
+ */
 export function setVolume(v) {
-  if (_master) _master.gain.value = Math.max(0, Math.min(1, v));
+  setMasterVolume(v);
 }
 
 export function setEnabled(b) { _enabled = !!b; }
 
-// ─── Legacy helpers (kept for music + original sfx) ──────────────────────────
+// ─── Legacy helpers (kept for back-compat; route through _musicBus) ──────────
+// These three were previously wired to _master. After the iter-10a split they
+// route through _musicBus so they participate in music-volume control. No
+// in-tree caller invokes them today (all SFX go through sxTone/sxNoiseBurst),
+// but keeping the helpers means future melodic ambient nudges land in the
+// music bus by default.
 
-/** Short tone — legacy: routes through _master. */
+/** Short tone — routes through _musicBus. */
 function tone(f, dur, type = 'square', vol = 0.5) {
   if (!_enabled) return;
   const ctx = ensureCtx();
@@ -60,12 +103,12 @@ function tone(f, dur, type = 'square', vol = 0.5) {
   g.gain.setValueAtTime(0, t);
   g.gain.linearRampToValueAtTime(vol, t + 0.005);
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  osc.connect(g).connect(_master);
+  osc.connect(g).connect(_musicBus);
   osc.start(t);
   osc.stop(t + dur + 0.02);
 }
 
-/** Frequency sweep — legacy: routes through _master. */
+/** Frequency sweep — routes through _musicBus. */
 function sweep(fStart, fEnd, dur, type = 'square', vol = 0.4) {
   if (!_enabled) return;
   const ctx = ensureCtx();
@@ -79,12 +122,12 @@ function sweep(fStart, fEnd, dur, type = 'square', vol = 0.4) {
   g.gain.setValueAtTime(0, t);
   g.gain.linearRampToValueAtTime(vol, t + 0.005);
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  osc.connect(g).connect(_master);
+  osc.connect(g).connect(_musicBus);
   osc.start(t);
   osc.stop(t + dur + 0.02);
 }
 
-/** Brief noise burst — legacy: routes through _master. */
+/** Brief noise burst — routes through _musicBus. */
 function noiseBurst(dur, vol = 0.4, lowpass = 1200) {
   if (!_enabled) return;
   const ctx = ensureCtx();
@@ -98,7 +141,7 @@ function noiseBurst(dur, vol = 0.4, lowpass = 1200) {
   const g = ctx.createGain();
   g.gain.setValueAtTime(vol, t);
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  src.connect(filt).connect(g).connect(_master);
+  src.connect(filt).connect(g).connect(_musicBus);
   src.start(t);
   src.stop(t + dur + 0.02);
 }
@@ -338,7 +381,8 @@ function playNote(f, dur, type, vol) {
   g.gain.setValueAtTime(0, t);
   g.gain.linearRampToValueAtTime(vol, t + 0.02);
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  osc.connect(g).connect(_master);
+  // Route music through the music submaster so it tracks Music Volume slider.
+  osc.connect(g).connect(_musicBus);
   osc.start(t);
   osc.stop(t + dur + 0.02);
 }
@@ -385,4 +429,117 @@ export function stopMusic() {
 /** tier: 0=calm, 1=combat, 2=boss */
 export function setMusicTier(tier) {
   _musicTier = Math.max(0, Math.min(2, tier | 0));
+}
+
+/**
+ * Public dispatcher: external systems (spawnDirector / main loop) push
+ * combat-pressure signals; we map them to music tiers.
+ *
+ *   activeBosses == 0 + D <= 20s  → calm   (tier 0)
+ *   activeBosses == 0 + D >  20s  → combat (tier 1)
+ *   activeBosses >= 1 (mini)      → combat (tier 1)
+ *   activeBosses >= 1 (final)     → boss   (tier 2)
+ *
+ * `activeBosses` may be a number (count) OR a string ('mini'|'final'). We
+ * treat strings as the higher-priority signal so callers can pass shape-y
+ * descriptors without juggling counts.
+ */
+export function notifyCombatPressure(activeBosses, D) {
+  let tier = 0;
+  const time = Number(D) || 0;
+  if (typeof activeBosses === 'string') {
+    if (activeBosses === 'final') tier = 2;
+    else if (activeBosses === 'mini') tier = 1;
+    else if (activeBosses === 'none') tier = time > 20 ? 1 : 0;
+  } else {
+    const n = Number(activeBosses) || 0;
+    if (n >= 1) tier = 1;       // any boss alive → combat
+    if (n >= 2) tier = 2;       // multiple bosses → boss tier
+    if (n === 0 && time > 20) tier = 1;
+  }
+  setMusicTier(tier);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Menu / town / interior ambient bed — a quiet drone that gives non-combat
+// modes a sense of place. Routed through _musicBus so it tracks Music Volume.
+// ─────────────────────────────────────────────────────────────────────────────
+let _menuBedPlaying = false;
+let _menuBedTimer = null;
+let _menuBedBeat = 0;
+
+function _menuBedStep() {
+  if (!_menuBedPlaying) return;
+  // Low pad: A1 + E2 alternating, very low gain. The melody hint on every 4
+  // beats gives the bed a slow heartbeat without ever feeling like combat.
+  if (_menuBedBeat % 8 === 0) playNote(55,  1.4, 'sine', 0.05);
+  if (_menuBedBeat % 8 === 4) playNote(82,  1.0, 'sine', 0.04);
+  if (_menuBedBeat % 16 === 2) playNote(220, 0.8, 'triangle', 0.025);
+  _menuBedBeat++;
+}
+
+/**
+ * Start a low-volume ambient drone for menu / town / interior modes. Safe to
+ * call repeatedly — no-op if already playing. Audio context must be unlocked
+ * first (the mode poller waits for that).
+ */
+export function playMenuBed() {
+  if (_menuBedPlaying) return;
+  if (!_ctx || _ctx.state !== 'running') return;
+  _menuBedPlaying = true;
+  _menuBedBeat = 0;
+  // 70 BPM × 8th notes ≈ 428ms per step. Slow.
+  _menuBedTimer = setInterval(_menuBedStep, 428);
+}
+
+export function stopMenuBed() {
+  _menuBedPlaying = false;
+  if (_menuBedTimer) { clearInterval(_menuBedTimer); _menuBedTimer = null; }
+}
+
+// ── Mode poll: turn the menu bed on/off based on `state.mode` ────────────────
+// We can't subscribe to state.mode mutations (they happen in town/interior/
+// catacomb which we don't own), so a tiny 500ms poll keeps the bed in sync.
+// Started from unlockAudio() — never fires before the user gestures.
+function _startModePoll() {
+  if (_modePollTimer) return;
+  _modePollTimer = setInterval(() => {
+    if (!_ctx) return;
+    let mode = 'menu';
+    try {
+      if (state && typeof state.mode === 'string') mode = state.mode;
+    } catch (_) {}
+    const shouldPlay = (mode === 'menu' || mode === 'town' || mode === 'interior');
+    if (shouldPlay && !_menuBedActive) {
+      _menuBedActive = true;
+      playMenuBed();
+    } else if (!shouldPlay && _menuBedActive) {
+      _menuBedActive = false;
+      stopMenuBed();
+    }
+  }, 500);
+}
+
+// ── Visibility helpers ───────────────────────────────────────────────────────
+// main.js owns the visibilitychange listener; these helpers do the audio side.
+
+/** Suspend the audio context. Idempotent. */
+export function suspendAudio() {
+  if (_ctx && _ctx.state === 'running' && typeof _ctx.suspend === 'function') {
+    try { _ctx.suspend(); } catch (_) {}
+  }
+  // While suspended, the menuBed setInterval would still fire but playNote()
+  // bails on ctx.state !== 'running'. We pause the menuBed loop anyway so it
+  // resumes cleanly on focus return.
+  stopMenuBed();
+  _menuBedActive = false;
+}
+
+/** Resume the audio context + restart menuBed if mode warrants it. */
+export function resumeAudio() {
+  if (_ctx && _ctx.state === 'suspended' && typeof _ctx.resume === 'function') {
+    try { _ctx.resume(); } catch (_) {}
+  }
+  // Next mode-poll tick will retrigger the bed for menu/town/interior.
+  _startModePoll();
 }

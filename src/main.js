@@ -6,10 +6,10 @@ import * as THREE from 'three';
 import { state, resetState } from './state.js';
 import { WORLD, SPAWN } from './config.js';
 import { preloadAll } from './assets.js';
-import { createComposer, resizeComposer, BLOOM_LAYER } from './postfx.js';
+import { createComposer, resizeComposer, BLOOM_LAYER, applyAccessibilityOptions } from './postfx.js';
 import { buildEnv } from './env.js';
-import { unlockAudio, startMusic, stopMusic, setMusicTier, setVolume, sfx } from './audio.js';
-import { getMeta, shopLevel, selectedCharacter, dailyChallengeConfig, commitDailyRun, equippedRelic, selectedStage, QUEST_TEMPLATES, weeklyMutatorConfig, commitWeeklyRun, setOption } from './meta.js';
+import { unlockAudio, startMusic, stopMusic, setMusicTier, setVolume, setMasterVolume, setMusicVolume, setSfxVolume, suspendAudio, resumeAudio, sfx } from './audio.js';
+import { getMeta, shopLevel, selectedCharacter, dailyChallengeConfig, commitDailyRun, equippedRelic, selectedStage, QUEST_TEMPLATES, weeklyMutatorConfig, commitWeeklyRun, setOption, SHOP_TREE } from './meta.js';
 import { applyWeeklyMutator } from './weeklyMutator.js';
 import { recordRun } from './leaderboard.js';
 import { CHARACTERS, STAGES } from './config.js';
@@ -21,11 +21,12 @@ import { initEnemies, updateEnemies, prewarmPools } from './enemies.js';
 import { initWeapons, tickWeapons, acquireWeapon, weaponChoices, _resetEvoAnnouncements } from './weapons/index.js';
 import { initXP, updateGems, dropGem, applyLevelUpChoice } from './xp.js';
 import { initSpawnDirector, tickSpawnDirector, secondsUntilNextMiniBoss } from './spawnDirector.js';
-import { initUI, updateUI, showLevelUpModal, hideLevelUpModal, showDeathScreen, showStartScreen, hideStartScreen, showOptions, hideOptions, isOptionsOpen, showTutorial, showBanner, hideShop, isShopOpen, hideGrimoire, isGrimoireOpen, showHouse, hideHouse, isHouseOpen, showQuestBoard, hideQuestBoard, isQuestBoardOpen } from './ui.js';
+import { initUI, updateUI, showLevelUpModal, hideLevelUpModal, showDeathScreen, showStartScreen, hideStartScreen, showOptions, hideOptions, isOptionsOpen, showTutorial, showBanner, hideShop, isShopOpen, hideGrimoire, isGrimoireOpen, showHouse, hideHouse, isHouseOpen, showQuestBoard, hideQuestBoard, isQuestBoardOpen, showCredits, hideCredits, isCreditsOpen, showContextLossModal, hideContextLossModal } from './ui.js';
+import { showCodex, hideCodex, isCodexOpen } from './codex.js';
 import { initDamageNumbers, updateDamageNumbers } from './damageNumbers.js';
 import { initFX, updateFX, updatePickupRing } from './fx.js';
 import { initVFXBurst, updateVFXBurst, resetVFXBurst } from './vfxBurst.js';
-import { initChests, tickChests, resetChests } from './chest.js';
+import { initChests, tickChests, resetChests, spawnAt as spawnChestAt } from './chest.js';
 import { initBossTelegraphs, updateBossTelegraphs, resetBossTelegraphs } from './bossTelegraphs.js';
 import { initDestructibles, resetDestructibles } from './destructibles.js';
 import { initPerfHUD, updatePerfHUD } from './perfHUD.js';
@@ -49,6 +50,9 @@ import { loadArenaDecor, clearArenaDecor } from './arenaDecor.js';
 import { initMiniEvents, tickMiniEvents, resetMiniEvents, teardownMiniEvents } from './miniEvents.js';
 import { initArenaProps, spawnArenaProps, tickArenaProps, resetArenaProps } from './arenaProps.js';
 import { initTutorial, tickTutorial, notifyTutorialEvent } from './tutorial.js';
+// Iter 10b — perf soak benchmark. Side-effect import installs window.kkSoak
+// so the soak is callable from the DevTools console without any UI hook.
+import './perfSoak.js';
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 
@@ -225,10 +229,58 @@ async function boot() {
   for (let i = 0; i < (state.run.cellarLv || 0); i++) acquireWeapon(state.run.starterWeapon || 'orbitals');
 
   showStartScreen('Click or press SPACE to start');
-  // Apply saved options at boot
+  // ── Iter 10a — Apply saved options at boot ──
   const meta = getMeta();
-  state._optShakeMul = meta.optShake;
-  setVolume(meta.optVolume);
+  // Honor OS prefers-reduced-motion on FIRST boot only (sentinel:
+  // optReduceMotionUserSet). After the user explicitly toggles the option,
+  // their choice always wins over the OS hint.
+  try {
+    if (!meta.optReduceMotionUserSet
+        && typeof window !== 'undefined'
+        && typeof window.matchMedia === 'function') {
+      const mm = window.matchMedia('(prefers-reduced-motion: reduce)');
+      if (mm && mm.matches) {
+        meta.optReduceMotion = true;
+      }
+    }
+  } catch (_) {}
+  // Mirror reduce-motion + reduced-flashing into state caches for per-frame reads.
+  state._optReduceMotion   = !!meta.optReduceMotion;
+  state._optReducedFlashing = !!meta.optReducedFlashing;
+  // Shake multiplier: reduce-motion forces 0 regardless of optShake slider.
+  state._optShakeMul = state._optReduceMotion ? 0 : Number(meta.optShake);
+  // Audio mix split — push all three buses from meta. Legacy setVolume() is
+  // a back-compat shim that aliases setMasterVolume; we call the explicit
+  // setters here so the new keys win when both are present.
+  setMasterVolume(meta.optMasterVolume != null ? meta.optMasterVolume : meta.optVolume);
+  setMusicVolume(meta.optMusicVolume != null ? meta.optMusicVolume : (meta.optVolume * 0.6));
+  setSfxVolume(meta.optSfxVolume != null ? meta.optSfxVolume : meta.optVolume);
+  // Accessibility uniforms (chromatic gate + colorblind remap + high contrast).
+  applyAccessibilityOptions(state.postFXPass, {
+    reduceMotion: state._optReduceMotion,
+    colorblind:   meta.optColorblind,
+    highContrast: !!meta.optHighContrast,
+  });
+  // Font scale CSS var.
+  try {
+    if (typeof document !== 'undefined' && document.documentElement) {
+      const fs = Number(meta.optFontScale);
+      document.documentElement.style.setProperty('--kk-font-scale',
+        Number.isFinite(fs) ? String(Math.max(0.6, Math.min(1.6, fs))) : '1');
+    }
+  } catch (_) {}
+  // Visibility / focus handling — suspend the audio context when the tab is
+  // hidden, resume + retrigger menu bed when it returns. menuBed itself is
+  // auto-managed by audio.js's mode poller started inside unlockAudio().
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        suspendAudio();
+      } else {
+        resumeAudio();
+      }
+    });
+  }
 
   const start = () => {
     if (state.started && state.mode === 'run') return;
@@ -238,6 +290,11 @@ async function boot() {
     // Mid-run flavor: arena props at run start, mini-events scheduler reset.
     resetMiniEvents();
     spawnArenaProps();
+    // Iter 10b — Greed tier-4 capstone: idempotent across run-entry paths
+    // (restartRun calls _primeRunStart which also calls this; first-from-menu
+    // skips _primeRunStart and lands here directly). The guard inside the
+    // helper prevents double-spawn.
+    _maybeSpawnTreasureMapChest();
     // Player may have changed character on the picker — rebuild hero so the
     // placeholder tint reflects the current selection.
     rebuildHero(state.scene);
@@ -279,10 +336,50 @@ async function boot() {
       else if (state.mode === 'catacomb') { exitCatacomb(); }
       else if (isShopOpen()) hideShop();
       else if (isGrimoireOpen()) hideGrimoire();
+      else if (typeof isCreditsOpen === 'function' && isCreditsOpen()) hideCredits();
+      else if (typeof isCodexOpen === 'function' && isCodexOpen()) hideCodex();
       else if (isOptionsOpen()) hideOptions();
       else if (state.started && !state.gameOver) showOptions();
     }
   });
+
+  // ── F1 hotkey: open Codex from anywhere except mid-modal ───────────────────
+  // F1 is the universal "help / index" key — surfacing the Codex (which holds
+  // the affix Legend, enemy bestiary, weapon recipes, etc.) without a click.
+  // Only fires when no competing modal owns input.
+  window.addEventListener('keydown', e => {
+    if (e.code !== 'F1') return;
+    // Skip if any major modal owns focus.
+    if (isCodexOpen && isCodexOpen()) { hideCodex(); e.preventDefault(); return; }
+    if ((typeof isCreditsOpen === 'function' && isCreditsOpen())
+        || isShopOpen() || isGrimoireOpen() || isHouseOpen()
+        || isOptionsOpen() || isQuestBoardOpen()) {
+      return;
+    }
+    // Don't preempt browser dev help if the user holds modifiers.
+    if (e.ctrlKey || e.shiftKey || e.altKey || e.metaKey) return;
+    e.preventDefault();
+    showCodex();
+  });
+
+  // ── WebGL context-loss / restored — canvas-level wiring ────────────────────
+  // canvas is captured at module top (const canvas = ...). preventDefault on
+  // the loss event lets the browser ATTEMPT a restore; without it the loss is
+  // permanent. We pause logic, show a red modal, and on restore call the
+  // rebuild stub (iter 10: safe-fallback page reload — see helper below).
+  canvas.addEventListener('webglcontextlost', (e) => {
+    console.error('[webgl] context lost');
+    try { e.preventDefault(); } catch (_) {}
+    if (state && state.time) state.time.paused = true;
+    try { showContextLossModal(); } catch (err) { console.error(err); }
+  }, false);
+
+  canvas.addEventListener('webglcontextrestored', () => {
+    console.warn('[webgl] context restored');
+    try { rebuildAfterContextLoss(); } catch (err) { console.error(err); }
+    try { hideContextLossModal(); } catch (_) {}
+    if (state && state.time) state.time.paused = false;
+  }, false);
 
   // Expose restart for the death-screen RETRY button. Avoids a full page reload
   // (which throws away the prewarmed pools + cached GLBs).
@@ -378,6 +475,10 @@ function _primeRunStart() {
   // Rebuild hero mesh so a newly-picked character's placeholder tint applies.
   rebuildHero(state.scene);
   applyMetaUpgrades();
+  // Iter 10b — Greed tier-4 capstone fires here so the chest is in the world
+  // BEFORE the spawn director starts the wave. The guard makes the call
+  // idempotent across the menu→start path that ALSO calls it.
+  _maybeSpawnTreasureMapChest();
   // Re-give the selected character's starter weapon (+ Cellar bonus levels)
   acquireWeapon(state.run.starterWeapon || 'orbitals');
   for (let i = 0; i < (state.run.cellarLv || 0); i++) acquireWeapon(state.run.starterWeapon || 'orbitals');
@@ -589,6 +690,35 @@ function applyMetaUpgrades() {
   if (shrineLv   > 0 && !runFair) h.rerolls += shrineLv;
   if (apoLv      > 0 && !runFair) h.regenPerSec += 0.5 * apoLv;
 
+  // ── Shop Tree (iter 6 "Meta With Teeth") — bake each owned node's effect
+  // into runState passive_* scalars + flags. Suppressed in daily/weekly for
+  // the same fair-leaderboard reason as the flat shop bonuses above. Without
+  // this loop the three tier-4 capstones (Phoenix / Overdrive / Treasure Map)
+  // along with every lower-tier node would silently do nothing — see iter 10b
+  // brief, "single biggest broken promise in the codebase".
+  if (!runFair) {
+    const ownedTree = meta.shopTree || {};
+    for (const node of SHOP_TREE) {
+      if (!ownedTree[node.id]) continue;
+      try { node.effect(state.run); } catch (err) {
+        console.warn('[shopTree effect]', node.id, err);
+      }
+    }
+    // Phoenix tier-4 capstone cap: hard-limit revives at 6. Brief specs
+    // `Math.min(6, passive_revives)` literally — the tuning row mentions
+    // "4 base + 2 vault levels" but house.vault is the coin-bonus track
+    // (max 3, +25%/lv end-of-run coins), unrelated to revives. The clamp
+    // therefore lands at a flat 6, applied AFTER the loop so a future
+    // node that adds revives still gets trimmed. Cheating-proof against
+    // console pokes after applyMetaUpgrades returns? No — clamp only fires
+    // at run prime — but brief explicitly tests via "console.set after
+    // applyMetaUpgrades", confirming the clamp is a run-start trim, not a
+    // per-frame ward.
+    if ((state.run.passive_revives || 0) > 6) {
+      state.run.passive_revives = 6;
+    }
+  }
+
   // Equipped relic affixes stack on top of shop/character (skipped in daily/weekly).
   if (!runFair) {
     const relic = equippedRelic();
@@ -640,6 +770,77 @@ function applyMetaUpgrades() {
   if (stage && state.scene) {
     loadArenaDecor(stage.id, state.scene);
   }
+}
+
+// ── Tier-4 Overdrive capstone tick (Power branch) ─────────────────────────
+// Cycle: passive_overdrive=true → accumulate overdriveTimer until 60s, flip
+// overdriveActive=true for 5s, then flip back and reset the timer. During
+// the active window we stash + transient-multiply hero.statMul.cooldown
+// (×0.667 ≈ +50% attack speed) and hero.statMul.dmg (×1.25 = +25% damage).
+// Stash pattern guards against FP drift AND against death-mid-frenzy: if
+// resetState clears state.run, the stash goes with it; we re-read fresh
+// values on the next activation.
+const OVERDRIVE_WAIT  = 60.0;
+const OVERDRIVE_ACTIVE = 5.0;
+const OVERDRIVE_CD_MUL = 0.667;
+const OVERDRIVE_DMG_MUL = 1.25;
+function _tickOverdrive(dt) {
+  const r = state.run;
+  if (!r.passive_overdrive) return;
+  const h = state.hero;
+  if (!r.overdriveActive) {
+    r.overdriveTimer = (r.overdriveTimer || 0) + dt;
+    if (r.overdriveTimer >= OVERDRIVE_WAIT) {
+      // ── Activate ──
+      r.overdriveActive = true;
+      r.overdriveTimer = 0;
+      r._overdrivePrevCD  = h.statMul.cooldown;
+      r._overdrivePrevDmg = h.statMul.dmg;
+      h.statMul.cooldown = h.statMul.cooldown * OVERDRIVE_CD_MUL;
+      h.statMul.dmg      = h.statMul.dmg      * OVERDRIVE_DMG_MUL;
+      // Amber screen tint: try the postfx uniform first (10a may add it),
+      // otherwise fall back to a bloomBoost pulse so the player still sees
+      // a frenzy flash. The bloomBoost decays at ×0.1/sec so a one-shot
+      // here visibly lingers across the 5s window.
+      if (state.postFXPass && state.postFXPass.uniforms && state.postFXPass.uniforms.uOverdriveTint) {
+        state.postFXPass.uniforms.uOverdriveTint.value = 1.0;
+      }
+      state.fx.bloomBoost = Math.max(state.fx.bloomBoost || 0, 0.85);
+      try { if (sfx && sfx.levelUp) sfx.levelUp(); } catch (_) {}
+    }
+  } else {
+    r.overdriveTimer = (r.overdriveTimer || 0) + dt;
+    if (r.overdriveTimer >= OVERDRIVE_ACTIVE) {
+      // ── Deactivate ──
+      r.overdriveActive = false;
+      r.overdriveTimer = 0;
+      // Restore from stash (not invert-multiply — FP drift is real).
+      if (r._overdrivePrevCD != null)  h.statMul.cooldown = r._overdrivePrevCD;
+      if (r._overdrivePrevDmg != null) h.statMul.dmg      = r._overdrivePrevDmg;
+      r._overdrivePrevCD  = null;
+      r._overdrivePrevDmg = null;
+      if (state.postFXPass && state.postFXPass.uniforms && state.postFXPass.uniforms.uOverdriveTint) {
+        state.postFXPass.uniforms.uOverdriveTint.value = 0.0;
+      }
+    } else {
+      // Mid-active: keep nudging bloomBoost so the frenzy reads continuously
+      // (it decays each frame; a small per-tick top-up is the safe path).
+      state.fx.bloomBoost = Math.max(state.fx.bloomBoost || 0, 0.45);
+    }
+  }
+}
+
+// Iter 10b — Greed tier-4 capstone helper. Spawns one chest in front-right
+// of the hero at run entry, exactly once per run. Guard via state.run flag
+// so the two call sites (restartRun via _primeRunStart + start() for the
+// first-from-menu path) don't double-spawn.
+function _maybeSpawnTreasureMapChest() {
+  if (!state.run.passive_treasureMap) return;
+  if (state.run._treasureMapSpawned) return;
+  state.run._treasureMapSpawned = true;
+  try {
+    spawnChestAt(state.hero.pos.x + 5, state.hero.pos.z + 5);
+  } catch (err) { console.warn('[treasureMap spawn]', err); }
 }
 
 function applyShake(realDt) {
@@ -864,6 +1065,10 @@ function frame(now) {
   sampleInput();
   updateHero(logicDt);
   tickSpawnDirector(logicDt);
+  // Tier-4 Overdrive capstone (Power branch) — must tick BEFORE tickWeapons
+  // so the stashed statMul multipliers apply within the same frame's weapon
+  // cooldown reads (autoAim / chain / orbitals all read h.statMul.cooldown).
+  _tickOverdrive(logicDt);
   updateEnemies(logicDt);
   tickWeapons(logicDt);
   updateGems(logicDt);
@@ -963,6 +1168,26 @@ function frame(now) {
   renderFrame();
   updatePerfHUD();
   requestAnimationFrame(frame);
+}
+
+// ── WebGL context-loss rebuild stub ──────────────────────────────────────────
+// Iter-10 safe fallback: a full re-init of the 12+ InstancedMesh systems
+// (gems, blob shadows, ranged tells, threat dots, pickup halos, leap markers,
+// kill rings, sparkle layers, projectile pools, particle textures, etc.) is
+// risky and out-of-scope for the polish lock — the init helpers append to the
+// scene and would duplicate rather than rebuild. The brief explicitly permits
+// the safe fallback here. A real silent-restore path is iter 12 work.
+//
+// Hooked from main.js webglcontextrestored listener.
+function rebuildAfterContextLoss() {
+  console.error('[webgl] context restored — page reload required to recover (iter 10 safe fallback)');
+  try {
+    // Tiny delay so the user can see the "graphics disconnected" modal close
+    // and the reload toast read as a deliberate recovery, not a crash.
+    setTimeout(() => { try { window.location.reload(); } catch (_) {} }, 200);
+  } catch (_) {
+    try { window.location.reload(); } catch (_) {}
+  }
 }
 
 boot().then(() => requestAnimationFrame(frame));
