@@ -21,7 +21,7 @@ import { initEnemies, updateEnemies, prewarmPools } from './enemies.js';
 import { initWeapons, tickWeapons, acquireWeapon, weaponChoices, _resetEvoAnnouncements } from './weapons/index.js';
 import { initXP, updateGems, dropGem, applyLevelUpChoice } from './xp.js';
 import { initSpawnDirector, tickSpawnDirector, secondsUntilNextMiniBoss } from './spawnDirector.js';
-import { initUI, updateUI, showLevelUpModal, hideLevelUpModal, showDeathScreen, showStartScreen, hideStartScreen, showOptions, hideOptions, isOptionsOpen, showTutorial, showBanner, hideShop, isShopOpen, hideGrimoire, isGrimoireOpen, showHouse, hideHouse, isHouseOpen, showQuestBoard, hideQuestBoard, isQuestBoardOpen, showCredits, hideCredits, isCreditsOpen, showContextLossModal, hideContextLossModal, getStartView, setStartView } from './ui.js';
+import { initUI, updateUI, showLevelUpModal, hideLevelUpModal, showDeathScreen, showStartScreen, hideStartScreen, showOptions, hideOptions, isOptionsOpen, showTutorial, showBanner, hideShop, isShopOpen, hideGrimoire, isGrimoireOpen, showHouse, hideHouse, isHouseOpen, showQuestBoard, hideQuestBoard, isQuestBoardOpen, showCredits, hideCredits, isCreditsOpen, showContextLossModal, hideContextLossModal, getStartView, setStartView, showCasinoMenu, showCasinoSlots, showCasinoParlay } from './ui.js';
 import { showCodex, hideCodex, isCodexOpen } from './codex.js';
 import { initDamageNumbers, updateDamageNumbers } from './damageNumbers.js';
 import { initFX, updateFX, updatePickupRing } from './fx.js';
@@ -36,6 +36,7 @@ import { initBlobShadows, updateBlobShadows } from './blobShadows.js';
 import { updateEnemyProjectiles } from './enemyProjectiles.js';
 import { buildTown, enterTown, exitTown, tickTown, setGateHandler, setInteractionHandler } from './town.js';
 import { buildInterior, enterInterior, exitInterior, tickInterior, setInteriorHandler } from './interior.js';
+import { buildCasinoInterior, enterCasinoInterior, exitCasinoInterior, tickCasinoInterior, setCasinoInteriorHandler } from './casinoInterior.js';
 import { buildCatacomb, tickCatacomb, tickCatacombEntrance, exitCatacomb, resetCatacomb } from './catacomb.js';
 import { showSketchbook } from './sketchbook.js';
 import { showYarnDart } from './yarndart.js';
@@ -190,6 +191,7 @@ async function boot() {
   state.envGroup = buildEnv(scene, renderer);
   buildTown(scene);
   buildInterior(scene);
+  buildCasinoInterior(scene);
   buildCatacomb(scene);
 
   initInput();
@@ -317,6 +319,21 @@ async function boot() {
   setInteriorHandler('yarn',   () => showYarnDart());
   setInteriorHandler('tea',    () => showTeaSteep());
   setInteriorHandler('computer', () => showQuestBoard());
+  // Iter 33g — walkable casino interior. Town casino interactable now enters
+  // a real room (sibling of the house) instead of opening the dashboard modal
+  // directly. Stations inside route to the same modal sections.
+  setInteractionHandler('casino', () => {
+    // Settle any in-flight Boss Rush wager before entering (legacy code path).
+    import('./casino.js')
+      .then(({ settlePendingWager }) => { try { settlePendingWager(); } catch (_) {} })
+      .catch(() => {});
+    enterCasinoInterior();
+  });
+  setCasinoInteriorHandler('exit',   () => { exitCasinoInterior(); enterTown(); });
+  setCasinoInteriorHandler('slots',  () => showCasinoSlots());
+  setCasinoInteriorHandler('parlay', () => showCasinoParlay());
+  setCasinoInteriorHandler('buffs',  () => showCasinoMenu('buffs'));
+  setCasinoInteriorHandler('house',  () => showCasinoMenu('house'));
   window.kkStartRun = start;
   window.kkEnterTown = () => {
     hideStartScreen();
@@ -333,6 +350,7 @@ async function boot() {
       if (isQuestBoardOpen()) hideQuestBoard();
       else if (isHouseOpen()) hideHouse();
       else if (state.mode === 'interior') { exitInterior(); enterTown(); }
+      else if (state.mode === 'casino_interior') { exitCasinoInterior(); enterTown(); }
       else if (state.mode === 'catacomb') { exitCatacomb(); }
       else if (isShopOpen()) hideShop();
       else if (isGrimoireOpen()) hideGrimoire();
@@ -412,9 +430,10 @@ async function boot() {
     try { _teardownActiveRun(); } catch (_) {}
     // Exit any sub-mode so the start screen renders cleanly.
     try {
-      if (state.mode === 'town')     exitTown();
-      if (state.mode === 'interior') exitInterior();
-      if (state.mode === 'catacomb') exitCatacomb();
+      if (state.mode === 'town')              exitTown();
+      if (state.mode === 'interior')          exitInterior();
+      if (state.mode === 'casino_interior')   exitCasinoInterior();
+      if (state.mode === 'catacomb')          exitCatacomb();
     } catch (_) {}
     state.mode = 'menu';
     state.started = false;
@@ -927,6 +946,32 @@ function frame(now) {
     const _ihalf = 9;
     camera.left = -_ihalf * _ia; camera.right = _ihalf * _ia;
     camera.top  =  _ihalf;       camera.bottom = -_ihalf;
+    camera.updateProjectionMatrix();
+    if (state.postFXPass) state.postFXPass.uniforms.time.value = state.time.real;
+    renderFrame();
+    requestAnimationFrame(frame);
+    return;
+  }
+
+  // Casino interior — same camera shape as the house, slightly pulled back
+  // so all 5 stations stay framed.
+  if (state.mode === 'casino_interior') {
+    sampleInput();
+    updateHero(realDt);
+    updateFX(realDt);
+    updateVFXBurst(realDt);
+    updatePickupRing();
+    updateBlobShadows();
+    tickCasinoInterior(realDt);
+    const hp = state.hero.pos;
+    camera.position.x += (hp.x + 20 - camera.position.x) * 0.16;
+    camera.position.z += (hp.z + 20 - camera.position.z) * 0.16;
+    camera.position.y = 34;
+    camera.lookAt(hp.x, 0.7, hp.z);
+    const _ca = ASPECT();
+    const _chalf = 11;
+    camera.left = -_chalf * _ca; camera.right = _chalf * _ca;
+    camera.top  =  _chalf;       camera.bottom = -_chalf;
     camera.updateProjectionMatrix();
     if (state.postFXPass) state.postFXPass.uniforms.time.value = state.time.real;
     renderFrame();

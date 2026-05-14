@@ -60,7 +60,7 @@ const F = {
 // ── Build version ────────────────────────────────────────────────────────────
 // Flipped to '1.0.0' on the iter-11 ship commit (Shop Tree Live Wires —
 // the broken-tier-1-3-consumers gap was the last v1.0 blocker).
-export const KK_VERSION = '1.4.20';
+export const KK_VERSION = '1.4.21';
 
 // ── Module-local DOM refs ────────────────────────────────────────────────────
 let _root = null;
@@ -2943,9 +2943,12 @@ function _emberLine(label) {
 //   House  — Casino unlocks paid in Sigils
 // Always available, no gating.
 let _casinoTab = 'games';
-export function showCasinoMenu() {
+export function showCasinoMenu(initialTab) {
   try { hideTooltip(); } catch (_) {}
   if (_casinoModal) return;
+  if (initialTab === 'games' || initialTab === 'buffs' || initialTab === 'house') {
+    _casinoTab = initialTab;
+  }
   try { sfx.modalOpen(); } catch (_) {}
   _casinoModal = document.createElement('div');
   _casinoModal.style.cssText = _CASINO_BG;

@@ -539,17 +539,8 @@ export function buildTown(scene) {
     key: 'casino',
     _casino: true,    // marker so tickTown can repaint label on cosmetic state changes
   });
-  _handlers.casino = () => {
-    // Iter 33e — casino is open from the start of the game. Settle any in-flight
-    // Boss Rush wager (legacy code path; new menu no longer offers wagers) before
-    // opening the dashboard.
-    import('./casino.js')
-      .then(({ settlePendingWager }) => { try { settlePendingWager(); } catch (_) {} })
-      .catch(() => {});
-    import('./ui.js')
-      .then(({ showCasinoMenu }) => { try { showCasinoMenu(); } catch (_) {} })
-      .catch(() => {});
-  };
+  // Iter 33g — casino interactable now opens the walkable casino interior.
+  // Handler installed by main.js via setInteractionHandler('casino', ...).
   _handlers.brazier = () => {
     // Persist across the town→run transition. helltide.js initHelltide() reads
     // and consumes the flag, scheduling the next event ~30s into the run
