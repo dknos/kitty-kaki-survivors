@@ -28,7 +28,9 @@ User collaboration style:
 
 ## Roadmap & current task list
 
-10-iteration shippability plan + a post-roadmap r171 spike. Track via TaskList tool. Current state:
+# 🚀 v1.0.0 SHIPPED (commit `a3e8bb4`)
+
+10-iteration shippability plan + a post-roadmap r171 spike. **All 11 iters complete. v1.0 live at https://dknos.github.io/kitty-kaki-survivors/.**
 
 | # | Iter | Status |
 |---|---|---|
@@ -37,16 +39,17 @@ User collaboration style:
 | 32 | Iter 7: Roster Pressure (signatures + Phoenix + Clockwork) | **completed** `593ab7f` |
 | 33 | Iter 8: Enemy Identity (affixes + per-boss patterns + codex) | **completed** `61617a7` |
 | 34 | Iter 9: Retention Hooks (weekly mutator + share card + DAG + Hall of Records) | **completed** `0b2fe5a` |
-| **35** | **Iter 10: Polish Lock (ship)** | **in_progress** (3 agents fanned out — 10a audio/settings/a11y, 10b FX residue+tier-4+leap+perf, 10c ship rituals; brief in `ITER_10_11_BRIEFS.md`) |
-| 36 | Iter 11: r171 + TSL compute particles spike | pending (1-2 agent worktree spike, MUST NOT GATE v1.0) |
-| 37+ | Iter 12+ candidates | pending — perf hardening if soak fails, Cloudflare leaderboard, touch/mobile, i18n, r171 promotion, OST |
+| 35 | Iter 10: Polish Lock (audio/a11y, tier-4 capstones, FX residue, ship rituals) | **completed** `4836f98` |
+| 36 | **Iter 11: Shop Tree Live Wires (RE-PRIORITIZED from r171 spike)** — closes the tier-1-3 consumer gap discovered by 10b. KK_VERSION → 1.0.0. | **completed** `a3e8bb4` 🚢 |
+| **37** | **Iter 12: r171 + TSL compute particles spike** (moved from iter 11) | pending — 1-2 agent worktree spike, post-v1.0 polish |
+| 38+ | Iter 13+ candidates | per `ITER_10_11_BRIEFS.md` reassessment — perf hardening if soak fails, Cloudflare leaderboard, touch/mobile, i18n, r171 promotion, OST, screenshots/og-card.png, notifyCombatPressure caller wiring |
 
 WSL session may have a fresh task list — if so, re-create these from this table.
 
 **Pre-generated briefs:**
 - `ITER_789_BRIEFS.md` — 3-agent splits for iters 7-9 (data/hooks/UI). All shipped.
-- `ITER_10_11_BRIEFS.md` — iter 10 (audio+a11y / FX+tier-4 / ship rituals) + iter 11 (r171 spike) + ship reassessment (8-point quality checklist).
-- `FX_AUDIT.md` — FX placeholder audit from 2026-05-14 pass; deferred items are tagged for iter 10b.
+- `ITER_10_11_BRIEFS.md` — iter 10 + iter 11 (r171 spike) + ship reassessment (8-point quality checklist).
+- `FX_AUDIT.md` — FX placeholder audit from 2026-05-14 pass.
 
 **Loop state:** the parent session is running in /loop dynamic mode. Wakeups armed on a 1800s safety net; primary wake signal is bg-agent task-notifications.
 
