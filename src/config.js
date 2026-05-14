@@ -260,7 +260,7 @@ export const CHARACTERS = [
     starter: 'orbitals',
     statMul: { dmg: 1.25, moveSpeed: 0.85, magnet: 1.0 },
     hpMax: 120,
-    unlock: 'flag:unlockedSote',
+    unlock: null,   // playable from start (was: 'flag:unlockedSote')
     glb: 'sote.glb',                    // per-char GLB override
     tint: 0xffffff, scaleMul: 1.00,    // no tint — has own mesh
     signatureName: 'Heavy Tread',

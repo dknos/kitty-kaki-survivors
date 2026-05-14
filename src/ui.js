@@ -35,6 +35,8 @@ import { showCodex, hideCodex, isCodexOpen } from './codex.js';
 import { showRunHistory, hideRunHistory, isRunHistoryOpen, recordRunResult } from './runHistory.js';
 import { downloadShareCard, renderShareCard } from './shareCard.js';
 import { topRunsAcrossAll, formatSeedShareString } from './leaderboard.js';
+import { createCharCarousel } from './charCarousel.js';
+import { GLTF_CACHE } from './assets.js';
 
 // ── Theme constants ──────────────────────────────────────────────────────────
 const C = {
@@ -58,7 +60,7 @@ const F = {
 // ── Build version ────────────────────────────────────────────────────────────
 // Flipped to '1.0.0' on the iter-11 ship commit (Shop Tree Live Wires —
 // the broken-tier-1-3-consumers gap was the last v1.0 blocker).
-export const KK_VERSION = '1.4.1';
+export const KK_VERSION = '1.4.2';
 
 // ── Module-local DOM refs ────────────────────────────────────────────────────
 let _root = null;
@@ -84,6 +86,7 @@ let _startStageRowRef = null;
 let _startCharRowRef = null;
 let _startBtnRowRef = null;
 let _startPresetRowRef = null;
+let _charCarousel = null;
 function _refreshStartFocus() {
   if (!_startScreen) return;
   if (_startFocusScope) { popFocusScope(_startFocusScope); _startFocusScope = null; }
@@ -1547,6 +1550,24 @@ export function showStartScreen(text) {
     // Update subtitle in place
     const sub = _startScreen.querySelector('.kk-start-sub');
     if (sub) sub.textContent = text || '';
+    // Lazy-mount carousel: first call fires before preloadAll resolves, so the
+    // cache is empty. Once 'hero' is in the cache, mount on the next call.
+    if (!_charCarousel && GLTF_CACHE && GLTF_CACHE.hero && _startCharRowRef) {
+      try {
+        // Wipe loading placeholder
+        _startCharRowRef.innerHTML = '';
+        _charCarousel = createCharCarousel(_startCharRowRef, {
+          initialId: getMeta().selectedChar || 'kitty',
+          meta: getMeta(),
+          onSelect: (id) => {
+            setOption('selectedChar', id);
+            getMeta().selectedChar = id;
+            _refreshStartFocus();
+          },
+        });
+        _refreshStartFocus();
+      } catch (e) { console.warn('[carousel.lateMount]', e); }
+    }
     return;
   }
   // Ensure root exists even if initUI hasn't run (called early in boot)
@@ -1597,9 +1618,11 @@ export function showStartScreen(text) {
     ? `<span style="color:${C.amber}">${meta.coins.toLocaleString()}</span> coins  ·  best <span style="color:${C.amber}">${fmtTime(meta.bestTime)}</span>  ·  <span style="color:${C.amber}">${meta.runs}</span> runs`
     : '<span style="opacity:0.7;">— first run —</span>';
 
-  // Character picker row
+  // Character picker — Iter 31: 3D carousel hosting real GLB models.
+  // The legacy card-grid path is replaced; charCarousel.js renders its own
+  // info panel + arrow buttons + pip strip into this host.
   const charRow = document.createElement('div');
-  charRow.style.cssText = 'display:flex; gap:10px; margin-top:18px; pointer-events:auto; flex-wrap:wrap; justify-content:center; max-width:90vw;';
+  charRow.style.cssText = 'display:flex; flex-direction:column; align-items:center; gap:8px; margin-top:18px; pointer-events:auto; width:100%; max-width:90vw;';
   // Sigil-pip colour matches the magenta sigil treatment used in the death-screen
   // stats row + shop tree (`#c87bff`). Don't introduce a fresh token.
   const SIGIL_PIP_C = '#c87bff';
@@ -1630,141 +1653,35 @@ export function showStartScreen(text) {
     return Number.isFinite(n) && n > 0 ? n : null;
   }
   function paintChars() {
-    charRow.innerHTML = '';
-    for (const ch of CHARACTERS) {
-      // Iter 7: helper from meta.js absorbs the new unlock token forms
-      // (`sigils:N`, `flag:unlockedClockwork`) on top of the legacy
-      // achievement-id pattern. Single source of truth.
-      const unlocked = isCharacterUnlocked(ch, meta);
-      const selected = ch.id === meta.selectedChar;
-      const card = document.createElement('div');
-      const borderC = selected ? C.amber : (unlocked ? C.edge : 'rgba(80,80,80,0.4)');
-      const shadow = selected
-        ? `0 0 0 1px ${C.amber} inset, 0 12px 26px rgba(0,0,0,0.55), 0 0 18px rgba(255,210,127,0.18)`
-        : `0 1px 0 rgba(255,255,255,0.04) inset, 0 12px 22px rgba(0,0,0,0.5)`;
-      card.style.cssText = `
-        padding: 14px 18px 12px;
-        background: linear-gradient(180deg, rgba(20,28,22,0.94), rgba(8,14,12,0.96));
-        border: 1px solid ${borderC};
-        border-radius: 10px;
-        box-shadow: ${shadow};
-        color: ${unlocked ? C.text : 'rgba(120,120,120,0.65)'};
-        cursor: ${unlocked ? 'pointer' : 'default'};
-        text-align: center; min-width: 148px; max-width: 168px;
-        font-family: ${F.body};
-        transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
-      `;
-      // Signature preview chip — visible identity-in-one-glance. Only show
-      // for unlocked characters; locked cards keep the surprise so the unlock
-      // banner reads as a real reveal.
-      let signatureChip = '';
-      if (unlocked && ch.signatureName) {
-        signatureChip = `
-          <div style="margin-top:6px;display:flex;justify-content:center;">
-            <span style="
-              display:inline-block;padding:2px 8px;
-              font-family:${F.body};font-size:calc(var(--kk-font-scale, 1) * 10px);font-weight:600;
-              letter-spacing:0.14em;text-transform:uppercase;
-              border-radius:999px;border:1px solid ${C.cyan};
-              color:${C.cyan};background:rgba(127,255,228,0.10);
-              line-height:1.4;
-            ">${escapeHtml(ch.signatureName)}</span>
-          </div>`;
-      }
-      // Sigil-gated unlock progress pip — shown UNDER locked cards whose
-      // unlock token is `'sigils:N'`. Mirrors the house-upgrade pip strip
-      // (single bar, magenta fill) — no new visual language.
-      let sigilPip = '';
-      const sigilNeed = parseSigilGate(ch.unlock);
-      if (sigilNeed != null && !unlocked) {
-        const have = (meta.lifetime && meta.lifetime.sigilsEarned) || 0;
-        const ratio = Math.max(0, Math.min(1, have / sigilNeed));
-        const pct = (ratio * 100).toFixed(0);
-        sigilPip = `
-          <div style="margin-top:8px;font-family:${F.mono};font-size:calc(var(--kk-font-scale, 1) * 10px);letter-spacing:0.08em;color:${SIGIL_PIP_C};text-align:center;">
-            ✦ Sigils: ${Math.min(have, sigilNeed)}/${sigilNeed}
-          </div>
-          <div style="margin-top:4px;height:5px;border-radius:3px;background:rgba(255,255,255,0.08);overflow:hidden;">
-            <div style="height:100%;width:${pct}%;background:${SIGIL_PIP_C};box-shadow:0 0 6px ${SIGIL_PIP_C}66;"></div>
-          </div>`;
-      } else if (sigilNeed != null && unlocked) {
-        // Once unlocked, replace the pip with a green check so the card
-        // doesn't look "stuck at locked" if the player glances back.
-        sigilPip = `
-          <div style="margin-top:6px;font-family:${F.mono};font-size:calc(var(--kk-font-scale, 1) * 10.5px);letter-spacing:0.08em;color:${C.green};text-align:center;">
-            ✓ Sigils complete
-          </div>`;
-      }
-      // Locked-state desc fallback uses the pretty hint instead of the raw token.
-      const descLine = unlocked ? escapeHtml(ch.desc) : escapeHtml(formatUnlockHint(ch.unlock));
-      card.innerHTML = `
-        <div style="font-size:calc(var(--kk-font-scale, 1) * 36px);line-height:1;margin-bottom:6px;filter:drop-shadow(0 3px 6px rgba(0,0,0,0.5));">${unlocked ? ch.icon : '🔒'}</div>
-        <div style="font-family:${F.display};font-size:calc(var(--kk-font-scale, 1) * 13px);letter-spacing:0.18em;font-weight:700;color:${selected ? C.amber : C.text};margin-bottom:6px;">${escapeHtml(ch.name)}</div>
-        <div style="font-size:calc(var(--kk-font-scale, 1) * 10.5px);line-height:1.45;letter-spacing:0.02em;opacity:${unlocked ? 0.78 : 0.55};">${descLine}</div>
-        ${signatureChip}
-        ${sigilPip}
-      `;
-      if (unlocked) {
-        card.addEventListener('mouseenter', () => {
-          card.style.transform = 'translateY(-3px)';
-          if (!selected) card.style.borderColor = C.amber;
-        });
-        card.addEventListener('mouseleave', () => {
-          card.style.transform = 'translateY(0)';
-          if (!selected) card.style.borderColor = borderC;
-        });
-      }
-      if (unlocked) {
-        card.onclick = (e) => {
-          e.stopPropagation();
-          setOption('selectedChar', ch.id);
-          meta.selectedChar = ch.id;
-          paintChars();
-          _refreshStartFocus();
-        };
-      }
-      bindTooltip(card, () => {
-        const b = characterBlurb(ch.id);
-        const statRows = [
-          { label: 'Starter', value: ch.starter },
-          { label: 'Max HP',  value: String(ch.hpMax) },
-        ];
-        if (ch.statMul) {
-          if (ch.statMul.dmg && ch.statMul.dmg !== 1)              statRows.push({ label: 'DMG',  value: `×${ch.statMul.dmg.toFixed(2)}` });
-          if (ch.statMul.moveSpeed && ch.statMul.moveSpeed !== 1)  statRows.push({ label: 'Move', value: `×${ch.statMul.moveSpeed.toFixed(2)}` });
-          if (ch.statMul.magnet && ch.statMul.magnet !== 1)        statRows.push({ label: 'Magnet', value: `×${ch.statMul.magnet.toFixed(2)}` });
-          if (ch.statMul.projSpeed && ch.statMul.projSpeed !== 1)  statRows.push({ label: 'Proj Spd', value: `×${ch.statMul.projSpeed.toFixed(2)}` });
-        }
-        // Iter 7: surface signature as a top-line stat row when present.
-        if (ch.signatureName) {
-          statRows.unshift({ label: 'Signature', value: String(ch.signatureName) });
-        }
-        // Tooltip body: flavor + signature description (if defined) + starter line.
-        const bodyParts = [];
-        if (unlocked) {
-          bodyParts.push(b ? b.flavor : ch.desc);
-          if (ch.signatureDesc) bodyParts.push(`◆ ${ch.signatureName}: ${ch.signatureDesc}`);
-          bodyParts.push(`Starter weapon: ${ch.starter} (auto-equipped at run start).`);
-        } else {
-          bodyParts.push(formatUnlockHint(ch.unlock));
-          if (sigilNeed != null) {
-            const have = (meta.lifetime && meta.lifetime.sigilsEarned) || 0;
-            bodyParts.push(`Progress: ${Math.min(have, sigilNeed)} / ${sigilNeed} lifetime sigils.`);
-          }
-        }
-        return {
-          title: unlocked ? ch.name : `${ch.name} (Locked)`,
-          icon: unlocked ? ch.icon : '🔒',
-          body: bodyParts.join('\n\n'),
-          tags: unlocked ? (b ? b.tags : ['Character']) : ['Locked'],
-          stats: unlocked ? statRows : undefined,
-          accent: selected ? '#ffd27f' : '#7fffe4',
-        };
-      });
-      charRow.appendChild(card);
+    // Iter 31: carousel owns its own rendering. External callers (preset
+    // apply, etc.) hit this to sync selection — forward to the carousel.
+    if (_charCarousel && meta && meta.selectedChar) {
+      try { _charCarousel.setSelection(meta.selectedChar); } catch (_) {}
     }
   }
-  paintChars();
+  // Mount carousel into charRow. Singleton — destroyed in hideStartScreen.
+  // Guard on cache readiness — preloadAll() hasn't resolved on the first
+  // showStartScreen('Loading…') call. Lazy-mount path in the
+  // _startScreen-exists guard handles the second call (post-preload).
+  if (_charCarousel) { try { _charCarousel.destroy(); } catch (_) {} _charCarousel = null; }
+  if (GLTF_CACHE && GLTF_CACHE.hero) {
+    _charCarousel = createCharCarousel(charRow, {
+      initialId: meta.selectedChar || 'kitty',
+      meta,
+      onSelect: (id) => {
+        setOption('selectedChar', id);
+        meta.selectedChar = id;
+        // Don't recurse into paintChars — carousel already painted itself.
+        _refreshStartFocus();
+      },
+    });
+  } else {
+    // Loading placeholder until preload finishes
+    const ph = document.createElement('div');
+    ph.style.cssText = 'padding:28px;opacity:0.7;font-family:"Crimson Text",Georgia,serif;letter-spacing:0.12em;';
+    ph.textContent = 'Loading characters…';
+    charRow.appendChild(ph);
+  }
 
   const btnRow = document.createElement('div');
   btnRow.style.cssText = 'display: flex; gap: 12px; margin-top: 22px; pointer-events: auto; flex-wrap: wrap; justify-content: center;';
@@ -2464,6 +2381,7 @@ export function showStartScreen(text) {
 
 export function hideStartScreen() {
   if (_startFocusScope) { popFocusScope(_startFocusScope); _startFocusScope = null; }
+  if (_charCarousel) { try { _charCarousel.destroy(); } catch (_) {} _charCarousel = null; }
   _startStageRowRef = null;
   _startCharRowRef = null;
   _startBtnRowRef = null;
