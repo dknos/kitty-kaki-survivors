@@ -58,7 +58,7 @@ const F = {
 // ── Build version ────────────────────────────────────────────────────────────
 // Flipped to '1.0.0' on the iter-11 ship commit (Shop Tree Live Wires —
 // the broken-tier-1-3-consumers gap was the last v1.0 blocker).
-export const KK_VERSION = '1.1.1';
+export const KK_VERSION = '1.2.0';
 
 // ── Module-local DOM refs ────────────────────────────────────────────────────
 let _root = null;
@@ -4645,4 +4645,80 @@ export function hideContextLossModal() {
   if (!_ctxLossModal) return;
   if (_ctxLossModal.parentNode) _ctxLossModal.parentNode.removeChild(_ctxLossModal);
   _ctxLossModal = null;
+}
+
+// ── Helltide countdown bar (iter 17) ────────────────────────────────────────
+// Top-center bar shown only while the Helltide event is active. Hosts the
+// remaining time + the running ember count. Created lazily on first call
+// to showHelltideBar so the DOM stays clean when no helltide is running.
+let _helltideBar = null;
+let _helltideFill = null;
+let _helltideLabel = null;
+let _helltideBank = null;
+export function showHelltideBar(remainingSec, totalSec, embers) {
+  if (!_root) return;
+  if (!_helltideBar) {
+    _helltideBar = document.createElement('div');
+    _helltideBar.style.cssText = `
+      position: fixed; left: 50%; top: 8px;
+      transform: translateX(-50%);
+      pointer-events: none; z-index: 70;
+      padding: 6px 14px 8px;
+      background: linear-gradient(180deg, rgba(60,12,8,0.92), rgba(20,4,2,0.96));
+      border: 1px solid #ff5a28;
+      border-radius: 8px;
+      box-shadow: 0 0 18px rgba(255,90,40,0.45),
+                  0 6px 22px rgba(0,0,0,0.65);
+      font-family: ${F.display}; min-width: 320px;
+    `;
+    const header = document.createElement('div');
+    header.style.cssText = `
+      display: flex; justify-content: space-between; align-items: baseline;
+      gap: 18px; font-size: 12px; letter-spacing: 0.24em;
+      text-transform: uppercase; color: #ff8a5a;
+      text-shadow: 0 1px 6px rgba(0,0,0,0.7);
+    `;
+    _helltideLabel = document.createElement('span');
+    _helltideLabel.textContent = 'HELLTIDE — 3:00';
+    _helltideBank = document.createElement('span');
+    _helltideBank.style.cssText = 'color: #ffc278; font-weight: 800;';
+    _helltideBank.textContent = '0 ⚜';
+    header.appendChild(_helltideLabel);
+    header.appendChild(_helltideBank);
+    const track = document.createElement('div');
+    track.style.cssText = `
+      margin-top: 4px;
+      height: 6px; width: 100%;
+      background: rgba(40,8,6,0.85);
+      border: 1px solid rgba(255,90,40,0.45);
+      border-radius: 3px; overflow: hidden;
+    `;
+    _helltideFill = document.createElement('div');
+    _helltideFill.style.cssText = `
+      height: 100%; width: 100%;
+      background: linear-gradient(90deg, #ffc26b, #ff5a28 60%, #b03010);
+      box-shadow: 0 0 10px rgba(255,90,40,0.65) inset;
+      transition: width 0.18s linear;
+    `;
+    track.appendChild(_helltideFill);
+    _helltideBar.appendChild(header);
+    _helltideBar.appendChild(track);
+    _root.appendChild(_helltideBar);
+  }
+  const r = Math.max(0, remainingSec | 0);
+  const mins = Math.floor(r / 60);
+  const secs = r % 60;
+  _helltideLabel.textContent = `HELLTIDE — ${mins}:${secs < 10 ? '0' + secs : secs}`;
+  _helltideBank.textContent = `${embers | 0} ⚜`;
+  const k = totalSec > 0 ? Math.max(0, Math.min(1, remainingSec / totalSec)) : 0;
+  _helltideFill.style.width = (k * 100).toFixed(1) + '%';
+}
+
+export function hideHelltideBar() {
+  if (!_helltideBar) return;
+  if (_helltideBar.parentNode) _helltideBar.parentNode.removeChild(_helltideBar);
+  _helltideBar = null;
+  _helltideFill = null;
+  _helltideLabel = null;
+  _helltideBank = null;
 }

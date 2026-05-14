@@ -395,6 +395,15 @@ async function boot() {
     if (window._kkLastRunSummary) _showTownArrivalToast(window._kkLastRunSummary);
   };
   window.__kkNextMiniBoss = secondsUntilNextMiniBoss;
+  // Iter 17 — Helltide debug hook. Lets the player (and QA) force-trigger the
+  // overlay event from DevTools. Returns true if it fired, false if a helltide
+  // was already active or scene isn't ready.
+  window.kkTriggerHelltide = () => {
+    return import('./helltide.js').then(({ triggerHelltide }) => triggerHelltide());
+  };
+  window.kkEndHelltide = () => {
+    return import('./helltide.js').then(({ endHelltide }) => endHelltide());
+  };
 }
 
 function _teardownActiveRun() {
