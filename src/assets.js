@@ -289,6 +289,31 @@ export function preloadAll() {
     // 'burger' = base orbital, 'burger_evo' = Toxic Halo (double cheeseburger).
     ['burger',     'assets/food/Cheeseburger.glb'],
     ['burger_evo', 'assets/food/Double Cheeseburger.glb'],
+    // ── Iter 14 kits — CC0 from Poly Pizza CDN. See assets/ASSETS_MANIFEST.md.
+    // Forest-district buildings (Quaternius, CC0).
+    ['kit_house',     'assets/kits/town/fantasy_house.glb'],
+    ['kit_house2',    'assets/kits/town/town_house.glb'],
+    ['kit_inn',       'assets/kits/town/fantasy_inn.glb'],
+    ['kit_keep',      'assets/kits/town/tower_house.glb'],
+    ['kit_gate',      'assets/kits/town/castle_gate.glb'],
+    ['kit_barracks',  'assets/kits/town/fantasy_barracks.glb'],
+    // Catacomb dungeon (Kay Lousberg, CC0).
+    ['kit_arch',      'assets/kits/dungeon/arch.glb'],
+    ['kit_pillar',    'assets/kits/dungeon/pillar.glb'],
+    ['kit_pillar2',   'assets/kits/dungeon/pillar_alt.glb'],
+    ['kit_pillar_broken','assets/kits/dungeon/pillar_broken.glb'],
+    ['kit_coffin',    'assets/kits/dungeon/coffin.glb'],
+    ['kit_crypt',     'assets/kits/dungeon/crypt.glb'],
+    ['kit_bone1',     'assets/kits/dungeon/bone1.glb'],
+    ['kit_bone2',     'assets/kits/dungeon/bone2.glb'],
+    ['kit_bone3',     'assets/kits/dungeon/bone3.glb'],
+    // Twilight ruins (Kay Lousberg, CC0).
+    ['kit_grave',     'assets/kits/ruins/damaged_grave.glb'],
+    ['kit_gravestone','assets/kits/ruins/gravestone.glb'],
+    ['kit_gravestone2','assets/kits/ruins/gravestone_alt.glb'],
+    // Torches (Quaternius, CC0).
+    ['kit_torch_wall','assets/kits/torches/torch_wall.glb'],
+    ['kit_torch_stand','assets/kits/torches/torch_stand.glb'],
   ];
   return Promise.all(list.map(([k, p]) => _preload(k, p)));
 }
