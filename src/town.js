@@ -21,6 +21,8 @@ import { bindPrompt, setPromptLabel, formatPrompt } from './buttonPrompts.js';
 import { BLOOM_LAYER } from './postfx.js';
 import { makeRuneRingTexture } from './enemyTells.js';
 import { cloneCached } from './assets.js';
+import { sfx } from './audio.js';
+import { tex } from './particleTextures.js';
 
 // Shared rune-ring texture for town FX (statue selection ring). Cached on
 // first call so every statue + the catacomb / interior swaps share one upload.
@@ -46,6 +48,15 @@ const _interactables = [
 ];
 // Per-character statue refs so we can repaint selection rings on select.
 const _statueRefs = {};
+
+// Hellfire Brazier — force-trigger next-run Helltide. localStorage flag
+// `kk_helltide_queued` persists across the run-start so helltide.js init can
+// read + consume it without touching main.js.
+const HELLTIDE_QUEUED_KEY = 'kk_helltide_queued';
+let _brazier = null;             // THREE.Group
+let _brazierFlames = [];         // [{mesh, baseY, phase, scale}]
+let _brazierLight = null;        // PointLight ref for intensity pulse
+let _brazierIntenseUntil = 0;    // state.time.real when the "hotter" glow ends
 
 function _matStandard(color, roughness = 0.85, metalness = 0.0) {
   return new THREE.MeshStandardMaterial({ color, roughness, metalness });
@@ -256,6 +267,94 @@ function _makeShopStall() {
   return g;
 }
 
+// Brief confirmation toast for brazier interaction. ~2s, top-of-screen,
+// hellfire amber. Self-contained — avoids cross-importing ui.js internals.
+function _showBrazierToast(text) {
+  const t = document.createElement('div');
+  t.style.cssText = `
+    position: fixed; left: 50%; top: 10%; transform: translateX(-50%);
+    padding: 9px 22px; pointer-events: none; z-index: 100;
+    background: linear-gradient(180deg, rgba(34,18,12,0.92), rgba(20,10,8,0.94));
+    border: 1px solid rgba(255,122,40,0.6);
+    border-radius: 8px;
+    font-family: 'Cinzel Decorative', serif; font-size: 13px;
+    letter-spacing: 0.18em; text-transform: uppercase;
+    color: #ffae6a;
+    text-shadow: 0 0 8px rgba(255,122,40,0.55);
+    box-shadow: 0 8px 22px rgba(0,0,0,0.55), 0 0 20px rgba(255,90,40,0.30);
+    animation: kk-fade-in 0.18s ease-out;
+  `;
+  t.textContent = text;
+  document.body.appendChild(t);
+  setTimeout(() => { if (t.parentNode) t.parentNode.removeChild(t); }, 2000);
+}
+
+// Hellfire Brazier — stone basin + flame plume. Iter 18.
+// Visual: short cone-pedestal + cylinder bowl + 5 additive flame quads that
+// bob and twist on a sine. Small red point light underneath for floor bleed.
+// Bowl is palette-matched dark stone; flame mat uses the glowRed particle
+// texture so it picks up the bloom pass.
+function _makeBrazier() {
+  const g = new THREE.Group();
+  // Pedestal — short cone (wide base → narrow top) reads as stone foundation
+  const pedestal = new THREE.Mesh(
+    new THREE.ConeGeometry(0.85, 0.95, 12, 1, true),
+    _matStandard(0x3c342c, 0.92, 0.05),
+  );
+  pedestal.position.y = 0.48;
+  pedestal.castShadow = true; pedestal.receiveShadow = true;
+  g.add(pedestal);
+  // Bowl — short open cylinder rim
+  const bowl = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.78, 0.55, 0.45, 16, 1, true),
+    new THREE.MeshStandardMaterial({
+      color: 0x2a1e16, roughness: 0.85, metalness: 0.08, side: THREE.DoubleSide,
+    }),
+  );
+  bowl.position.y = 1.15;
+  bowl.castShadow = true;
+  g.add(bowl);
+  // Inner ember plate — a tiny additive disc at the bottom of the bowl so the
+  // brazier reads as "lit" even when the flames are at their bob trough.
+  const emberDisc = new THREE.Mesh(
+    new THREE.CircleGeometry(0.55, 18),
+    new THREE.MeshBasicMaterial({
+      map: tex('emberWarm'),
+      color: 0xff5a28, transparent: true, opacity: 0.95,
+      depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    }),
+  );
+  emberDisc.rotation.x = -Math.PI / 2;
+  emberDisc.position.y = 0.98;
+  emberDisc.layers.enable(BLOOM_LAYER);
+  g.add(emberDisc);
+  // Flame plume — 5 additive PlaneGeometry quads at varying heights & scales.
+  // Each gets a phase offset so the bob/spin looks like a tongue of fire.
+  const flameTex = tex('emberWarm') || tex('glowRed');
+  for (let i = 0; i < 5; i++) {
+    const s = 0.55 + Math.random() * 0.35;
+    const m = new THREE.Mesh(
+      new THREE.PlaneGeometry(s, s * 1.6),
+      new THREE.MeshBasicMaterial({
+        map: flameTex,
+        color: 0xff7a28, transparent: true, opacity: 0.88,
+        depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+      }),
+    );
+    const baseY = 1.35 + Math.random() * 0.5;
+    m.position.set((Math.random() - 0.5) * 0.4, baseY, (Math.random() - 0.5) * 0.4);
+    m.layers.enable(BLOOM_LAYER);
+    g.add(m);
+    _brazierFlames.push({ mesh: m, baseY, phase: Math.random() * Math.PI * 2, scale: s });
+  }
+  // Floor bleed point-light — short range, red, so the flagstones around the
+  // brazier get a warm wash that reads from the gate side.
+  _brazierLight = new THREE.PointLight(0xff5a28, 1.4, 7, 2);
+  _brazierLight.position.set(0, 1.6, 0);
+  g.add(_brazierLight);
+  return g;
+}
+
 export function buildTown(scene) {
   if (_group) return _group;
   const g = new THREE.Group();
@@ -292,6 +391,30 @@ export function buildTown(scene) {
   shopStall.position.set(-12, 0, -3);
   shopStall.rotation.y = Math.PI / 6;
   g.add(shopStall);
+
+  // Hellfire Brazier (iter 18) — beside the gate, offset east so it doesn't
+  // compete with the gate's portal disc. Distinct from the statue arc which
+  // spans roughly x∈[-7, 7], z=10.5±. The brazier sits at (8, 0, 12).
+  _brazier = _makeBrazier();
+  _brazier.position.set(8, 0, 12);
+  g.add(_brazier);
+  _interactables.push({
+    pos: { x: 8, z: 12 }, radius: 2.6,
+    label: '🔥  Hellfire Brazier · Force-trigger next run',
+    key: 'brazier',
+  });
+  _handlers.brazier = () => {
+    // Persist across the town→run transition. helltide.js initHelltide() reads
+    // and consumes the flag, scheduling the next event ~30s into the run
+    // instead of the normal 4-6 min auto window.
+    try { localStorage.setItem(HELLTIDE_QUEUED_KEY, 'true'); } catch (_) {}
+    // Visual + audio feedback — ominous bell, brighter flames for 5 seconds.
+    try { sfx.bossWarn(); } catch (_) {}
+    _brazierIntenseUntil = state.time.real + 5;
+    // Confirmation toast (DOM, similar shape to _kkShowMicroToast but
+    // self-contained so town.js doesn't need to import ui internals).
+    _showBrazierToast('🔥 Helltide queued for next run.');
+  };
 
   // ── Character statues — one per CHARACTERS entry, arc'd between hero
   // spawn (z=6) and the Adventure Gate (z=14). Player walks through them
@@ -455,6 +578,26 @@ export function tickTown(dt) {
   // Reset bob on non-selected statues
   for (const id of Object.keys(_statueRefs)) {
     if (id !== sel) _statueRefs[id].position.y = 0;
+  }
+
+  // Hellfire Brazier — bob/twist flames; "intense" window after a press makes
+  // flames climb + light bleed brighter for ~5s as the confirmation cue.
+  if (_brazier && _brazierFlames.length) {
+    const intense = state.time.real < _brazierIntenseUntil;
+    const climbBoost = intense ? 0.45 : 0;
+    const scaleBoost = intense ? 1.35 : 1.0;
+    for (const f of _brazierFlames) {
+      const m = f.mesh;
+      m.position.y = f.baseY + climbBoost + 0.08 * Math.sin(t * 4.5 + f.phase);
+      m.rotation.y = Math.sin(t * 2.2 + f.phase) * 0.6;
+      const flicker = 1 + 0.12 * Math.sin(t * 11 + f.phase * 2);
+      m.scale.set(f.scale * scaleBoost * flicker, f.scale * scaleBoost * flicker, 1);
+    }
+    if (_brazierLight) {
+      // Idle pulse ~1.2-1.7; intense pushes to 2.4-3.2.
+      const base = intense ? 2.6 : 1.4;
+      _brazierLight.intensity = base + 0.35 * Math.sin(t * 7.5);
+    }
   }
 
   // Closest interactable inside its trigger radius

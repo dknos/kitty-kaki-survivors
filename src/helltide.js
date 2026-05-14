@@ -128,10 +128,24 @@ export function initHelltide(scene) {
   _rainSpawnAcc = 0;
   _ensureEmberInst();
   _ensureRainInst();
-  // Schedule first trigger
+  // Schedule first trigger.
+  // Iter 18 — Hellfire Brazier interactable in town can set a localStorage
+  // flag to "queue" a Helltide for the next run. We consume it here so the
+  // first trigger fires ~30s into the run instead of the normal 4-6 min auto
+  // window. Try/catch around localStorage so SSR / iframe edge cases don't
+  // crash init. Clearing the flag once consumed makes the queue single-shot.
   const now = (state && state.time) ? state.time.game : 0;
-  state.run.helltideNextAt = now + HELLTIDE_FIRST_AT_MIN +
-    Math.random() * (HELLTIDE_FIRST_AT_MAX - HELLTIDE_FIRST_AT_MIN);
+  let queued = false;
+  try {
+    queued = (localStorage.getItem('kk_helltide_queued') === 'true');
+    if (queued) localStorage.removeItem('kk_helltide_queued');
+  } catch (_) {}
+  if (queued) {
+    state.run.helltideNextAt = now + 30;   // ~30s into the run
+  } else {
+    state.run.helltideNextAt = now + HELLTIDE_FIRST_AT_MIN +
+      Math.random() * (HELLTIDE_FIRST_AT_MAX - HELLTIDE_FIRST_AT_MIN);
+  }
 }
 
 /** Force-trigger from debug / brazier interactable. */
