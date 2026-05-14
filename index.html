@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=3">
   <title>Kitty Kaki Survivors</title>
   <meta name="description" content="A Vampire-Survivors-style horde game. Survive the night.">
   <meta name="color-scheme" content="dark">
@@ -21,7 +21,12 @@
 
   <style>
     /* Iter 10a — font-scale CSS var consumed by .kk-fs-* buckets in ui.js */
+    /* Iter 21c — narrow-viewport defaults so modals don't overflow on phones.
+       Inline _applyFontScale() at :root.style overrides this when a saved
+       slider value is present, so the player's option always wins. */
     :root { --kk-font-scale: 1; }
+    @media (max-width: 768px) { :root { --kk-font-scale: 0.85; } }
+    @media (max-width: 480px) { :root { --kk-font-scale: 0.70; } }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: 'Courier New', monospace; color: #fff; }
     #game-canvas { display: block; width: 100vw; height: 100vh; touch-action: none; }
