@@ -57,6 +57,11 @@ export function createCharCarousel(host, opts) {
     width: 100%; max-width: 760px; margin: 12px auto 0;
     pointer-events: auto;
   `;
+  // main.js installs a window-level click-to-start handler; without this guard,
+  // every carousel interaction bubbles up and starts the run.
+  wrap.addEventListener('click', (e) => { e.stopPropagation(); });
+  wrap.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+  wrap.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
 
   const stage = document.createElement('div');
   stage.style.cssText = `
