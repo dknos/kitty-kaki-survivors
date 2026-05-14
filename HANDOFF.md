@@ -32,21 +32,23 @@ User collaboration style:
 
 | # | Iter | Status |
 |---|---|---|
-| 26 | Iter 1: Combat Grammar (legibility) | completed |
-| 27 | Iter 2: One More Slot (build axis) | completed |
-| 28 | Iter 3: Controller First | completed |
-| 29 | Iter 4: Stage Rules | completed |
-| 30 | Iter 5: Teach the Loop | completed |
+| 26-30 | Iters 1-5 | completed (Combat Grammar / One More Slot / Controller First / Stage Rules / Teach the Loop) |
 | 31 | Iter 6: Meta With Teeth (sigils + branching shop + presets) | **completed** `ded59e3` |
-| **32** | **Iter 7: Roster Pressure** | **in_progress** (3 agents fanned out — see `ITER_789_BRIEFS.md` 7a/7b/7c) |
-| 33 | Iter 8: Enemy Identity | pending (brief pre-generated in `ITER_789_BRIEFS.md`) |
-| 34 | Iter 9: Retention Hooks | pending (brief pre-generated in `ITER_789_BRIEFS.md`) |
-| 35 | Iter 10: Polish Lock (ship) | pending |
-| 36 | Iter 11: r171 + TSL compute particles spike | pending |
+| 32 | Iter 7: Roster Pressure (signatures + Phoenix + Clockwork) | **completed** `593ab7f` |
+| 33 | Iter 8: Enemy Identity (affixes + per-boss patterns + codex) | **completed** `61617a7` |
+| 34 | Iter 9: Retention Hooks (weekly mutator + share card + DAG + Hall of Records) | **completed** `0b2fe5a` |
+| **35** | **Iter 10: Polish Lock (ship)** | **in_progress** (3 agents fanned out — 10a audio/settings/a11y, 10b FX residue+tier-4+leap+perf, 10c ship rituals; brief in `ITER_10_11_BRIEFS.md`) |
+| 36 | Iter 11: r171 + TSL compute particles spike | pending (1-2 agent worktree spike, MUST NOT GATE v1.0) |
+| 37+ | Iter 12+ candidates | pending — perf hardening if soak fails, Cloudflare leaderboard, touch/mobile, i18n, r171 promotion, OST |
 
 WSL session may have a fresh task list — if so, re-create these from this table.
 
-**Pre-generated briefs:** `ITER_789_BRIEFS.md` at repo root has tuned 3-agent splits for iters 7, 8, 9 (data/hooks/UI pattern, locked contracts, tuning constants). Read it before spawning the next iter's agents.
+**Pre-generated briefs:**
+- `ITER_789_BRIEFS.md` — 3-agent splits for iters 7-9 (data/hooks/UI). All shipped.
+- `ITER_10_11_BRIEFS.md` — iter 10 (audio+a11y / FX+tier-4 / ship rituals) + iter 11 (r171 spike) + ship reassessment (8-point quality checklist).
+- `FX_AUDIT.md` — FX placeholder audit from 2026-05-14 pass; deferred items are tagged for iter 10b.
+
+**Loop state:** the parent session is running in /loop dynamic mode. Wakeups armed on a 1800s safety net; primary wake signal is bg-agent task-notifications.
 
 ## Iteration pattern (use it)
 
@@ -63,13 +65,14 @@ When agents touch the same file (e.g. `main.js`, `ui.js`), expect 3-way merges. 
 
 ## Recent commits (top of `main`)
 
-- `7b8ebc2` FX quality pass — burgers fixed, rings rune-textured, 12 files, particleTextures vocab grew 18 helpers
-- `c3ef07d` Remove persistent "Skip tutorial" corner button (user feedback)
+- `d1e6ea3` Iter 10/11 briefs + ship reassessment (898 lines)
+- `0b2fe5a` Iter 9: Retention Hooks — weekly mutator + share card + achievement DAG + Hall of Records
+- `61617a7` Iter 8: Enemy Identity — affixes + per-boss patterns + codex
+- `593ab7f` Iter 7: Roster Pressure — character signatures + Phoenix + Clockwork
+- `ff42d8a` Handoff refresh
+- `7b8ebc2` FX quality pass — burgers fixed, rings rune-textured, 18 new particle helpers
+- `c3ef07d` Remove persistent "Skip tutorial" corner button
 - `ded59e3` Iter 6: Meta With Teeth — sigils + 3-branch shop tree + presets
-- `4369d9f` Handoff doc (this file)
-- `2d51fff` Visual polish: rune-textured rings + dark hero shadow
-- `36dccd8` Tutorial: drop stage-1 pause (deadlocks movement)
-- `3c70691` Iter 4: Stage Rules — per-stage modifiers, mini-events, arena decor
 
 ## Architecture (the parts you need to know)
 
@@ -116,23 +119,48 @@ When agents touch the same file (e.g. `main.js`, `ui.js`), expect 3-way merges. 
 
 ## What to do next
 
-**Iter 7: Roster Pressure** (task #32, marked in_progress at time of writing)
+**Iter 10: Polish Lock** is in_progress at time of writing (3 bg agents running). Brief at `ITER_10_11_BRIEFS.md` "Iter 10" section. If you arrive between fan-outs:
+- 3-agent split: 10a (audio split + settings overhaul + accessibility), 10b (FX residue + tier-4 capstones + leap marker + perf soak), 10c (credits + LICENSE + how-to-play + og: tags + error UI).
+- Five ship-blockers being closed: tier-4 SHOP_TREE TODO(iter6-wire) capstones (Phoenix revive cap, Overdrive 60s frenzy, Treasure Map starter chest); leap affix landing marker; LICENSE absent; WebGL context-loss handler absent; zero accessibility coverage.
 
-Pre-generated brief at `ITER_789_BRIEFS.md` "Iter 7" section. 3-agent split locked:
-- **7a — Data.** `src/config.js` + `src/meta.js`. Adds `signature` field to CHARACTERS, 2 new chars (phoenix sigil-gated, clockwork bossrush-gated), `isCharacterUnlocked()` helper, `lifetime.sigilsEarned` counter.
-- **7b — Hooks.** `src/main.js` `src/hero.js` `src/enemies.js` (damageEnemy only) + `src/weapons/chain.js` + `src/weapons/web.js`. Wires signature mechanics.
-- **7c — UI.** `src/ui.js` character picker, signature preview line, sigil-progress pip, Clockwork unlock banner. Plus `src/weapons/descriptions.js` flavor.
+**After iter 10 ships**: run `window.kkSoak({seconds: 60, seed: 'iter10soak', spawnMul: 1.5})` from console — target p99 ≤ 22ms. If pass → v1.0 ships. Iter 11 (r171 + TSL spike) runs after but does NOT gate v1.0; "documented + deferred" is a valid iter-11 outcome.
 
-Iter 8 + 9 briefs live in the same doc. Read the relevant section before fanning out the next iter's agents.
+**Iter 12+ candidates** (from ITER_10_11_BRIEFS.md reassessment): perf hardening if soak fails, Cloudflare remote leaderboard, touch/mobile, i18n actual translations, r171 promotion if spike successful, original soundtrack.
 
-## Iter 6 surfaces shipped (don't break these)
+## Surfaces shipped this milestone (don't break these)
 
+### Iter 6 — Meta
 - `meta.sigils` currency; `grantSigils(n, source)` exported from `src/meta.js`
-- `SHOP_TREE` 12-node branching upgrade tree (3 branches × 4 tiers); persisted in `meta.shopTree`
+- `SHOP_TREE` 12-node branching upgrade tree (3 branches × 4 tiers); persisted in `meta.shopTree`. **Tier-4 capstones get wired in iter 10b (was `// TODO(iter6-wire)`).**
 - `meta.presets` character+stage convenience loadouts (cap 6)
-- `state.run.passive_*` scalar pattern for shop-tree effects: `passive_dmgReduction`, `passive_dmg`, `passive_cooldown`, `passive_critChance`, `passive_regen`, `passive_coinMul`, `passive_chestRate`, `passive_miniBossSigilBonus`, `passive_revives`, `passive_overdrive`, `passive_treasureMap`. **Tier-4 capstones (Phoenix revive, Overdrive, Treasure Map) are tagged `// TODO(iter6-wire)` for full plumbing.**
+- `state.run.passive_*` scalar pattern: `passive_dmgReduction`, `passive_dmg`, `passive_cooldown`, `passive_critChance`, `passive_regen`, `passive_coinMul`, `passive_chestRate`, `passive_miniBossSigilBonus`, `passive_revives`, `passive_overdrive`, `passive_treasureMap`
 - `commitRunResults()` returns `sigilsEarned`; death screen shows sigil row (magenta `#c87bff`)
 - Start screen has presets row (`_startPresetRowRef`) between stage row and play buttons
+
+### Iter 7 — Roster
+- Each `CHARACTERS` entry has `signature(runState)`, `signatureName`, `signatureDesc`. Six total: kitty, boom, webspinner, sniper, phoenix (sigils:30), clockwork (Boss Rush + Twilight victory).
+- `isCharacterUnlocked(char, meta)` handles legacy achievement, `sigils:N`, `flag:fieldName` unlock forms.
+- `meta.lifetime.sigilsEarned` monotonic counter (drives sigil-gated unlocks). `meta.unlockedClockwork` flag.
+- `state.run.signature_*` fields stamped at run start (signature_nineLives / chainEcho / chainEchoCounter / webHeal / executeBonus / emberBurst / tempo / tempoBonus).
+
+### Iter 8 — Enemy Identity
+- `src/enemyAffixes.js` exports `AFFIX_POOL` + `rollAffixes(enemy, D)`. 6 affixes: volatile, vampiric, leaping, shielded, swift, frosted.
+- `e.affixes` array on enemy, slot fields `_volatile`, `_vampPct=0.15`, `_leapCD/_leapWindup`, `_shieldHp/_shieldedRim`, `_swiftMul`, `_frostAura`.
+- `state.fx.pendingVolatile` queue (paused-aware; drained in updateEnemies).
+- `state.run.affix_frostSlow` per-frame value (1 default, 0.75 in aura).
+- `MINI_BOSS_PATTERNS` array in bossTelegraphs.js: Grothar Engulf (cyan), Vexmaw Sonic Cone (magenta), Oblidor Quake Cross (amber); NIGHTMARE cycles all 3.
+- `state.run.signature_engulfSlowUntil` read by hero.js movement.
+- Codex Affixes tab + Legend overlay; `notifyAffixSeen(id)` exported from codex.js.
+
+### Iter 9 — Retention
+- `isoWeekKey()`, `weeklyMutatorConfig()`, `commitWeeklyRun()` exports from meta.js.
+- `WEEKLY_MUTATORS` (6) in src/weeklyMutator.js: DOUBLE_SPAWNS, HALF_HP_HALF_DMG, CHEST_LOCKDOWN, BOSS_PARADE, NO_PASSIVES, XP_FAMINE. Effects stamp `state.run.weekly*` fields.
+- ACHIEVEMENTS extended to 3-tier DAG (8/6/3). `achievementChain(id)` returns parents/children/percentComplete.
+- `src/shareCard.js`: `renderShareCard(runEntry, charSummary)` → 1200×630 OG canvas; `downloadShareCard()` uses `canvas.toBlob` (NEVER toDataURL).
+- `state.replaySeed` set from `?seed=` URL param at boot.
+- Codex new tabs: Achievements (DAG), Mutators (weekly lore).
+- Start screen: Weekly button (magenta), Records button (Hall of Records modal), share-pip (📋) on Daily/Weekly cards.
+- Death screen: SHARE button + 200×105 preview thumbnail.
 
 ## FX quality bar (user-locked, 2026-05-14)
 
