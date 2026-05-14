@@ -258,7 +258,10 @@ export function buildEnv(scene, renderer) {
 
   // Cinematic 3-light setup: warm key + cool fill + sky hemi. HDRI fills ambient.
   // Dropped raw AmbientLight (HDRI environment provides it already).
-  const hemi = new THREE.HemisphereLight(0xaaccff, 0x223322, 0.35);
+  // Sky=cool blue, ground=neutral dark gray (NOT green — green bounce was
+  // tinting hero shadow with a sickly tint). Drop intensity slightly so the
+  // shadow stays readably dark.
+  const hemi = new THREE.HemisphereLight(0xaaccff, 0x1a1a1f, 0.28);
   group.add(hemi);
   const sun = new THREE.DirectionalLight(0xffe4b8, 2.2);    // warm key
   sun.position.set(60, 80, 40);

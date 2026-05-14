@@ -14,6 +14,10 @@ import { SLOT_SYMBOLS, rollReel, resolveOutcome, applyOutcome } from './slotMach
 import { pushFocusScope, popFocusScope } from './uiFocus.js';
 import { mountLegend as mountPromptLegend, formatPrompt } from './buttonPrompts.js';
 import { loadArenaDecor } from './arenaDecor.js';
+import { bindTooltip, unbindTooltip, hideTooltip } from './tooltips.js';
+import { weaponBlurb, passiveBlurb, shopBlurb, fillerBlurb, characterBlurb, weaponStatRows, passiveStatRows } from './weapons/descriptions.js';
+import { showCodex, hideCodex, isCodexOpen } from './codex.js';
+import { showRunHistory, hideRunHistory, isRunHistoryOpen, recordRunResult } from './runHistory.js';
 
 // ── Theme constants ──────────────────────────────────────────────────────────
 const C = {
@@ -730,8 +734,65 @@ function paintCards(row, choices, registry) {
       <div class="kk-card-desc">${escapeHtml(desc)}</div>
     `;
     card.addEventListener('click', () => pickChoice(choices, i));
+    // Rich tooltip with current → next stats so the player understands the pick.
+    bindTooltip(card, () => buildChoiceTooltip(choice));
     row.appendChild(card);
   });
+}
+
+// Build a tooltip-card content object for any level-up choice (weapon, passive,
+// evolution, or filler). Lives near paintCards so changes stay co-located.
+function buildChoiceTooltip(choice) {
+  if (!choice) return null;
+  if (choice.kind === 'evolution') {
+    return {
+      title: choice.name || 'Evolution',
+      icon: choice.icon || '★',
+      body: (choice.desc || '') + '\n\nEvolutions are permanent: this transforms the base weapon into its ultimate form for the rest of the run.',
+      tags: ['Evolution', 'AoE'],
+      accent: '#ffd27f',
+    };
+  }
+  if (choice.kind === 'passive') {
+    // Passives stack from level 1; compare to current level if owned.
+    const owned = (state.passives || []).find(p => p.id === choice.id);
+    const prev = owned ? owned.level : 0;
+    const b = passiveBlurb(choice.id, choice.level);
+    if (!b) return { title: choice.name || 'Passive', body: choice.desc || '' };
+    return {
+      title: b.name + (prev ? ` · Lv ${prev}→${choice.level}` : ` · Lv ${choice.level}`),
+      icon: b.icon,
+      body: b.flavor + '\n\n' + b.body,
+      tags: b.tags,
+      stats: passiveStatRows(choice.id, choice.level, prev || undefined),
+      accent: '#7fffe4',
+    };
+  }
+  if (choice.kind === 'filler') {
+    const b = fillerBlurb(choice.id);
+    return {
+      title: choice.name || 'Bonus',
+      icon: choice.icon || '★',
+      body: (b ? b.flavor : (choice.desc || '')),
+      tags: b ? b.tags : ['Utility'],
+      accent: '#7ee08a',
+    };
+  }
+  // weapon (default)
+  const owned = state.weapons && state.weapons.find(w => w.id === choice.id);
+  const prevLevel = owned ? owned.level : 0;
+  const wb = weaponBlurb(choice.id, choice.level);
+  if (!wb) {
+    return { title: choice.name || choice.id, body: choice.desc || '' };
+  }
+  return {
+    title: wb.name + (prevLevel ? ` · Lv ${prevLevel}→${choice.level}` : ` · NEW · Lv ${choice.level}`),
+    icon: wb.icon,
+    body: wb.flavor + '\n\n' + wb.body,
+    tags: wb.tags,
+    stats: weaponStatRows(choice.id, choice.level, prevLevel || undefined),
+    accent: '#7fffe4',
+  };
 }
 
 function repaintCards(choices) {
@@ -762,10 +823,16 @@ export function hideLevelUpModal() {
   if (_modalFocusScope) { popFocusScope(_modalFocusScope); _modalFocusScope = null; }
   if (_modal && _modal.parentNode) _modal.parentNode.removeChild(_modal);
   _modal = null;
+  hideTooltip();
 }
 
 export function showDeathScreen() {
   if (_deathScreen) return;
+
+  // Run-history log: snapshot the run into meta.runHistory[]. Runs first so the
+  // history entry reflects the live state (weapons, evolutions, kills) before
+  // teardown touches anything.
+  try { recordRunResult(state, state.victory ? 'victory' : 'death'); } catch (_) {}
 
   // Commit run to persistent meta and pull rewards/highlights
   const summary = commitRunResults({
@@ -1103,6 +1170,29 @@ export function showStartScreen(text) {
           _refreshStartFocus();
         };
       }
+      bindTooltip(card, () => {
+        const b = characterBlurb(ch.id);
+        const statRows = [
+          { label: 'Starter', value: ch.starter },
+          { label: 'Max HP',  value: String(ch.hpMax) },
+        ];
+        if (ch.statMul) {
+          if (ch.statMul.dmg && ch.statMul.dmg !== 1)              statRows.push({ label: 'DMG',  value: `×${ch.statMul.dmg.toFixed(2)}` });
+          if (ch.statMul.moveSpeed && ch.statMul.moveSpeed !== 1)  statRows.push({ label: 'Move', value: `×${ch.statMul.moveSpeed.toFixed(2)}` });
+          if (ch.statMul.magnet && ch.statMul.magnet !== 1)        statRows.push({ label: 'Magnet', value: `×${ch.statMul.magnet.toFixed(2)}` });
+          if (ch.statMul.projSpeed && ch.statMul.projSpeed !== 1)  statRows.push({ label: 'Proj Spd', value: `×${ch.statMul.projSpeed.toFixed(2)}` });
+        }
+        return {
+          title: unlocked ? ch.name : `${ch.name} (Locked)`,
+          icon: unlocked ? ch.icon : '🔒',
+          body: unlocked
+            ? ((b ? b.flavor : ch.desc) + `\n\nStarter weapon: ${ch.starter} (auto-equipped at run start).`)
+            : `Unlock condition: ${ch.unlock}.\n\nFinish that achievement to add this character to the roster.`,
+          tags: unlocked ? (b ? b.tags : ['Character']) : ['Locked'],
+          stats: unlocked ? statRows : undefined,
+          accent: selected ? '#ffd27f' : '#7fffe4',
+        };
+      });
       charRow.appendChild(card);
     }
   }
@@ -1133,6 +1223,18 @@ export function showStartScreen(text) {
   grimBtn.textContent = 'Grimoire';
   grimBtn.style.cssText = ghostBtn('Grimoire', C.magenta);
   grimBtn.addEventListener('click', (e) => { e.stopPropagation(); showGrimoire(); });
+
+  const codexBtn = document.createElement('button');
+  codexBtn.type = 'button';
+  codexBtn.textContent = 'Codex';
+  codexBtn.style.cssText = ghostBtn('Codex', C.cyan);
+  codexBtn.addEventListener('click', (e) => { e.stopPropagation(); showCodex(); });
+
+  const historyBtn = document.createElement('button');
+  historyBtn.type = 'button';
+  historyBtn.textContent = 'History';
+  historyBtn.style.cssText = ghostBtn('History', C.amber);
+  historyBtn.addEventListener('click', (e) => { e.stopPropagation(); showRunHistory(); });
 
   const optsBtn = document.createElement('button');
   optsBtn.type = 'button';
@@ -1185,6 +1287,8 @@ export function showStartScreen(text) {
   btnRow.appendChild(townBtn);
   btnRow.appendChild(shopBtn);
   btnRow.appendChild(grimBtn);
+  btnRow.appendChild(codexBtn);
+  btnRow.appendChild(historyBtn);
   btnRow.appendChild(dailyBtn);
   btnRow.appendChild(optsBtn);
 
@@ -1787,6 +1891,24 @@ export function showShop() {
         }
       };
     }
+    bindTooltip(card, () => {
+      const b = shopBlurb(upg.id, lvl, upg.max) || { flavor: upg.desc, tags: ['Meta'] };
+      const nextCost = maxed ? null : upgradeCost(upg, lvl);
+      const stats = [
+        { label: 'Level', value: `${lvl}/${upg.max}` },
+        { label: 'Effect/Lv', value: upg.desc.replace(' per level', '') },
+      ];
+      if (nextCost != null) stats.push({ label: 'Next Cost', value: `${nextCost.toLocaleString()} coins` });
+      else stats.push({ label: 'Status', value: 'MAX LEVEL' });
+      return {
+        title: upg.name,
+        icon: upg.icon,
+        body: b.flavor + (maxed ? '\n\nFully purchased — buffs apply to every run.' : '\n\nPermanent: applies to every future run.'),
+        tags: b.tags,
+        stats,
+        accent: maxed ? '#ffd27f' : '#7fffe4',
+      };
+    });
     return card;
   }
   let _closeBtnRef = null;
@@ -1830,6 +1952,7 @@ export function hideShop() {
   if (_shopFocusScope) { popFocusScope(_shopFocusScope); _shopFocusScope = null; }
   if (_shopModal.parentNode) _shopModal.parentNode.removeChild(_shopModal);
   _shopModal = null;
+  hideTooltip();
 }
 
 // ── House upgrade kiosk (Embers currency) ──
@@ -2315,6 +2438,27 @@ function _updateWeaponPanel() {
       _weaponPanel.appendChild(wrap);
       cell = { wrap, level: w.level, evolved };
       _weaponCells.set(w.id, cell);
+      // Pointer events default to none on the HUD; enable on the cell so the
+      // tooltip listeners fire when the player pauses + hovers.
+      wrap.style.pointerEvents = 'auto';
+      wrap.style.cursor = 'help';
+      bindTooltip(wrap, () => {
+        const w2 = (state.weapons || []).find(x => x.id === w.id);
+        if (!w2) return null;
+        const evo = w2.inst && w2.inst.evolved;
+        const wb = weaponBlurb(w2.id, w2.level);
+        if (!wb) return { title: w.id, body: 'Equipped weapon.' };
+        const reg = (_registry || {})[w2.id];
+        const maxLv = reg ? reg.maxLevel : w2.level;
+        return {
+          title: wb.name + (evo ? ' · EVOLVED' : ` · Lv ${w2.level}/${maxLv}`),
+          icon: wb.icon,
+          body: wb.flavor + '\n\n' + wb.body + (evo ? '\n\nEvolved form active.' : ''),
+          tags: wb.tags,
+          stats: weaponStatRows(w2.id, w2.level),
+          accent: evo ? '#ffd27f' : '#7fffe4',
+        };
+      });
     } else {
       const evolved = w.inst && w.inst.evolved;
       if (cell.level !== w.level || cell.evolved !== evolved) {
@@ -2332,6 +2476,7 @@ function _updateWeaponPanel() {
   const ownedIds = new Set(weapons.map(w => w.id));
   for (const [id, cell] of _weaponCells.entries()) {
     if (!ownedIds.has(id)) {
+      unbindTooltip(cell.wrap);
       if (cell.wrap.parentNode) cell.wrap.parentNode.removeChild(cell.wrap);
       _weaponCells.delete(id);
     }

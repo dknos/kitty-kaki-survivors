@@ -28,8 +28,9 @@ const RANGED_TELL_CAP  = 16;
 const THREAT_DOT_CAP   = 8;
 
 // ── Tunables ──────────────────────────────────────────────────────────────
-const RING_INNER       = 1.3;
-const RING_OUTER       = 1.5;
+// Inner/outer widened so the textured rune art has room to breathe.
+const RING_INNER       = 0.9;
+const RING_OUTER       = 1.8;
 const RING_Y           = 0.04;
 const HIDE_Y           = -1000;
 
@@ -67,19 +68,89 @@ let _rangedTells = /** @type {THREE.InstancedMesh|null} */ (null);
 let _threatDots  = /** @type {THREE.InstancedMesh|null} */ (null);
 
 // ──────────────────────────────────────────────────────────────────────────
+// Procedural rune-ring texture — sharp inner pulse + outer band of ticks +
+// 4 cardinal runic glyphs. Beats a flat-color RingGeometry by a country mile.
+// ──────────────────────────────────────────────────────────────────────────
+export function makeRuneRingTexture() { return _makeRuneRingTexture(); }
+function _makeRuneRingTexture() {
+  const S = 256;
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0, 0, S, S);
+  const cx = S / 2, cy = S / 2;
+
+  // Radial falloff: hot center band, cool soft edges (alpha mask).
+  const g = ctx.createRadialGradient(cx, cy, S * 0.30, cx, cy, S * 0.50);
+  g.addColorStop(0.00, 'rgba(0,0,0,0)');
+  g.addColorStop(0.45, 'rgba(255,255,255,0.0)');
+  g.addColorStop(0.62, 'rgba(255,255,255,0.95)');
+  g.addColorStop(0.75, 'rgba(255,255,255,0.55)');
+  g.addColorStop(0.92, 'rgba(255,255,255,0.10)');
+  g.addColorStop(1.00, 'rgba(255,255,255,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, S, S);
+
+  // Tick marks around the outer edge (24 ticks).
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+  ctx.lineWidth = 2.5;
+  for (let i = 0; i < 24; i++) {
+    const a = (i / 24) * Math.PI * 2;
+    const r0 = S * 0.40, r1 = S * 0.46;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a) * r0, Math.sin(a) * r0);
+    ctx.lineTo(Math.cos(a) * r1, Math.sin(a) * r1);
+    ctx.stroke();
+  }
+  // 4 cardinal "rune" wedges — small diamonds.
+  ctx.fillStyle = 'rgba(255,255,255,1)';
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2;
+    const r = S * 0.36;
+    const x = Math.cos(a) * r, y = Math.sin(a) * r;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(a);
+    ctx.beginPath();
+    ctx.moveTo(0, -5);
+    ctx.lineTo(7, 0);
+    ctx.lineTo(0, 5);
+    ctx.lineTo(-7, 0);
+    ctx.closePath();
+    ctx.fill();
+  }
+  // Thin bright filament right at the center band.
+  ctx.strokeStyle = 'rgba(255,255,255,1)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(0, 0, S * 0.31, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  t.needsUpdate = true;
+  return t;
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // Init
 // ──────────────────────────────────────────────────────────────────────────
 export function initEnemyTells(scene) {
   _scene = scene;
 
   // ── Elite ground ring ──
-  // RingGeometry is authored in the XY plane; rotate to ground.
-  const ringGeo = new THREE.RingGeometry(RING_INNER, RING_OUTER, 48);
+  // Solid disc plane (alpha comes from the rune texture); rotate flat.
+  const ringGeo = new THREE.PlaneGeometry(RING_OUTER * 2, RING_OUTER * 2);
   ringGeo.rotateX(-Math.PI / 2);
   const ringMat = new THREE.MeshBasicMaterial({
+    map: _makeRuneRingTexture(),
     color: 0xffffff,
     transparent: true,
-    opacity: 0.85,
+    opacity: 0.95,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
     side: THREE.DoubleSide,
@@ -187,7 +258,10 @@ export function updateEnemyTells(dt) {
 
       _pos.set(ep.x, RING_Y, ep.z);
       _scl.set(ringPulse, 1, ringPulse);
-      _mat.compose(_pos, _zeroQuat, _scl);
+      // Slow yaw rotation — sells "magic glyph rotating" vs flat decal.
+      // Use enemy index for varied phase so a cluster doesn't lockstep.
+      _quat.setFromAxisAngle(_axisY, t * 0.4 + i * 0.7);
+      _mat.compose(_pos, _quat, _scl);
       _eliteRings.setMatrixAt(ringSlot, _mat);
       _eliteRings.setColorAt(ringSlot, col);
       ringSlot++;

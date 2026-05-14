@@ -23,8 +23,10 @@ const DEFAULT = {
   optVolume: 0.7,
   optShake: 1.0,
   optMusic: false,    // user prefers silence by default; opt-in via options menu
-  // First-run tutorial seen flag
+  // First-run tutorial seen flag (legacy single-card overlay)
   seenTutorial: false,
+  // Guided 6-stage tutorial completion (src/tutorial.js)
+  tutorialDone: false,
   // Achievement unlock map: { id: timestamp }
   achievements: {},
   // Shop purchased levels: { hp: 2, magnet: 1, ... }
@@ -574,6 +576,8 @@ export function unlockSecret(id) {
   if (!def) return null;
   meta.secrets[id] = Date.now();
   saveMeta();
+  // Mirror into the codex so the Secrets tab lights up immediately.
+  try { import('./codex.js').then(({ notifySecretFound }) => notifySecretFound(id)); } catch (_) {}
   return def;
 }
 

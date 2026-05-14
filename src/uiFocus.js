@@ -85,6 +85,13 @@ function setFocusIndex(scope, idx) {
   }
   scope.focused = idx;
   applyFocusClass(scope.elements[idx]);
+  // Notify listeners (e.g. tooltips.js) so they can re-anchor to the new
+  // focused element. CustomEvent keeps the coupling one-way + opt-in.
+  try {
+    window.dispatchEvent(new CustomEvent('kk-focus-change', {
+      detail: { el: scope.elements[idx], scope, index: idx },
+    }));
+  } catch (_) {}
 }
 
 function rectOf(el) {

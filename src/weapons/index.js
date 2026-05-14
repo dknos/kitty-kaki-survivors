@@ -342,6 +342,8 @@ export function applyEvolution(weaponId) {
     state.fx.bloomBoost = 1.0;
     state.fx.shake = Math.max(state.fx.shake || 0, 0.5);
     import('../ui.js').then(({ tryAchievement }) => tryAchievement('first_evolution'));
+    const evoDef = EVOLUTIONS.dash;
+    if (evoDef) try { import('../codex.js').then(({ notifyEvolutionAchieved }) => notifyEvolutionAchieved(evoDef.id)); } catch (_) {}
     return;
   }
   const owned = state.weapons.find(w => w.id === weaponId);
@@ -351,4 +353,6 @@ export function applyEvolution(weaponId) {
   state.fx.bloomBoost = 1.0;
   state.fx.shake = Math.max(state.fx.shake || 0, 0.5);
   import('../ui.js').then(({ tryAchievement }) => tryAchievement('first_evolution'));
+  const evoDef = EVOLUTIONS[weaponId];
+  if (evoDef) try { import('../codex.js').then(({ notifyEvolutionAchieved }) => notifyEvolutionAchieved(evoDef.id)); } catch (_) {}
 }

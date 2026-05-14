@@ -46,6 +46,7 @@ import { applyStageRule, tickStageRule, clearStageRule } from './stageRules.js';
 import { loadArenaDecor, clearArenaDecor } from './arenaDecor.js';
 import { initMiniEvents, tickMiniEvents, resetMiniEvents, teardownMiniEvents } from './miniEvents.js';
 import { initArenaProps, spawnArenaProps, tickArenaProps, resetArenaProps } from './arenaProps.js';
+import { initTutorial, tickTutorial, notifyTutorialEvent } from './tutorial.js';
 
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 
@@ -206,10 +207,8 @@ async function boot() {
     } else if (state.modes && state.modes.daily) {
       showBanner('★ DAILY CHALLENGE ★', 3.0, '#c87bff');
     }
-    // First-run tutorial: show 5s after start so the player has the screen oriented.
-    if (!meta.seenTutorial) {
-      setTimeout(() => { if (!state.gameOver) showTutorial(); }, 5000);
-    }
+    // First-run guided tutorial (6 stages). No-op if meta.tutorialDone.
+    initTutorial();
   };
   setGateHandler(start);
   setInteractionHandler('house', () => enterInterior());
@@ -260,6 +259,9 @@ async function boot() {
 }
 
 function _teardownActiveRun() {
+  // Tutorial: stage 6 (shop hint) fires on first death/run-end.
+  try { notifyTutorialEvent('runEnd'); } catch (_) {}
+
   // Return active enemies to pools + hide them
   const active = state.enemies.active;
   for (let i = 0; i < active.length; i++) {
@@ -761,6 +763,7 @@ function frame(now) {
   tickCatacombEntrance(logicDt);
   updateBlobShadows();
   updateDamageNumbers(realDt);
+  tickTutorial(state, logicDt);
 
   // FX decay (real time so feedback fades even during hit-stop)
   state.fx.chromaticPulse *= Math.pow(0.05, realDt);

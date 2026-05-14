@@ -63,8 +63,19 @@ export function initBlobShadows(scene) {
 export function updateBlobShadows() {
   if (!_inst) return;
   let i = 0;
-  // Hero no longer gets a blob — it casts a real shadow now. Same for any
-  // enemy with castShadow on (elites/mini/final bosses).
+
+  // Hero gets a SMALL tight contact blob on top of its real PCF shadow —
+  // anchors the model to the ground; the soft PCF alone reads as a green
+  // smear because of hemi bounce. This contact disc is pitch-black at the
+  // center so the eye locks on the hero's feet.
+  const hp = state.hero && state.hero.pos;
+  if (hp && state.mode === 'run') {
+    _v3.set(hp.x, Y_DECAL, hp.z);
+    _m4.compose(_v3, _flatX, new THREE.Vector3(0.85, 0.85, 0.85));
+    _inst.setMatrixAt(i++, _m4);
+  }
+
+  // Other entities: enemies with castShadow already cast a real one — skip.
   const arr = state.enemies.active;
   for (let k = 0; k < arr.length && i < CAP; k++) {
     const e = arr[k];

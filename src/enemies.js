@@ -361,6 +361,8 @@ export function spawnEnemy(tierConfig, x, z) {
   state.enemies.active.push(enemy);
   // Stage-rule spawn hook (e.g. per-stage tweaks to fresh enemies).
   try { notifyStageEnemySpawn(enemy); } catch (_) {}
+  // Codex discovery: stamp the bestiary the first time we see this tier.
+  try { import('./codex.js').then(({ notifyEnemySeen }) => notifyEnemySeen(key)); } catch (_) {}
   return enemy;
 }
 
@@ -523,6 +525,10 @@ export function killEnemy(enemy) {
 
   state.run.kills++;
   state.run.noDmgKills = (state.run.noDmgKills || 0) + 1;
+  // Codex: bump kill tally for this tier (silently throttled in codex.js).
+  try { import('./codex.js').then(({ notifyEnemyKilled }) => notifyEnemyKilled(enemy.glbKey)); } catch (_) {}
+  // Tutorial: 3-kill auto-advance for stage 2.
+  import('./tutorial.js').then(({ notifyTutorialEvent }) => notifyTutorialEvent('enemyKill'));
   // Stage-rule kill hook (e.g. Cinder "Eruption" bonus heart near puddles).
   try { notifyStageEnemyKill(enemy); } catch (_) {}
 

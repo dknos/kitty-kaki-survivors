@@ -192,6 +192,8 @@ export function updateGems(dt) {
         _hideInstance(i);
         sfx.pickup && sfx.pickup();
         anyPickup = true;
+        // Tutorial: first gem pickup primes stage 3.
+        import('./tutorial.js').then(({ notifyTutorialEvent }) => notifyTutorialEvent('gemPickup'));
         continue;
       }
     }
@@ -223,6 +225,8 @@ export function updateGems(dt) {
     hero.xp -= hero.xpNext;
     hero.level++;
     hero.xpNext = xpForLevel(hero.level);
+    // Tutorial: stage 3 → 4 advance on first level-up.
+    import('./tutorial.js').then(({ notifyTutorialEvent }) => notifyTutorialEvent('levelUp'));
     // Secret: Faster Than Light — reach level 10 in under 2 minutes
     if (!state.run.speedrunChecked && hero.level >= 10 && state.time.game < 120) {
       state.run.speedrunChecked = true;
@@ -245,12 +249,15 @@ export function updateGems(dt) {
 export function applyLevelUpChoice(choice) {
   if (choice && choice.kind === 'weapon') {
     acquireWeapon(choice.id);
+    try { import('./codex.js').then(({ notifyWeaponPicked }) => notifyWeaponPicked(choice.id)); } catch (_) {}
   } else if (choice && choice.kind === 'filler') {
     applyFiller(choice);
   } else if (choice && choice.kind === 'evolution') {
     applyEvolution(choice.id);
+    // codex.evolutions is stamped from applyEvolution (weapons/index.js).
   } else if (choice && choice.kind === 'passive') {
     import('./weapons/passives.js').then(({ applyPassive }) => applyPassive(choice));
+    try { import('./codex.js').then(({ notifyPassivePicked }) => notifyPassivePicked(choice.id)); } catch (_) {}
   }
 
   state.pendingLevelUp = false;
@@ -263,6 +270,7 @@ export function applyLevelUpChoice(choice) {
     hero.xp -= hero.xpNext;
     hero.level++;
     hero.xpNext = xpForLevel(hero.level);
+    import('./tutorial.js').then(({ notifyTutorialEvent }) => notifyTutorialEvent('levelUp'));
     _triggerLevelUp();
   }
 }

@@ -15,6 +15,10 @@ import { state } from './state.js';
 import { BLOOM_LAYER } from './postfx.js';
 import { takeDamage as heroTakeDamage } from './hero.js';
 import { sfx } from './audio.js';
+import { makeRuneRingTexture } from './enemyTells.js';
+
+let _runeTex = null;
+function _getRuneTex() { return _runeTex || (_runeTex = makeRuneRingTexture()); }
 
 export const MINI_BOSS_NAMES = [
   { name: 'GROTHAR THE GLUTTON',     subtitle: 'awakens hungering' },
@@ -43,10 +47,14 @@ export function nameForMiniBoss(idx) {
 }
 
 function _makeWindupRing() {
-  const g = new THREE.RingGeometry(0.6, 0.82, 56);
+  // Plane + rune texture instead of flat RingGeometry — runic ticks +
+  // radial falloff sells "danger zone" vs a plain colored donut.
+  const g = new THREE.PlaneGeometry(2.0, 2.0);
   g.rotateX(-Math.PI / 2);
   const m = new THREE.MeshBasicMaterial({
-    color: 0xff3a3a, transparent: true, opacity: 0.85, depthWrite: false,
+    map: _getRuneTex(),
+    color: 0xff3a3a, transparent: true, opacity: 0.95,
+    depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
   });
   const ring = new THREE.Mesh(g, m);
   ring.layers.enable(BLOOM_LAYER);
@@ -56,10 +64,12 @@ function _makeWindupRing() {
 }
 
 function _makeShockwaveRing(color) {
-  const g = new THREE.RingGeometry(0.5, 0.72, 56);
+  const g = new THREE.PlaneGeometry(1.8, 1.8);
   g.rotateX(-Math.PI / 2);
   const m = new THREE.MeshBasicMaterial({
-    color: color || 0xffaa44, transparent: true, opacity: 1.0, depthWrite: false,
+    map: _getRuneTex(),
+    color: color || 0xffaa44, transparent: true, opacity: 1.0,
+    depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
   });
   const ring = new THREE.Mesh(g, m);
   ring.layers.enable(BLOOM_LAYER);
