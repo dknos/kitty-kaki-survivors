@@ -58,6 +58,14 @@ let _brazierFlames = [];         // [{mesh, baseY, phase, scale}]
 let _brazierLight = null;        // PointLight ref for intensity pulse
 let _brazierIntenseUntil = 0;    // state.time.real when the "hotter" glow ends
 
+// Seedy Tent (Casino — iter 22B). Cone tent + dark entrance + flickering red
+// lantern that wobbles via lerp in tickTown. Locked until first Catacomb Void
+// clear (meta.unlockedVoid). Interactable lives in _interactables; the activate
+// handler is wired in main.js via setInteractionHandler('casino', ...).
+let _tent = null;                // THREE.Group
+let _tentLight = null;           // PointLight ref for flicker
+let _tentLanternMesh = null;     // small additive disc on the lantern shell
+
 function _matStandard(color, roughness = 0.85, metalness = 0.0) {
   return new THREE.MeshStandardMaterial({ color, roughness, metalness });
 }
@@ -355,6 +363,96 @@ function _makeBrazier() {
   return g;
 }
 
+// Seedy Tent — small carnival-style cone tent that houses the casino. Visual
+// reads as "back-alley gambling den": dark red fabric, two wooden stakes,
+// a black entrance void, and a flickering red lantern that pulses in tickTown.
+// A tiny slot-cabinet peeks out of the entrance so the function is legible
+// at a glance even before the player presses E. Palette-matched to the
+// 8-color bible (deep red 0x7a1a1a, stake brown 0x6a4a30, lantern 0xff3a3a).
+function _makeSeedyTent() {
+  const g = new THREE.Group();
+  // Tent body — cone with the apex slightly tilted forward so it doesn't read
+  // as a perfect circus tent. ConeGeometry(radius, height, segments).
+  const tent = new THREE.Mesh(
+    new THREE.ConeGeometry(1.7, 2.6, 12, 1, true),
+    new THREE.MeshStandardMaterial({
+      color: 0x7a1a1a, roughness: 0.92, metalness: 0.0, side: THREE.DoubleSide,
+    }),
+  );
+  tent.position.y = 1.3;
+  tent.castShadow = true; tent.receiveShadow = true;
+  g.add(tent);
+  // Vertical fabric seams — 4 thin darker stripes around the cone for
+  // line-weight texture (matches the canopy/stripe pattern shop stall uses).
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2;
+    const seam = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.05, 2.6),
+      new THREE.MeshBasicMaterial({ color: 0x4a0e0e, side: THREE.DoubleSide }),
+    );
+    seam.position.set(Math.cos(a) * 1.55, 1.3, Math.sin(a) * 1.55);
+    seam.lookAt(0, 1.3, 0);
+    g.add(seam);
+  }
+  // Entrance void — flat black plane on the front. Slight glow rim around it.
+  const entrance = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.95, 1.4),
+    new THREE.MeshBasicMaterial({ color: 0x080404, side: THREE.DoubleSide }),
+  );
+  entrance.position.set(0, 0.72, 1.62);
+  g.add(entrance);
+  // Two angled support stakes flanking the entrance
+  for (const x of [-1.05, 1.05]) {
+    const stake = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.06, 0.08, 1.55, 6),
+      _matStandard(0x4a3220, 0.9, 0.05),
+    );
+    stake.position.set(x, 0.78, 1.3);
+    stake.rotation.z = (x < 0) ? -0.18 : 0.18;
+    stake.castShadow = true;
+    g.add(stake);
+  }
+  // Tiny slot cabinet peeking out of the entrance — three-box stack (chassis,
+  // window-pane, knob). Reads as "there's a real machine in there".
+  const cab = new THREE.Mesh(
+    new THREE.BoxGeometry(0.55, 0.75, 0.4),
+    _matStandard(0x2a2018, 0.6, 0.25),
+  );
+  cab.position.set(0, 0.37, 1.5);
+  cab.castShadow = true;
+  g.add(cab);
+  const pane = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.4, 0.28),
+    new THREE.MeshBasicMaterial({ color: 0xff8a3a, transparent: true, opacity: 0.85, side: THREE.DoubleSide }),
+  );
+  pane.position.set(0, 0.55, 1.71);
+  pane.layers.enable(BLOOM_LAYER);
+  g.add(pane);
+  const knob = new THREE.Mesh(
+    new THREE.SphereGeometry(0.06, 8, 6),
+    new THREE.MeshStandardMaterial({ color: 0xc23a3a, roughness: 0.4, metalness: 0.4 }),
+  );
+  knob.position.set(0.18, 0.25, 1.71);
+  g.add(knob);
+  // Hanging lantern on a tiny mast off the apex — additive disc + point light.
+  const lantern = new THREE.Mesh(
+    new THREE.CircleGeometry(0.22, 12),
+    new THREE.MeshBasicMaterial({
+      map: tex('emberWarm'),
+      color: 0xff3a3a, transparent: true, opacity: 0.95,
+      depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    }),
+  );
+  lantern.position.set(0, 2.85, 0.6);
+  lantern.layers.enable(BLOOM_LAYER);
+  g.add(lantern);
+  _tentLanternMesh = lantern;
+  _tentLight = new THREE.PointLight(0xff3a3a, 1.2, 6, 2);
+  _tentLight.position.set(0, 2.5, 0.6);
+  g.add(_tentLight);
+  return g;
+}
+
 export function buildTown(scene) {
   if (_group) return _group;
   const g = new THREE.Group();
@@ -403,6 +501,40 @@ export function buildTown(scene) {
     label: '🔥  Hellfire Brazier · Force-trigger next run',
     key: 'brazier',
   });
+
+  // Seedy Tent (Casino — iter 22B). Mirrored across the plaza from the shop
+  // stall at (-12,-3): we plant the tent at (12,-3), face it inward toward the
+  // hero spawn so the dark entrance reads as "come in here". Lock state is
+  // resolved per-tick in tickTown (label flips on/off based on meta.unlockedVoid)
+  // so the gate works even on save imports / mid-session unlocks.
+  _tent = _makeSeedyTent();
+  _tent.position.set(12, 0, -3);
+  _tent.rotation.y = -Math.PI * 0.55;
+  g.add(_tent);
+  _interactables.push({
+    pos: { x: 12, z: -3 }, radius: 2.8,
+    label: '🔒  Sealed (Clear Catacomb Void to unlock)',
+    key: 'casino',
+    _casino: true,    // marker so tickTown can repaint label on unlock-state change
+  });
+  _handlers.casino = () => {
+    // Locked path: brief uiError chirp, no modal. Toast hint already lives in
+    // the prompt label so we don't double-narrate.
+    if (!getMeta().unlockedVoid) {
+      try { sfx.uiCancel && sfx.uiCancel(); } catch (_) {}
+      return;
+    }
+    // Unlocked path: settle any pending Boss Rush Wager first (so a player
+    // who just won a Boss Rush sees the payout banner *before* the menu),
+    // then open the casino menu via dynamic import. The dynamic import keeps
+    // town.js's import graph clean (ui.js is large + imports many siblings).
+    import('./casino.js')
+      .then(({ settlePendingWager }) => { try { settlePendingWager(); } catch (_) {} })
+      .catch(() => {});
+    import('./ui.js')
+      .then(({ showCasinoMenu }) => { try { showCasinoMenu(); } catch (_) {} })
+      .catch(() => {});
+  };
   _handlers.brazier = () => {
     // Persist across the town→run transition. helltide.js initHelltide() reads
     // and consumes the flag, scheduling the next event ~30s into the run
@@ -533,6 +665,15 @@ export function enterTown() {
   state.hero.vel.set(0, 0, 0);
   state.hero.facing.set(0, 0, 1);
   _repaintStatueSelection();
+  // Settle any pending Boss Rush Wager from the previous run. Dynamic import
+  // so we don't pull casino.js into the town graph unconditionally — most
+  // players never set a wager. settlePendingWager() is a no-op when the
+  // localStorage flag is absent or the player hasn't unlocked the casino.
+  try {
+    import('./casino.js')
+      .then(({ settlePendingWager }) => { try { settlePendingWager(); } catch (_) {} })
+      .catch(() => {});
+  } catch (_) {}
 }
 
 export function exitTown() {
@@ -578,6 +719,28 @@ export function tickTown(dt) {
   // Reset bob on non-selected statues
   for (const id of Object.keys(_statueRefs)) {
     if (id !== sel) _statueRefs[id].position.y = 0;
+  }
+
+  // Seedy Tent — flickering red lantern (pulse + intensity wobble) + repaint
+  // the casino interactable label whenever meta.unlockedVoid flips. Reading
+  // getMeta() once per frame is cheap; we only mutate the label string when
+  // the state actually changes (cached in _userData of the interactable).
+  if (_tent && _tentLight) {
+    const flicker = 1 + 0.18 * Math.sin(t * 9.2) + 0.10 * Math.sin(t * 21.5 + 0.7);
+    _tentLight.intensity = 1.1 * flicker;
+    if (_tentLanternMesh && _tentLanternMesh.material) {
+      _tentLanternMesh.material.opacity = 0.85 + 0.15 * Math.sin(t * 6.1);
+    }
+  }
+  for (const it of _interactables) {
+    if (!it._casino) continue;
+    const unlocked = !!getMeta().unlockedVoid;
+    if (it._unlocked !== unlocked) {
+      it._unlocked = unlocked;
+      it.label = unlocked
+        ? '🎰  The Seedy Tent'
+        : '🔒  Sealed (Clear Catacomb Void to unlock)';
+    }
   }
 
   // Hellfire Brazier — bob/twist flames; "intense" window after a press makes
