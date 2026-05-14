@@ -84,7 +84,7 @@ const FILLER_BLURBS = {
   heal:     { flavor: 'Field Rations — Bite of bread, sip of water. Instant +40 HP.',       tags: ['Heal'] },
   maxhp:    { flavor: 'Iron Resolve — +25 max HP and patches it onto your current HP too.', tags: ['HP'] },
   speed:    { flavor: 'Swift Boots — +10% move speed for the rest of the run.',             tags: ['Mobility'] },
-  magnet:   { flavor: 'Magnet — Pickup radius grows 25%. Toxic Halo evolution counts this.', tags: ['Pickup', 'Evolution'] },
+  magnet:   { flavor: 'Magnet — Pickup radius grows 60%. Toxic Halo evolution counts this.', tags: ['Pickup', 'Evolution'] },
   cooldown: { flavor: 'Focus — Every weapon cools 8% faster. Storm evolution counts this.',  tags: ['Cooldown', 'Evolution'] },
   damage:   { flavor: 'Sharpened — +10% damage on everything you fire.',                    tags: ['Damage'] },
   zoomout:  { flavor: 'Bigger Picture — Camera can pull back another notch.',                tags: ['Utility'] },

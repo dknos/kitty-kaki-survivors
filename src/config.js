@@ -18,7 +18,7 @@ export const HERO = {
   speed: 8.0,               // units/sec
   hpMax: 100,
   iFramesSec: 0.6,
-  pickupRadius: 11.0,       // gem magnet radius (modified by magnet stat)
+  pickupRadius: 1.6,        // gem magnet base radius — walk-onto-it close range, magnet powerups scale it (iter 33c)
   contactPushback: 0.5,     // hero gets nudged on enemy contact
   yOffset: 0,
 };

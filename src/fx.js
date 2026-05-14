@@ -6,6 +6,7 @@
  */
 import * as THREE from 'three';
 import { state } from './state.js';
+import { HERO } from './config.js';
 import { tex } from './particleTextures.js';
 import { BLOOM_LAYER } from './postfx.js';
 import { makeRuneRingTexture } from './enemyTells.js';
@@ -146,7 +147,7 @@ export function updatePickupRing() {
   if (!_pickupRing) return;
   const h = state.hero;
   if (!h || !h.pos) return;
-  const r = (h.statMul.magnet || 1) * 4.0 * 2.4;   // pickupRadius * attract mul ~= ring footprint
+  const r = HERO.pickupRadius * (h.statMul.magnet || 1) * 2.4;   // ring footprint tracks live pickup radius
   _pickupRing.position.x = h.pos.x;
   _pickupRing.position.z = h.pos.z;
   _pickupRing.scale.set(r, r, r);

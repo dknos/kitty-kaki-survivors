@@ -142,7 +142,7 @@ const FILLERS = [
   { kind: 'filler', id: 'heal',     name: 'Field Rations', desc: 'Restore 40 HP', icon: '🍞' },
   { kind: 'filler', id: 'maxhp',    name: 'Iron Resolve',  desc: '+25 Max HP',    icon: '❤️' },
   { kind: 'filler', id: 'speed',    name: 'Swift Boots',   desc: '+10% Move Speed', icon: '👟' },
-  { kind: 'filler', id: 'magnet',   name: 'Magnet',        desc: '+25% Pickup Radius', icon: '🧲' },
+  { kind: 'filler', id: 'magnet',   name: 'Magnet',        desc: '+60% Pickup Radius', icon: '🧲' },
   { kind: 'filler', id: 'cooldown', name: 'Focus',         desc: '-8% Cooldown',  icon: '⏱️' },
   { kind: 'filler', id: 'damage',   name: 'Sharpened',     desc: '+10% Damage',   icon: '⚔️' },
   { kind: 'filler', id: 'zoomout',  name: 'Bigger Picture',desc: 'Unlock one more zoom-out step', icon: '🔍' },
@@ -218,7 +218,7 @@ export function applyFiller(choice) {
     case 'heal':     h.hp = Math.min(h.hp + 40, h.hpMax); break;
     case 'maxhp':    h.hpMax += 25; h.hp += 25; break;
     case 'speed':    h.statMul.moveSpeed *= 1.10; break;
-    case 'magnet':   h.statMul.magnet    *= 1.25; break;
+    case 'magnet':   h.statMul.magnet    *= 1.60; break;
     case 'cooldown': h.statMul.cooldown  *= 0.92; break;
     case 'damage':   h.statMul.dmg       *= 1.10; break;
     case 'zoomout':  unlockZoomLevel(); break;
