@@ -23,6 +23,7 @@ import { sfx } from './audio.js';
 import { notifyStageEnemySpawn, notifyStageEnemyKill } from './stageRules.js';
 import { rollAffixes } from './enemyAffixes.js';
 import { setLeapMarker, clearLeapMarker } from './enemyTells.js';
+import { disposeBossTelegraphs } from './bossTelegraphs.js';
 
 // ── Module-scope temp vectors (reuse, never `new` in update loops) ────────────
 const _tmpDir   = new THREE.Vector3();
@@ -488,12 +489,16 @@ export function killEnemy(enemy) {
     return;
   }
 
-  // Clean up any in-progress boss telegraph ring attached to this enemy
-  if (enemy._tellRing) {
-    if (enemy._tellRing.parent) enemy._tellRing.parent.remove(enemy._tellRing);
-    enemy._tellRing = null;
+  // Iter 19 (FX_AUDIT_V2 §198): full boss-windup telegraph teardown if a
+  // mini-boss or final boss dies during its windup. Previously only
+  // _tellRing was dropped here, leaving _engulfInner / _sonicInner /
+  // _quakeMeshes orphaned in-scene until the next-run reset. disposeBoss-
+  // Telegraphs walks every per-enemy mesh + zeroes the mid-windup state.
+  // try/catch keeps a regression in telegraph code from blocking enemy
+  // pool return + spatial-hash removal further down in killEnemy.
+  if (enemy.isMiniBoss || enemy.isFinalBoss) {
+    try { disposeBossTelegraphs(enemy); } catch (_) {}
   }
-  enemy._windupStart = -1;
   enemy._telegraphInit = false;
 
   // Kill ring fx (no ring on final boss — covered by victory cinematic)

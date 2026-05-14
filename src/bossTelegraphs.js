@@ -711,6 +711,41 @@ function _disposeTell(boss) {
   }
 }
 
+/**
+ * Iter 19 (FX_AUDIT_V2 §198 — "Known caveat"): single-boss telegraph teardown
+ * for the death path. If a mini-boss or final-boss dies during its windup
+ * (rare — sigilbell stun + heavy DPS), the inner-glow planes / quake bars /
+ * tell rings would otherwise leak in scene until resetBossTelegraphs() fires
+ * on the next run. Call this from enemies.killEnemy() so disposal happens
+ * the moment the boss dies, regardless of which lifecycle stage it was in.
+ *
+ * Drops every telegraph artifact attached to `e`, returns mid-windup state
+ * to idle, and clears the mote accumulators so a respawned/recycled pool
+ * mesh doesn't inherit dirty rate counters.
+ *
+ * Module-level arrays (_activeRings, _pulls, _motes) are NOT keyed by enemy.
+ * They contain orphaned animation entries that self-tick to completion via
+ * their TTLs in updateBossTelegraphs/_updateBossTellMotes — no per-enemy
+ * cleanup is needed there, and removing them would visually cut off
+ * shockwaves the player has already seen launch.
+ */
+export function disposeBossTelegraphs(e) {
+  if (!e) return;
+  // Drop every mesh artifact (rune ring, inner glows, quake bars).
+  _disposeTell(e);
+  // Reset windup bookkeeping so a recycled pool object can't appear
+  // mid-windup on respawn (_telegraphInit gates this, but belt-and-braces).
+  e._windupStart = -1;
+  e._activePatternIdx = null;
+  e._activeWindup = 0;
+  e._coneDir = null;
+  // V2 mote accumulators — clear so a recycled mesh doesn't burst-emit
+  // motes on its first windup tick from a stale acc value.
+  e._engulfMoteAcc = 0;
+  e._sonicMoteAcc = 0;
+  e._quakeDebrisAcc = 0;
+}
+
 function _updateTellMidWindup(boss, pattern, elapsed, t, dt) {
   // Pattern-specific in-windup animation. Keeps the tell readable.
   const k = Math.min(1, elapsed / boss._activeWindup);
