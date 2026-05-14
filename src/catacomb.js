@@ -18,6 +18,7 @@ import * as THREE from 'three';
 import { state } from './state.js';
 import { grantEmbers } from './meta.js';
 import { ENEMY_TIERS } from './config.js';
+import { bindPrompt, setPromptLabel } from './buttonPrompts.js';
 
 // Chamber dims (world units)
 const CHAMBER_W = 30;
@@ -34,6 +35,7 @@ const WAVE_MAX_ENEMIES = 12;
 let _scene = null;
 let _group = null;
 let _promptEl = null;
+let _promptBinding = null;
 let _torches = [];        // {pl, cone, baseIntensity}
 let _returnPos = null;    // stashed run-scene hero pos before entering
 let _waveIdx = 0;         // 0..TOTAL_WAVES; -1 once final reward dropped
@@ -316,6 +318,7 @@ export function buildCatacomb(scene) {
       display: none;
     `;
     document.body.appendChild(_promptEl);
+    _promptBinding = bindPrompt(_promptEl, 'interact', '');
     window.addEventListener('keydown', _onKeyDown);
   }
   return g;
@@ -357,7 +360,7 @@ export function tickCatacombEntrance(dt) {
   const dz = state.hero.pos.z - ENTRANCE_POS.z;
   _activeOnEntrance = (dx * dx + dz * dz) < 2.2 * 2.2;
   if (_activeOnEntrance) {
-    _promptEl.textContent = '[E]  Descend into the Catacomb';
+    setPromptLabel(_promptBinding, 'Descend into the Catacomb');
     _promptEl.style.display = 'block';
   } else if (_promptEl.style.display !== 'none') {
     _promptEl.style.display = 'none';
@@ -543,9 +546,10 @@ export function tickCatacomb(dt) {
   const combatDone = (_waveIdx >= TOTAL_WAVES) && (_countAliveWaveMobs() === 0);
   _activeOnStairs = onStairs && combatDone;
   if (_activeOnStairs) {
-    _promptEl.textContent = '[E]  Ascend to the surface';
+    setPromptLabel(_promptBinding, 'Ascend to the surface');
     _promptEl.style.display = 'block';
   } else if (onStairs && !combatDone) {
+    // Status (no key glyph) — write raw text; gets rewritten when state flips.
     _promptEl.textContent = '⚔  Clear the chamber first';
     _promptEl.style.display = 'block';
   } else {

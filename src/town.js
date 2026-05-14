@@ -17,6 +17,7 @@ import { state } from './state.js';
 import { CHARACTERS } from './config.js';
 import { getMeta, setOption } from './meta.js';
 import { initChatBindings, tickBubbles } from './chatBubble.js';
+import { bindPrompt, setPromptLabel, formatPrompt } from './buttonPrompts.js';
 
 const PLAZA_R = 18;
 const FENCE_R = 22;
@@ -24,6 +25,7 @@ const FENCE_R = 22;
 let _group = null;
 let _portal = null;
 let _promptEl = null;
+let _promptBinding = null;
 let _activeKey = null;
 let _onGateActivate = null;
 const _handlers = {};
@@ -340,6 +342,7 @@ export function buildTown(scene) {
       display: none;
     `;
     document.body.appendChild(_promptEl);
+    _promptBinding = bindPrompt(_promptEl, 'interact', '');
     window.addEventListener('keydown', _onKeyDown);
     initChatBindings();
   }
@@ -445,7 +448,7 @@ export function tickTown(dt) {
   }
   _activeKey = best ? best.key : null;
   if (best) {
-    _promptEl.textContent = `[E]  ${best.label}`;
+    setPromptLabel(_promptBinding, best.label);
     _promptEl.style.display = 'block';
   } else {
     _promptEl.style.display = 'none';

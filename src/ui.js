@@ -11,6 +11,8 @@ import { state } from './state.js';
 import { commitRunResults, getMeta, setOption, achievementCount, ACHIEVEMENTS, SHOP_UPGRADES, upgradeCost, buyUpgrade, shopLevel, isDiscovered, dailyChallengeConfig, commitDailyRun, equippedRelic, selectedStage, HOUSE_UPGRADES, houseLevel, houseCost, buyHouseUpgrade, QUEST_TEMPLATES, availableQuests, activeQuests, acceptQuest, abandonQuest, claimQuest, maxActiveQuests } from './meta.js';
 import { CHARACTERS, STAGES } from './config.js';
 import { SLOT_SYMBOLS, rollReel, resolveOutcome, applyOutcome } from './slotMachine.js';
+import { pushFocusScope, popFocusScope } from './uiFocus.js';
+import { mountLegend as mountPromptLegend, formatPrompt } from './buttonPrompts.js';
 
 // ── Theme constants ──────────────────────────────────────────────────────────
 const C = {
@@ -42,12 +44,28 @@ let _killsText = null;
 
 let _modal = null;
 let _modalKeyHandler = null;
+let _modalFocusScope = null;
 
 let _deathScreen = null;
 let _deathKeyHandler = null;
 let _deathClickHandler = null;
+let _deathFocusScope = null;
 
 let _startScreen = null;
+let _startFocusScope = null;
+let _startStageRowRef = null;
+let _startCharRowRef = null;
+let _startBtnRowRef = null;
+function _refreshStartFocus() {
+  if (!_startScreen) return;
+  if (_startFocusScope) { popFocusScope(_startFocusScope); _startFocusScope = null; }
+  const chars = _startCharRowRef ? Array.from(_startCharRowRef.children).filter(el => el.style.cursor === 'pointer') : [];
+  const stages = _startStageRowRef ? Array.from(_startStageRowRef.children).filter(el => el.style.cursor === 'pointer') : [];
+  const btns = _startBtnRowRef ? Array.from(_startBtnRowRef.querySelectorAll('button')) : [];
+  const els = [...chars, ...stages, ...btns];
+  if (!els.length) return;
+  _startFocusScope = pushFocusScope(els, { layout: 'auto' });
+}
 
 // Cache last values to avoid DOM thrash
 const _last = {
@@ -479,6 +497,9 @@ export function initUI() {
   _hud.appendChild(_dashReadout);
   _hud.appendChild(_weaponPanel);
   _root.appendChild(_hud);
+
+  // Persistent button-prompt legend (bottom-right, swaps glyphs by device).
+  mountPromptLegend(_hud);
 }
 
 let _dashReadout = null;
@@ -615,12 +636,15 @@ export function showLevelUpModal(choices) {
   function rebuildQol() {
     qolRow.innerHTML = '';
     if (state.hero.rerolls > 0) {
-      const b = qolBtn('Reroll · Q', C.cyan, state.hero.rerolls);
+      // Reroll bound to Q on kbm (no semantic action in the prompt map);
+      // render a Q pill directly so the visual style matches.
+      const qPill = `<span class="kk-prompt" style="--kk-prompt-color:${C.cyan}">Q</span>`;
+      const b = qolBtn(`${qPill}Reroll`, C.cyan, state.hero.rerolls);
       b.onclick = () => doReroll();
       qolRow.appendChild(b);
     }
     if (state.hero.skips > 0) {
-      const b = qolBtn('Skip · E', C.amber, state.hero.skips);
+      const b = qolBtn(`${formatPrompt('interact', '')}Skip`, C.amber, state.hero.skips);
       b.onclick = () => doSkip();
       qolRow.appendChild(b);
     }
@@ -633,6 +657,7 @@ export function showLevelUpModal(choices) {
       state.levelUpChoices = fresh;
       paintCards(row, fresh, _registry || {});
       rebuildQol();
+      if (typeof row._kkRefreshFocus === 'function') row._kkRefreshFocus();
     });
   }
   function doSkip() {
@@ -649,6 +674,16 @@ export function showLevelUpModal(choices) {
   _root.appendChild(_modal);
 
   paintCards(row, choices, registry);
+
+  // Refresh focus scope — called any time cards or qol buttons are rebuilt.
+  const refreshFocusScope = () => {
+    if (_modalFocusScope) { popFocusScope(_modalFocusScope); _modalFocusScope = null; }
+    const cards = Array.from(row.querySelectorAll('.kk-card'));
+    const qolBtns = Array.from(qolRow.querySelectorAll('button'));
+    _modalFocusScope = pushFocusScope([...cards, ...qolBtns], { layout: 'auto' });
+  };
+  row._kkRefreshFocus = refreshFocusScope;
+  refreshFocusScope();
 
   _modalKeyHandler = (e) => {
     if (e.code === 'Digit1' || e.key === '1') pickChoice(state.levelUpChoices, 0);
@@ -723,6 +758,7 @@ export function hideLevelUpModal() {
     window.removeEventListener('keydown', _modalKeyHandler);
     _modalKeyHandler = null;
   }
+  if (_modalFocusScope) { popFocusScope(_modalFocusScope); _modalFocusScope = null; }
   if (_modal && _modal.parentNode) _modal.parentNode.removeChild(_modal);
   _modal = null;
 }
@@ -929,11 +965,13 @@ export function showDeathScreen() {
   _deathScreen.appendChild(btnRow);
   _deathScreen.appendChild(hint);
   _root.appendChild(_deathScreen);
+  _deathFocusScope = pushFocusScope([retryBtn, townBtn], { layout: 'list' });
 
   const restart = () => {
     // Tear down listeners + the modal first, then trigger the in-place reset
     if (_deathKeyHandler) window.removeEventListener('keydown', _deathKeyHandler);
     _deathKeyHandler = null;
+    if (_deathFocusScope) { popFocusScope(_deathFocusScope); _deathFocusScope = null; }
     if (_deathScreen && _deathScreen.parentNode) _deathScreen.parentNode.removeChild(_deathScreen);
     _deathScreen = null;
     if (typeof window.kkRestart === 'function') window.kkRestart();
@@ -944,6 +982,7 @@ export function showDeathScreen() {
   const goTown = () => {
     if (_deathKeyHandler) window.removeEventListener('keydown', _deathKeyHandler);
     _deathKeyHandler = null;
+    if (_deathFocusScope) { popFocusScope(_deathFocusScope); _deathFocusScope = null; }
     if (_deathScreen && _deathScreen.parentNode) _deathScreen.parentNode.removeChild(_deathScreen);
     _deathScreen = null;
     if (typeof window.kkReturnToTown === 'function') window.kkReturnToTown();
@@ -1060,6 +1099,7 @@ export function showStartScreen(text) {
           setOption('selectedChar', ch.id);
           meta.selectedChar = ch.id;
           paintChars();
+          _refreshStartFocus();
         };
       }
       charRow.appendChild(card);
@@ -1217,6 +1257,7 @@ export function showStartScreen(text) {
               state.envGroup.userData.applyStageTint(st);
             }
             paintStages();
+            _refreshStartFocus();
           };
         }
         stageRow.appendChild(chip);
@@ -1224,14 +1265,22 @@ export function showStartScreen(text) {
     }
     paintStages();
     _startScreen.appendChild(stageRow);
+    _startStageRowRef = stageRow;
   }
 
   _startScreen.appendChild(charRow);
   _startScreen.appendChild(btnRow);
+  _startCharRowRef = charRow;
+  _startBtnRowRef = btnRow;
   _root.appendChild(_startScreen);
+  _refreshStartFocus();
 }
 
 export function hideStartScreen() {
+  if (_startFocusScope) { popFocusScope(_startFocusScope); _startFocusScope = null; }
+  _startStageRowRef = null;
+  _startCharRowRef = null;
+  _startBtnRowRef = null;
   if (_startScreen && _startScreen.parentNode) {
     _startScreen.parentNode.removeChild(_startScreen);
   }
@@ -1641,6 +1690,7 @@ export function isGrimoireOpen() { return !!_grimModal; }
 
 // ── Shop modal ───────────────────────────────────────────────────────────────
 let _shopModal = null;
+let _shopFocusScope = null;
 export function showShop() {
   if (_shopModal) return;
   _shopModal = document.createElement('div');
@@ -1732,9 +1782,19 @@ export function showShop() {
     }
     return card;
   }
+  let _closeBtnRef = null;
+  function refreshShopFocus(initialIndex = 0) {
+    if (_shopFocusScope) { popFocusScope(_shopFocusScope); _shopFocusScope = null; }
+    const cards = Array.from(grid.children);
+    const els = [...cards];
+    if (_closeBtnRef) els.push(_closeBtnRef);
+    _shopFocusScope = pushFocusScope(els, { layout: 'auto', onCancel: hideShop, initialIndex });
+  }
   function repaintGrid() {
+    const prevFocusIdx = _shopFocusScope ? _shopFocusScope.focused : 0;
     grid.innerHTML = '';
     for (const upg of SHOP_UPGRADES) grid.appendChild(paintCard(upg));
+    if (_closeBtnRef) refreshShopFocus(prevFocusIdx);
   }
   repaintGrid();
 
@@ -1748,6 +1808,7 @@ export function showShop() {
     letter-spacing: 0.28em;
     box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 20px rgba(0,0,0,0.5);`;
   close.onclick = hideShop;
+  _closeBtnRef = close;
 
   _shopModal.appendChild(title);
   _shopModal.appendChild(subtitle);
@@ -1755,9 +1816,11 @@ export function showShop() {
   _shopModal.appendChild(grid);
   _shopModal.appendChild(close);
   _root.appendChild(_shopModal);
+  refreshShopFocus(0);
 }
 export function hideShop() {
   if (!_shopModal) return;
+  if (_shopFocusScope) { popFocusScope(_shopFocusScope); _shopFocusScope = null; }
   if (_shopModal.parentNode) _shopModal.parentNode.removeChild(_shopModal);
   _shopModal = null;
 }

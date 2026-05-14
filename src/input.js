@@ -4,6 +4,15 @@
  */
 import * as THREE from 'three';
 import { state } from './state.js';
+import { initGamepad, pollGamepad, gamepadState, gamepadHasActivity } from './gamepad.js';
+
+// ── Active input device tracking ─────────────────────────────────────────────
+// Other systems (HUD prompts, etc.) read input.activeDevice to swap key/button
+// glyphs. Flips on whichever device produced input most recently.
+export const input = {
+  activeDevice: 'kbm',   // 'kbm' or 'gamepad'
+};
+let _kbmActivityThisFrame = false;
 
 // Zoom is a discrete ladder gated by the "Bigger Picture" powerup.
 // Notch 0 = most zoomed in (start of every run). Each unlock opens one more
@@ -44,7 +53,10 @@ export function getAimWorldPos() {
 
 export function isDashPressed() {
   // Repeating presses while held are fine — hero.js gates on its own cooldown.
-  return !!(_keys['ShiftLeft'] || _keys['ShiftRight']);
+  // Gamepad: A button (XInput south) also triggers dash.
+  if (_keys['ShiftLeft'] || _keys['ShiftRight']) return true;
+  if (gamepadState.connected && gamepadState.buttons.a) return true;
+  return false;
 }
 
 // Edge-triggered: returns true exactly once per keydown of Space (jump).
@@ -54,6 +66,53 @@ export function consumeJump() {
   return false;
 }
 export function _internalQueueJump() { _jumpQueued = true; }
+
+// Edge-triggered gamepad action queues. Other systems consume these once.
+let _padInteractQueued = false;
+let _padPauseQueued = false;
+let _padLevelUpConfirmQueued = false;
+export function consumePadInteract() {
+  if (_padInteractQueued) { _padInteractQueued = false; return true; }
+  return false;
+}
+export function consumePadPause() {
+  if (_padPauseQueued) { _padPauseQueued = false; return true; }
+  return false;
+}
+export function consumePadLevelUpConfirm() {
+  if (_padLevelUpConfirmQueued) { _padLevelUpConfirmQueued = false; return true; }
+  return false;
+}
+
+/**
+ * Normalized world-space aim direction {x, z} for top-down weapons/hero code.
+ * - If the right stick is deflected past 0.3, returns the stick direction.
+ * - Otherwise falls back to the mouse-projected aim point relative to hero.
+ * - z is used (not y) because the game is top-down on the XZ plane.
+ */
+export function getAimDirection() {
+  if (gamepadState.connected) {
+    const rx = gamepadState.rx, ry = gamepadState.ry;
+    const mag = Math.hypot(rx, ry);
+    if (mag > 0.3) {
+      return { x: rx / mag, z: ry / mag };
+    }
+  }
+  const heroPos = state.hero && state.hero.pos;
+  if (!heroPos) {
+    const f = (state.hero && state.hero.facing) || { x: 0, z: 1 };
+    return { x: f.x || 0, z: f.z || 1 };
+  }
+  const aim = getAimWorldPos();
+  const dx = aim.x - heroPos.x;
+  const dz = aim.z - heroPos.z;
+  const m = Math.hypot(dx, dz);
+  if (m < 1e-4) {
+    const f = state.hero.facing;
+    return { x: f.x || 0, z: f.z || 1 };
+  }
+  return { x: dx / m, z: dz / m };
+}
 
 export function getZoom() { return ZOOM_NOTCHES[_zoomNotch]; }
 export function getZoomNotch() { return _zoomNotch; }
@@ -81,9 +140,13 @@ export function initInput() {
   if (_initialized) return;
   _initialized = true;
 
+  // ── Gamepad (Web Gamepad API, XInput-standard mapping) ──
+  initGamepad();
+
   // ── Keyboard ──
   window.addEventListener('keydown', (e) => {
     _keys[e.code] = true;
+    _kbmActivityThisFrame = true;
     // Edge-trigger jump on Space — main.js gates by state.started before consuming
     if (e.code === 'Space' && !e.repeat) _jumpQueued = true;
   });
@@ -99,7 +162,9 @@ export function initInput() {
     _mouse.clientX = e.clientX;
     _mouse.clientY = e.clientY;
     _mouse.hasMoved = true;
+    _kbmActivityThisFrame = true;
   }, { passive: true });
+  window.addEventListener('mousedown', () => { _kbmActivityThisFrame = true; }, { passive: true });
 
   // ── Touch joystick (left half of screen) ──
   const onTouchStart = (e) => {
@@ -190,6 +255,9 @@ export function initInput() {
 }
 
 export function sampleInput() {
+  // Refresh gamepad snapshot once per frame BEFORE deriving moveVec.
+  pollGamepad();
+
   let x = 0, y = 0;
 
   // Keyboard
@@ -197,6 +265,15 @@ export function sampleInput() {
   if (_keys['KeyS'] || _keys['ArrowDown'])  y += 1;
   if (_keys['KeyA'] || _keys['ArrowLeft'])  x -= 1;
   if (_keys['KeyD'] || _keys['ArrowRight']) x += 1;
+
+  // Gamepad left stick overrides WASD when pad is connected and deflected.
+  // The stick already has deadzone+rescale applied in gamepad.js.
+  if (gamepadState.connected) {
+    const lx = gamepadState.lx, ly = gamepadState.ly;
+    if (Math.hypot(lx, ly) > 1e-3) {
+      x = lx; y = ly;
+    }
+  }
 
   // Touch joystick overrides if active and has displacement
   if (_touch.active) {
@@ -225,4 +302,24 @@ export function sampleInput() {
   if (m2 > 1) { x /= m2; y /= m2; }
 
   state.input.moveVec.set(x, y);
+
+  // ── Edge-triggered gamepad actions (consumed once by main.js / ui.js) ──
+  // B = interact, X = pause, Y = level-up confirm. A is held-checked via
+  // isDashPressed(). Start mirrors X for convenience (typical pause button).
+  if (gamepadState.connected) {
+    const jp = gamepadState.justPressed;
+    if (jp.b) _padInteractQueued = true;
+    if (jp.x || jp.start) _padPauseQueued = true;
+    if (jp.y) _padLevelUpConfirmQueued = true;
+  }
+
+  // ── Active device tracking ──
+  // If kbm produced any event this frame, prefer kbm. Else if the pad shows any
+  // activity (stick/button/trigger), flip to gamepad. Sticky between frames.
+  if (_kbmActivityThisFrame) {
+    input.activeDevice = 'kbm';
+  } else if (gamepadHasActivity()) {
+    input.activeDevice = 'gamepad';
+  }
+  _kbmActivityThisFrame = false;
 }

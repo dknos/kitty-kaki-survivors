@@ -14,6 +14,7 @@
 import * as THREE from 'three';
 import { state } from './state.js';
 import { getMeta } from './meta.js';
+import { bindPrompt, setPromptLabel } from './buttonPrompts.js';
 
 // Room dimensions (in world units)
 const ROOM_W = 14;   // x
@@ -23,6 +24,7 @@ const DOOR_W = 2.4;
 
 let _group = null;
 let _promptEl = null;
+let _promptBinding = null;
 let _activeKey = null;
 const _handlers = {};
 const _interactables = [
@@ -458,6 +460,7 @@ export function buildInterior(scene) {
       display: none;
     `;
     document.body.appendChild(_promptEl);
+    _promptBinding = bindPrompt(_promptEl, 'interact', '');
     window.addEventListener('keydown', _onKeyDown);
   }
   return g;
@@ -528,7 +531,7 @@ export function tickInterior(dt) {
   }
   _activeKey = best ? best.key : null;
   if (best) {
-    _promptEl.textContent = `[E]  ${best.label}`;
+    setPromptLabel(_promptBinding, best.label);
     _promptEl.style.display = 'block';
   } else {
     _promptEl.style.display = 'none';
