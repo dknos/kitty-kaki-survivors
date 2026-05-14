@@ -21,6 +21,7 @@ import { spawnChest } from './chest.js';
 import { spawnHeart, spawnStar, spawnBomb, spawnFreeze, spawnChicken } from './pickups.js';
 import { sfx } from './audio.js';
 import { notifyStageEnemySpawn, notifyStageEnemyKill } from './stageRules.js';
+import { rollAffixes } from './enemyAffixes.js';
 
 // ── Module-scope temp vectors (reuse, never `new` in update loops) ────────────
 const _tmpDir   = new THREE.Vector3();
@@ -42,6 +43,19 @@ let _loggedClips = null;
 // ── Tier lookup ───────────────────────────────────────────────────────────────
 const _tierByGlb = Object.create(null);
 for (const t of ENEMY_TIERS) _tierByGlb[t.glb] = t;
+
+// Difficulty curve — mirrors spawnDirector.computeDifficulty (not exported there).
+// Kept in sync intentionally: this drives rollAffixes() at spawn time.
+function _computeDifficulty(t) {
+  if (t <= 0) return 0;
+  if (t < SPAWN.difficultyRampSec) return t / SPAWN.difficultyRampSec;
+  if (t < SPAWN.difficultyMaxSec) {
+    const span = SPAWN.difficultyMaxSec - SPAWN.difficultyRampSec;
+    const k = (t - SPAWN.difficultyRampSec) / span;
+    return 1 + k * (SPAWN.difficultyMax - 1);
+  }
+  return SPAWN.difficultyMax;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SpatialHash
@@ -357,6 +371,11 @@ export function spawnEnemy(tierConfig, x, z) {
     mesh.userData._castSet = castOn;
   }
 
+  // ── Iter 8 affix roll — must run BEFORE spatial insert so Swift's spd/dmg
+  // mutation lands on the enemy that the rest of the loop will read. Final +
+  // mini-bosses are skipped by rollAffixes() itself.
+  try { rollAffixes(enemy, _computeDifficulty(state.time.game)); } catch (e) { console.warn('[enemies.rollAffixes]', e); }
+
   state.enemies.spatial.insert(enemy);
   state.enemies.active.push(enemy);
   // Stage-rule spawn hook (e.g. per-stage tweaks to fresh enemies).
@@ -476,6 +495,21 @@ export function killEnemy(enemy) {
   // Kill ring fx (no ring on final boss — covered by victory cinematic)
   if (!enemy.isFinalBoss) {
     spawnKillRing(enemy.mesh.position.x, enemy.mesh.position.z, enemy.elite);
+  }
+
+  // ── Iter 8 Volatile affix: queue a 0.2s-delayed explosion. We DON'T fire
+  // here because damageEnemy(volatile_neighbor) might trigger another Volatile
+  // death → another explosion → unbounded recursion. The pendingVolatile queue
+  // is drained at the top of updateEnemies on the NEXT frame, so chains span
+  // frames (0.2s/link) and stay paused-aware via state.time.game.
+  if (enemy._volatile && state.fx && state.fx.pendingVolatile) {
+    state.fx.pendingVolatile.push({
+      x: enemy.mesh.position.x,
+      z: enemy.mesh.position.z,
+      t: state.time.game + 0.2,
+    });
+    // Visual: a second ring so the player sees "this one is going to pop".
+    spawnKillRing(enemy.mesh.position.x, enemy.mesh.position.z, true);
   }
 
   // Drops: heart (HP) and star (gem vacuum). Elites guaranteed-ish.
@@ -647,6 +681,19 @@ export function damageEnemy(enemy, dmg, source) {
       dmg *= (1 + state.run.signature_tempoBonus);
     }
   }
+  // ── Iter 8 Shielded affix: clamp incoming dmg to 1 until shield depleted ──
+  // Sits BETWEEN iter-7 multipliers (which scale the raw weapon dmg upward) and
+  // the crit/variance roll below — so a Sniper Headhunter shot vs. a shielded
+  // wizard still ticks the shield by 1, regardless of the executeBonus multiplier.
+  // Crit/variance jitter past the clamp is intentional (a shielded crit shows ~1.4 dmg).
+  if (enemy._shieldHp && enemy._shieldHp > 0) {
+    enemy._shieldHp -= 1;
+    if (dmg > 1) dmg = 1;
+    if (enemy._shieldHp <= 0) {
+      enemy._shieldHp = 0;
+      enemy._shieldedRim = false;   // 8c reads this for the gold-rim flicker
+    }
+  }
   // Variance + crit rolls (DoT skips crit by passing dmg with isDoT flag in future)
   const variance = 1 + (Math.random() - 0.5) * 2 * DAMAGE.variance;
   const isCrit = Math.random() < DAMAGE.critChance;
@@ -658,6 +705,12 @@ export function damageEnemy(enemy, dmg, source) {
   const berserkMul = berserkMax > 0 ? (1 + berserkMax * Math.max(0, 1 - hpPct)) : 1;
   const finalDmg = dmg * variance * (isCrit ? DAMAGE.critMul : 1) * frozenMul * berserkMul;
   enemy.hp -= finalDmg;
+  // ── Iter 8 Vampiric affix: heal a % of the damage you just took, capped at hpMax.
+  // Runs BEFORE the kill check so a chip-damage tick can't slip through and kill
+  // a vampiric mob that should have healed back up.
+  if (enemy._vampPct && enemy._vampPct > 0 && enemy.hp > 0) {
+    enemy.hp = Math.min(enemy.hpMax, enemy.hp + finalDmg * enemy._vampPct);
+  }
   state.run.dmgDealt += finalDmg;
   state.run._dpsWin.push([state.time.game, finalDmg]);
   // Per-source damage tally (drives the death-screen breakdown).
@@ -687,6 +740,43 @@ export function updateEnemies(dt) {
   const heroPos = state.hero.pos;
   const active = state.enemies.active;
   const spatial = state.enemies.spatial;
+
+  // ── Iter 8: drain queued Volatile explosions (entries whose t <= now).
+  // Done BEFORE the main loop so the active set is stable while we iterate.
+  // damageEnemy → killEnemy → push new entry is fine (next frame at earliest).
+  const pv = state.fx && state.fx.pendingVolatile;
+  if (pv && pv.length > 0) {
+    const now = state.time.game;
+    // Walk backwards so swap-pop is safe.
+    for (let pi = pv.length - 1; pi >= 0; pi--) {
+      const v = pv[pi];
+      if (v.t > now) continue;
+      // Radius 4u, 35 flat dmg, source 'volatile' (avoids signature multipliers).
+      const _vpos = _tmpPush.set(v.x, 0, v.z);   // reuse temp vec
+      const hits = state.enemies.spatial ? state.enemies.spatial.queryRadius(_vpos, 4) : [];
+      for (let hi = 0; hi < hits.length; hi++) {
+        damageEnemy(hits[hi], 35, 'volatile');
+      }
+      // Hero damage if hero inside the explosion radius.
+      const dxh = heroPos.x - v.x;
+      const dzh = heroPos.z - v.z;
+      if (dxh * dxh + dzh * dzh <= 16) {
+        try { heroTakeDamage(35); } catch (_) {}
+      }
+      // Audio + camera punch — light feedback so the explosion reads.
+      if (sfx && sfx.eliteDeath) sfx.eliteDeath();
+      state.fx.shake = Math.max(state.fx.shake || 0, 0.25);
+      // swap-pop
+      const last = pv.length - 1;
+      if (pi !== last) pv[pi] = pv[last];
+      pv.pop();
+    }
+  }
+
+  // ── Iter 8: reset Frosted aura slow each frame. Set to 0.75 below if ANY
+  // _frostAura enemy is within range. hero.js currently does NOT read this
+  // (flagged as a divergence in the agent report).
+  state.run.affix_frostSlow = 1;
 
   // Iterate backwards so killEnemy splices are safe (it uses swap-pop too,
   // but backward iteration plays nicest with any future direct splicing).
@@ -817,6 +907,54 @@ export function updateEnemies(dt) {
     // Static destructibles (totems, pylons, bells) skip movement + contact;
     // their own tickers handle behavior. DoT/flash above still applies.
     if (e.isTotem || e.isPylon || e.isBell) continue;
+
+    // ── Iter 8 affix per-frame readers (early-out: only touch enemies
+    // whose affix slots are actually set; the vast majority of swarm trash
+    // skips this block entirely).
+    if (e.affixes) {
+      // Frosted aura: if hero is within _frostAura units, stamp the per-frame
+      // slow on state.run. Reset to 1 at top of updateEnemies above.
+      if (e._frostAura) {
+        const fdx = heroPos.x - ep.x;
+        const fdz = heroPos.z - ep.z;
+        if (fdx * fdx + fdz * fdz <= e._frostAura * e._frostAura) {
+          state.run.affix_frostSlow = 0.75;
+        }
+      }
+      // Leaping: 4s cycle. Tick CD down; when ≤ 0, capture target hero pos and
+      // start a 0.6s windup. When windup completes, translate enemy by 8u toward
+      // captured target and reset CD. Dash-cancellable because the hero has time
+      // to relocate during the windup — the lock is at TELL start, not landing.
+      if (typeof e._leapCD === 'number') {
+        if (e._leapWindup > 0) {
+          e._leapWindup -= dt;
+          if (e._leapWindup <= 0) {
+            // Resolve leap: move 8u toward captured target (clamped to leap len).
+            const ldx = (e._leapTargetX !== undefined ? e._leapTargetX : heroPos.x) - ep.x;
+            const ldz = (e._leapTargetZ !== undefined ? e._leapTargetZ : heroPos.z) - ep.z;
+            const lmag = Math.sqrt(ldx * ldx + ldz * ldz);
+            if (lmag > 1e-4) {
+              const k = Math.min(8, lmag) / lmag;
+              ep.x += ldx * k;
+              ep.z += ldz * k;
+            }
+            e._leapWindup = 0;
+            e._leapCD = 4.0;
+            e._leapTargetX = undefined;
+            e._leapTargetZ = undefined;
+          }
+        } else {
+          e._leapCD -= dt;
+          if (e._leapCD <= 0) {
+            // Begin windup — capture hero pos NOW so the player can dodge
+            // by leaving the marked landing zone during the 0.6s tell.
+            e._leapWindup = 0.6;
+            e._leapTargetX = heroPos.x;
+            e._leapTargetZ = heroPos.z;
+          }
+        }
+      }
+    }
 
     // ── Knockback velocity (from dash, etc.) — additive on top of walk ──
     if (e.knockVx !== 0 || e.knockVz !== 0) {

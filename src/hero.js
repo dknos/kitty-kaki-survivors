@@ -258,6 +258,10 @@ export function updateHero(dt) {
 
   // Stage hazard slow (pollen drifts, etc.) — read by hero movement.
   const hazardSlow = h.hazardSlow || 1;
+  // Grothar Engulf 1.0s slow flag (set by bossTelegraphs.js on resolve).
+  if (state.run.signature_engulfSlowUntil && state.run.signature_engulfSlowUntil > state.time.game) speedMul *= 0.5;
+  // Frosted-affix aura slow (set per-frame by enemies.js agent 8a; defaults to 1).
+  if (state.run.affix_frostSlow) speedMul *= state.run.affix_frostSlow;
   const speed = HERO.speed * speedMul * hazardSlow;
   // While dashing, override input direction with the locked dashDir
   const dx = dashing ? h.dashDir.x : (mv.x + mv.y) * SQRT_HALF;

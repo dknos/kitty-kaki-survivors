@@ -149,6 +149,9 @@ export const state = {
     bloomBoost: 0,       // 0..1, decays each frame
     hitStop: 0,          // seconds of remaining time-freeze (drained each frame)
     shake: 0,            // 0..1 screen-shake magnitude, decays each frame
+    // Iter 8: queued Volatile-affix explosions. Each entry {x,z,t}. Drained
+    // at the top of updateEnemies when t <= state.time.game.
+    pendingVolatile: /** @type {Array<{x:number,z:number,t:number}>} */ ([]),
   },
 
   // ── Input ──
@@ -261,6 +264,8 @@ export function resetState() {
   state.run.passive_revives        = 0;   // free revives banked for this run
   state.run.passive_overdrive      = false; // TODO(iter6-wire): Power t4 frenzy
   state.run.passive_treasureMap    = false; // TODO(iter6-wire): Greed t4 starter chest
+  // Iter 8 affix per-frame scratch (re-stamped each frame by updateEnemies).
+  state.run.affix_frostSlow        = 1;
   // Totem-of-Swarm bookkeeping — see src/totems.js
   if (state.totems) {
     for (const t of state.totems.list) { if (t.mesh && t.mesh.parent) t.mesh.parent.remove(t.mesh); }
@@ -287,6 +292,7 @@ export function resetState() {
   state.modes.endless = false;
   state.run.startedAt = performance.now();
   state.fx.chromaticPulse = 0; state.fx.bloomBoost = 0; state.fx.hitStop = 0; state.fx.shake = 0;
+  if (state.fx.pendingVolatile) state.fx.pendingVolatile.length = 0;
   state.pendingLevelUp = false; state.levelUpChoices.length = 0; state.gameOver = false; state.victory = false; state.dyingUntil = 0;
 }
 

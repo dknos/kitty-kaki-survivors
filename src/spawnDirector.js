@@ -93,6 +93,7 @@ function spawnMiniBoss() {
     hp: choice.hp * STAGE.miniBossHpMul,
     scale: (choice.scale || 1) * STAGE.miniBossScaleMul,
     isMiniBoss: true,
+    _patternIdx: _miniBossIdx, // tells bossTelegraphs which signature attack
   };
   const angle = Math.random() * Math.PI * 2;
   spawnOnRing(buffed, angle, 1.3);

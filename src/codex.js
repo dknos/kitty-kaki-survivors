@@ -4,13 +4,15 @@
  * silhouette until the player encounters / kills / picks / evolves it.
  *
  * Persists into meta.codex (managed via getMeta/saveMeta from meta.js):
- *   meta.codex = { enemies: {}, weapons: {}, passives: {}, evolutions: {}, secrets: {} }
- * Each inner map is keyed by id → { discovered:true, kills?, picks?, firstSeenAt }.
+ *   meta.codex = { enemies: {}, weapons: {}, passives: {}, evolutions: {}, secrets: {}, affixes: {} }
+ * Most inner maps are keyed by id → { discovered:true, kills?, picks?, firstSeenAt }.
+ * Affixes is a flat id → timestamp map (bare number, "first seen at" epoch ms).
  *
  * Public API:
  *   notifyEnemySeen(id), notifyEnemyKilled(id),
  *   notifyWeaponPicked(id), notifyPassivePicked(id),
  *   notifyEvolutionAchieved(id), notifySecretFound(id),
+ *   notifyAffixSeen(id),
  *   showCodex(), hideCodex(), isCodexOpen(),
  *   LORE  (id-keyed flavor strings; exported for tests/debug)
  */
@@ -99,12 +101,31 @@ export const LORE = {
   glasswind:   { name: 'Glasswind',     icon: '🪟', text: 'Volleys multiply mid-flight, shattering into ice shards on impact.' },
   sanctum:     { name: 'Sanctum',       icon: '✨', text: 'Webs become a sanctuary — burning enemies inside, shielding you within.' },
   mirror_step: { name: 'Mirror Step',   icon: '👥', text: 'Dash leaves a magenta twin. It fires for you on the way out.' },
+
+  // Affixes (keyed by AFFIX_POOL.id in enemyAffixes.js)
+  volatile:  { name: 'Volatile',  icon: '💥', text: 'Its bones hum with a stored charge that lets go on death. Don\'t dash through — the corpse always gets the last word.' },
+  vampiric:  { name: 'Vampiric',  icon: '🩸', text: 'Every wound it takes, it drinks back. Chip damage feeds the thing; burn it down or don\'t bother.' },
+  leaping:   { name: 'Leaping',   icon: '🦘', text: 'Coiled and predatory, it reads your line before it jumps. The arc lands where you were — make sure that\'s nowhere.' },
+  shielded:  { name: 'Shielded',  icon: '🛡️', text: 'A gilded rim of warding flickers along its hide, eating big hits whole. Sustained DPS strips it; the burst opener just bounces.' },
+  swift:     { name: 'Swift',     icon: '💨', text: 'Lean, dry-boned, and faster than it has any right to be. Lead your shots — it\'s glassy if you can catch it.' },
+  frosted:   { name: 'Frosted',   icon: '❄️', text: 'A breath of winter clings to its shoulders, sapping the warmth from anything close. Stay at the edge of its aura or you\'ll move like cold honey.' },
+};
+
+// Affix tells — short counterplay hints used by the Legend overlay.
+// Keep these one short sentence each, scannable in a glance.
+const AFFIX_TELL = {
+  volatile: { swatch: 'ring',    color: '#66ddff', counter: 'Don\'t dash through. Pull back, let the corpse pop, then collect.' },
+  vampiric: { swatch: 'dot',     color: '#ff3344', counter: 'Burst it down — chip damage just feeds the heal.' },
+  leaping:  { swatch: 'arc',     color: '#ff66ee', counter: 'Watch the magenta landing arc. Dash out of the marker.' },
+  shielded: { swatch: 'flicker', color: '#ffd24a', counter: 'Sustained orbitals / chain melt it. Don\'t waste burst on the rim.' },
+  swift:    { swatch: 'blur',    color: '#7fffe4', counter: 'Lead your shots. Glass cannon — opens up if you actually hit.' },
+  frosted:  { swatch: 'motes',   color: '#88ddff', counter: 'Stay outside the aura. Kite around the edge, don\'t walk in.' },
 };
 
 // ── Persistent state helpers ────────────────────────────────────────────────
 function _section(key) {
   const meta = getMeta();
-  if (!meta.codex) meta.codex = { enemies: {}, weapons: {}, passives: {}, evolutions: {}, secrets: {} };
+  if (!meta.codex) meta.codex = { enemies: {}, weapons: {}, passives: {}, evolutions: {}, secrets: {}, affixes: {} };
   if (!meta.codex[key]) meta.codex[key] = {};
   return meta.codex[key];
 }
@@ -164,10 +185,24 @@ export function notifySecretFound(id) {
   _touch('secrets', id);
 }
 
+// Affix discovery — called from enemyAffixes.js on first trigger of each affix.
+// Stores a bare epoch-ms timestamp (not a substructure) so a falsy check
+// doubles as a discovery test.
+export function notifyAffixSeen(id) {
+  if (!id) return;
+  const meta = getMeta();
+  if (!meta.codex) meta.codex = { enemies: {}, weapons: {}, passives: {}, evolutions: {}, secrets: {}, affixes: {} };
+  if (!meta.codex.affixes) meta.codex.affixes = {};
+  if (meta.codex.affixes[id]) return;
+  meta.codex.affixes[id] = Date.now();
+  saveMeta();
+}
+
 // ── Codex modal ─────────────────────────────────────────────────────────────
 let _modal = null;
 let _activeTab = 'enemies';
 let _expanded = null;          // { tab, id } if a card is opened
+let _legendOpen = false;       // affix-tell legend overlay (1-screen visual key)
 
 export function isCodexOpen() { return !!_modal; }
 
@@ -176,6 +211,7 @@ export function hideCodex() {
   if (_modal.parentNode) _modal.parentNode.removeChild(_modal);
   _modal = null;
   _expanded = null;
+  _legendOpen = false;
 }
 
 export function showCodex() {
@@ -233,6 +269,7 @@ function _buildModal({ ENEMY_TIERS, REGISTRY, EVOLUTIONS, PASSIVES, SECRETS }) {
     { id: 'enemies',    label: 'Enemies' },
     { id: 'weapons',    label: 'Weapons' },
     { id: 'passives',   label: 'Passives' },
+    { id: 'affixes',    label: 'Affixes' },
     { id: 'secrets',    label: 'Secrets' },
   ];
   const tabBtns = {};
@@ -245,10 +282,26 @@ function _buildModal({ ENEMY_TIERS, REGISTRY, EVOLUTIONS, PASSIVES, SECRETS }) {
       border: 1px solid ${C.edge}; border-radius: 8px;
       color: ${C.text};
       font-family: ${F.display}; font-size: 12px; font-weight: 700; letter-spacing: 0.28em;`;
-    b.onclick = () => { _activeTab = t.id; _expanded = null; repaint(); };
+    b.onclick = () => { _activeTab = t.id; _expanded = null; _legendOpen = false; repaint(); };
     tabBar.appendChild(b);
     tabBtns[t.id] = b;
   }
+
+  // Legend button — visual key for affix tells (player-teaching surface).
+  // Sits in the tab bar so it's discoverable on first open, but styled with a
+  // magenta accent so it reads as an overlay action rather than a tab.
+  const legendBtn = document.createElement('button');
+  legendBtn.type = 'button';
+  legendBtn.textContent = 'Legend';
+  legendBtn.style.cssText = `padding: 8px 18px; cursor: pointer;
+    background: linear-gradient(180deg, rgba(28,18,28,0.82), rgba(14,8,14,0.90));
+    border: 1px solid ${C.magenta}; border-radius: 8px;
+    color: ${C.magenta};
+    font-family: ${F.display}; font-size: 12px; font-weight: 700; letter-spacing: 0.28em;
+    margin-left: 6px;`;
+  legendBtn.title = 'Visual key for elite / affix tells';
+  legendBtn.onclick = () => { _legendOpen = !_legendOpen; _expanded = null; repaint(); };
+  tabBar.appendChild(legendBtn);
 
   // Body container (grid OR expanded detail)
   const body = document.createElement('div');
@@ -265,17 +318,29 @@ function _buildModal({ ENEMY_TIERS, REGISTRY, EVOLUTIONS, PASSIVES, SECRETS }) {
   close.onclick = hideCodex;
 
   function repaint() {
-    // Tab highlight
+    // Tab highlight (legend pin overrides active-tab styling — looks "on" only
+    // when its overlay is showing).
     for (const t of TABS) {
       const b = tabBtns[t.id];
-      const on = t.id === _activeTab;
+      const on = !_legendOpen && t.id === _activeTab;
       b.style.borderColor = on ? C.cyan : C.edge;
       b.style.color = on ? C.cyan : C.text;
       b.style.boxShadow = on
         ? `0 0 0 1px ${C.cyan} inset, 0 8px 22px rgba(0,0,0,0.5)`
         : `0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 20px rgba(0,0,0,0.5)`;
     }
+    legendBtn.style.boxShadow = _legendOpen
+      ? `0 0 0 1px ${C.magenta} inset, 0 8px 22px rgba(0,0,0,0.5)`
+      : `0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 20px rgba(0,0,0,0.5)`;
+
     body.innerHTML = '';
+
+    // Render priority: legend overlay > expanded detail > grid.
+    if (_legendOpen) {
+      body.appendChild(_renderLegend(() => { _legendOpen = false; repaint(); }));
+      return;
+    }
+
     const entries = _entriesForTab(_activeTab, { ENEMY_TIERS, REGISTRY, EVOLUTIONS, PASSIVES, SECRETS });
     if (_expanded && _expanded.tab === _activeTab) {
       const ent = entries.find(e => e.id === _expanded.id);
@@ -299,12 +364,13 @@ function _buildModal({ ENEMY_TIERS, REGISTRY, EVOLUTIONS, PASSIVES, SECRETS }) {
   _modal.appendChild(close);
   root.appendChild(_modal);
 
-  // ESC to close
+  // ESC to close — legend overlay first, then expanded card, then the modal.
   const onKey = (e) => {
     if (!_modal) return;
     if (e.code === 'Escape') {
       e.stopPropagation();
-      if (_expanded) { _expanded = null; repaint(); }
+      if (_legendOpen) { _legendOpen = false; repaint(); }
+      else if (_expanded) { _expanded = null; repaint(); }
       else hideCodex();
     }
   };
@@ -316,7 +382,8 @@ function _buildModal({ ENEMY_TIERS, REGISTRY, EVOLUTIONS, PASSIVES, SECRETS }) {
     if (e.code === 'Escape') {
       e.stopPropagation();
       e.preventDefault();
-      if (_expanded) { _expanded = null; repaint(); }
+      if (_legendOpen) { _legendOpen = false; repaint(); }
+      else if (_expanded) { _expanded = null; repaint(); }
       else hideCodex();
     }
   };
@@ -410,6 +477,30 @@ function _entriesForTab(tab, { ENEMY_TIERS, REGISTRY, EVOLUTIONS, PASSIVES, SECR
         stats: [
           ['Max Level', p.maxLevel],
           ['Picks',     rec ? (rec.picks || 0) : 0],
+        ],
+      };
+    });
+  }
+  if (tab === 'affixes') {
+    const sec = codex.affixes || {};
+    // Order matches teaching priority — Volatile is the loudest "stop dashing" lesson,
+    // so it sits first regardless of discovery order.
+    const AFFIX_IDS = ['volatile', 'vampiric', 'leaping', 'shielded', 'swift', 'frosted'];
+    return AFFIX_IDS.map(id => {
+      const lore = LORE[id] || { name: id, icon: '❓', text: '' };
+      const tell = AFFIX_TELL[id] || { color: '#ffffff', counter: '' };
+      const seenAt = sec[id] || 0;
+      const discovered = seenAt > 0;
+      return {
+        id,
+        name: lore.name,
+        icon: lore.icon,
+        lore: lore.text,
+        discovered,
+        statLine: discovered ? 'Seen in the wild' : 'Unseen',
+        stats: [
+          ['Tell',        discovered ? tell.swatch : '???'],
+          ['Counterplay', discovered ? tell.counter : '???'],
         ],
       };
     });
@@ -529,6 +620,164 @@ function _renderDetail(ent, onBack) {
     letter-spacing: 0.28em;`;
   backBtn.onclick = onBack;
   wrap.appendChild(backBtn);
+  return wrap;
+}
+
+// ── Legend overlay ─────────────────────────────────────────────────────────
+// 1-screen visual key for affix tells. Each row shows the in-game silhouette
+// cue as a tiny inline SVG/CSS swatch, then the affix name + 1-line counter.
+// Goal: a player who's seen one cyan ring should learn "explosive on death"
+// without ever picking up the controller.
+
+const LEGEND_ROWS = [
+  { id: 'volatile', name: 'Volatile', tell: 'Cyan ring on the ground',     counter: 'Don\'t dash through. Let it pop, then collect.' },
+  { id: 'vampiric', name: 'Vampiric', tell: 'Red threat-dot overhead',     counter: 'Burst it down. Chip damage just feeds the heal.' },
+  { id: 'leaping',  name: 'Leaping',  tell: 'Magenta arc at landing site', counter: 'Dash out of the marker before windup ends.' },
+  { id: 'shielded', name: 'Shielded', tell: 'Gold rim flickering',         counter: 'Sustain DPS, not burst. Orbitals strip it fast.' },
+  { id: 'swift',    name: 'Swift',    tell: 'Faint trailing afterimage',   counter: 'Lead your shots. Fast but fragile.' },
+  { id: 'frosted',  name: 'Frosted',  tell: 'Cyan motes drifting up',      counter: 'Stay outside the aura. Kite around the edge.' },
+];
+
+function _legendSwatch(id) {
+  // Each tell renders as a 36×36 visual cell, styled to roughly match the
+  // in-game silhouette so the eye learns the mapping in one glance.
+  const sz = 36;
+  if (id === 'volatile') {
+    // Cyan ring on the ground (flat ellipse to read as a decal at iso angle).
+    return `<svg viewBox="0 0 36 36" width="${sz}" height="${sz}" aria-hidden="true">
+      <ellipse cx="18" cy="22" rx="14" ry="5" fill="none" stroke="#66ddff" stroke-width="2"
+        style="filter: drop-shadow(0 0 4px #66ddff);"/>
+      <ellipse cx="18" cy="22" rx="9" ry="3" fill="none" stroke="#66ddff" stroke-width="1" opacity="0.6"/>
+    </svg>`;
+  }
+  if (id === 'vampiric') {
+    // Red threat dot (matches the in-scene billboard above the enemy head).
+    return `<svg viewBox="0 0 36 36" width="${sz}" height="${sz}" aria-hidden="true">
+      <circle cx="18" cy="14" r="5" fill="#ff3344"
+        style="filter: drop-shadow(0 0 5px #ff3344);"/>
+      <circle cx="18" cy="14" r="2.4" fill="#ffffff" opacity="0.85"/>
+      <path d="M14 22 L18 30 L22 22 Z" fill="#ff3344" opacity="0.35"/>
+    </svg>`;
+  }
+  if (id === 'leaping') {
+    // Magenta landing arc — crescent at the target point.
+    return `<svg viewBox="0 0 36 36" width="${sz}" height="${sz}" aria-hidden="true">
+      <path d="M4 12 Q18 -4 32 12" fill="none" stroke="#ff66ee" stroke-width="2"
+        stroke-dasharray="2 2"
+        style="filter: drop-shadow(0 0 4px #ff66ee);"/>
+      <ellipse cx="32" cy="22" rx="6" ry="2" fill="none" stroke="#ff66ee" stroke-width="2"/>
+    </svg>`;
+  }
+  if (id === 'shielded') {
+    // Gold rim flicker around a silhouette.
+    return `<svg viewBox="0 0 36 36" width="${sz}" height="${sz}" aria-hidden="true">
+      <circle cx="18" cy="18" r="11" fill="none" stroke="#ffd24a" stroke-width="2"
+        style="filter: drop-shadow(0 0 6px #ffd24a);"/>
+      <circle cx="18" cy="18" r="11" fill="none" stroke="#fff9e6" stroke-width="0.7" opacity="0.8"/>
+      <circle cx="18" cy="18" r="6"  fill="#231a14"/>
+    </svg>`;
+  }
+  if (id === 'swift') {
+    // Blurred afterimage — three offset silhouettes fading out.
+    return `<svg viewBox="0 0 36 36" width="${sz}" height="${sz}" aria-hidden="true">
+      <circle cx="10" cy="18" r="5" fill="#7fffe4" opacity="0.18"/>
+      <circle cx="16" cy="18" r="5" fill="#7fffe4" opacity="0.40"/>
+      <circle cx="24" cy="18" r="6" fill="#7fffe4"
+        style="filter: drop-shadow(0 0 4px #7fffe4);"/>
+    </svg>`;
+  }
+  if (id === 'frosted') {
+    // Cyan motes drifting upward.
+    return `<svg viewBox="0 0 36 36" width="${sz}" height="${sz}" aria-hidden="true">
+      <polygon points="10,28 12,24 14,28 12,32" fill="#88ddff" opacity="0.85"/>
+      <polygon points="18,22 20.5,17 23,22 20.5,27" fill="#88ddff" opacity="0.95"
+        style="filter: drop-shadow(0 0 3px #88ddff);"/>
+      <polygon points="26,14 27.5,11 29,14 27.5,17" fill="#88ddff" opacity="0.65"/>
+      <polygon points="14,12 15,10 16,12 15,14" fill="#88ddff" opacity="0.55"/>
+    </svg>`;
+  }
+  return '';
+}
+
+function _renderLegend(onBack) {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = `
+    max-width: 880px; margin: 0 auto;
+    background: linear-gradient(180deg, rgba(20,28,22,0.94), rgba(8,14,12,0.96));
+    border: 1px solid ${C.magenta};
+    border-radius: 12px;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 14px 36px rgba(0,0,0,0.55);
+    padding: 22px 26px 24px;
+  `;
+
+  const header = document.createElement('div');
+  header.style.cssText = `display:flex; align-items:baseline; justify-content:space-between; margin-bottom: 14px;`;
+  header.innerHTML = `
+    <div>
+      <div style="font-family:${F.display};font-size:20px;letter-spacing:0.20em;font-weight:900;color:${C.magenta};">Legend</div>
+      <div style="font-family:${F.body};font-size:10.5px;letter-spacing:0.22em;text-transform:uppercase;color:rgba(245,239,225,0.55);margin-top:4px;">
+        Read the tell before the trade
+      </div>
+    </div>
+    <div style="font-family:${F.mono};font-size:10.5px;color:rgba(245,239,225,0.55);">Visual key</div>
+  `;
+  wrap.appendChild(header);
+
+  const grid = document.createElement('div');
+  // 2 columns × 3 rows on wide screens, single column at narrow widths so the
+  // counterplay line never wraps awkwardly.
+  const twoCol = window.innerWidth >= 720;
+  grid.style.cssText = `
+    display: grid;
+    grid-template-columns: ${twoCol ? '1fr 1fr' : '1fr'};
+    gap: 10px 14px;
+  `;
+  for (const row of LEGEND_ROWS) {
+    const cell = document.createElement('div');
+    cell.style.cssText = `
+      display: grid;
+      grid-template-columns: 48px 1fr;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      background: linear-gradient(180deg, rgba(14,20,18,0.85), rgba(6,10,9,0.92));
+      border: 1px solid ${C.edge};
+      border-radius: 8px;
+    `;
+    cell.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:center;width:48px;height:48px;">
+        ${_legendSwatch(row.id)}
+      </div>
+      <div>
+        <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:2px;">
+          <div style="font-family:${F.display};font-size:13px;letter-spacing:0.16em;font-weight:700;color:${C.amber};">${_esc(row.name.toUpperCase())}</div>
+          <div style="font-family:${F.mono};font-size:10.5px;color:${C.cyan};">${_esc(row.tell)}</div>
+        </div>
+        <div style="font-family:${F.body};font-size:12px;line-height:1.4;color:rgba(245,239,225,0.82);">${_esc(row.counter)}</div>
+      </div>
+    `;
+    grid.appendChild(cell);
+  }
+  wrap.appendChild(grid);
+
+  const footer = document.createElement('div');
+  footer.style.cssText = `display:flex;justify-content:space-between;align-items:center;margin-top:18px;`;
+  footer.innerHTML = `
+    <div style="font-family:${F.body};font-size:11px;letter-spacing:0.06em;color:rgba(245,239,225,0.55);">
+      Elites in the late game roll one of these. Above difficulty 5, two can stack.
+    </div>
+  `;
+  const back = document.createElement('button');
+  back.type = 'button';
+  back.textContent = '◂ Back';
+  back.style.cssText = `padding: 8px 22px; cursor: pointer;
+    background: linear-gradient(180deg, rgba(20,28,22,0.78), rgba(8,14,12,0.86));
+    border: 1px solid ${C.edge}; border-radius: 8px;
+    color: ${C.cyan}; font-family: ${F.display}; font-size: 12px; font-weight: 700;
+    letter-spacing: 0.28em;`;
+  back.onclick = onBack;
+  footer.appendChild(back);
+  wrap.appendChild(footer);
   return wrap;
 }
 

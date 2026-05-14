@@ -49,6 +49,15 @@ const COL_RANGED       = new THREE.Color(0x88ddff);
 const COL_DOT_MINI     = new THREE.Color(0xff66ee);
 const COL_DOT_FINAL    = new THREE.Color(0xff3344);
 
+// Affix tints (iter 8c) — override the threat-tier color when the enemy has
+// a matching slot field stamped by enemyAffixes.js. Pre-allocated at module
+// scope so the per-frame loop stays zero-alloc.
+const COL_VOLATILE     = new THREE.Color(0x66ddff);   // cyan ring — "don't dash through"
+const COL_FROST        = new THREE.Color(0x88ddff);   // cool blue — slow aura
+const COL_SHIELD_GOLD  = new THREE.Color(0xffd24a);   // gold base for flicker modulation
+const COL_VAMP_RED     = new THREE.Color(0xff3344);   // reuse COL_FINAL hue for vampiric blend
+const _ringColTmp      = new THREE.Color();           // scratch for blend math (reused)
+
 // ── Module-scope temps (reuse — zero per-frame allocations) ───────────────
 const _mat       = new THREE.Matrix4();
 const _pos       = new THREE.Vector3();
@@ -251,12 +260,45 @@ export function updateEnemyTells(dt) {
     const ep = e.mesh.position;
 
     // ── 1. Elite ring ──
-    if (e.elite && ringSlot < ELITE_RING_CAP) {
+    // Render condition: any elite, OR any affixed enemy carrying a ground-tell
+    // affix (volatile / shielded / frosted) so trash mobs with an affix also
+    // earn a silhouette cue. Non-affixed standards still skip — they should
+    // read as background filler.
+    const wantsAffixRing = (e._volatile || e._shieldedRim || e._frostAura);
+    if ((e.elite || wantsAffixRing) && ringSlot < ELITE_RING_CAP) {
+      // Base threat-tier color, then override by affix in teaching-priority
+      // order: Volatile beats Shield beats Vamp beats Frost. Volatile leads
+      // because "cyan ring = explosive" is the highest-stakes lesson and
+      // mis-reading it ends the run.
       let col = COL_ELITE;
       if (e.isFinalBoss)      col = COL_FINAL;
       else if (e.isMiniBoss)  col = COL_MINI;
 
-      _pos.set(ep.x, RING_Y, ep.z);
+      if (e._volatile) {
+        col = COL_VOLATILE;
+      } else if (e._shieldedRim) {
+        // Gold flicker: modulate the base gold by a fast sine so the rim
+        // pulses like a charging ward. Use the scratch THREE.Color to avoid
+        // mutating the const palette entry.
+        const flick = 0.55 + 0.45 * Math.sin(t * 8.0);
+        _ringColTmp.copy(COL_SHIELD_GOLD).multiplyScalar(flick + 0.55);
+        col = _ringColTmp;
+      } else if (e._vampPct) {
+        // Blend the existing tier color halfway toward red so vampiric elites
+        // read as "still elite, but bloody". For non-elite vampirics we start
+        // from COL_ELITE so they still get a clear silhouette.
+        _ringColTmp.copy(e.elite ? col : COL_ELITE).lerp(COL_VAMP_RED, 0.55);
+        col = _ringColTmp;
+      } else if (e._frostAura) {
+        col = COL_FROST;
+      }
+
+      // Frost: slight upward drift on the ring's Y so the cyan tint reads as
+      // "cold rising off the corpse", distinguishing it from the static
+      // volatile pulse. (No new particle slot — this is the "cool blue tint"
+      // fallback the brief flags as acceptable.)
+      const ringY = e._frostAura ? RING_Y + 0.04 + 0.025 * Math.sin(t * 2.2 + i) : RING_Y;
+      _pos.set(ep.x, ringY, ep.z);
       _scl.set(ringPulse, 1, ringPulse);
       // Slow yaw rotation — sells "magic glyph rotating" vs flat decal.
       // Use enemy index for varied phase so a cluster doesn't lockstep.
@@ -290,9 +332,15 @@ export function updateEnemyTells(dt) {
       tellSlot++;
     }
 
-    // ── 3. Threat dot (mini-boss + final boss) ──
-    if ((e.isMiniBoss || e.isFinalBoss) && dotSlot < THREAT_DOT_CAP) {
-      const col = e.isFinalBoss ? COL_DOT_FINAL : COL_DOT_MINI;
+    // ── 3. Threat dot (mini-boss + final boss + vampiric) ──
+    // Extending the condition to include `_vampPct` is render-color logic
+    // (the "vampiric = red dot" tell from the brief). Bosses still take
+    // precedence on color when both flags are set.
+    if ((e.isMiniBoss || e.isFinalBoss || e._vampPct) && dotSlot < THREAT_DOT_CAP) {
+      let col = COL_DOT_MINI;
+      if (e.isFinalBoss) col = COL_DOT_FINAL;
+      else if (e.isMiniBoss) col = COL_DOT_MINI;
+      else if (e._vampPct) col = COL_VAMP_RED;  // bare trash vampiric → red dot
       _pos.set(ep.x, DOT_Y + Math.sin(t * 3 + i) * 0.08, ep.z);
       _scl.set(dotPulse, dotPulse, dotPulse);
       _mat.compose(_pos, _zeroQuat, _scl);
