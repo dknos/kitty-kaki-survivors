@@ -1111,6 +1111,13 @@ function frame(now) {
     sun.target.updateMatrixWorld();
   }
 
+  // Per-stage atmospheric particles (iter 15) — drift pollen/wisps/embers/
+  // sparkles around the hero. Guarded for title-screen / town frames where
+  // envGroup may exist but no stage is active.
+  if (state.envGroup && typeof state.envGroup.userData.tickAtmosphere === 'function') {
+    state.envGroup.userData.tickAtmosphere(realDt, state.hero);
+  }
+
   applyShake(realDt);
 
   // Apply zoom — adjusts the orthographic frustum size each frame.
