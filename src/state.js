@@ -247,6 +247,20 @@ export function resetState() {
   state.run.passive_staggerResist  = 0;
   state.run.passive_greedMul       = 1;
   state.run.passive_soulLinkXpMul  = 1;
+  // ── Meta shop-tree scalars (iter 6, "Meta With Teeth") ──
+  // Survival / Power / Greed branch effects bake into these at run start.
+  // Effects authored in src/meta.js SHOP_TREE; consumers read these flags.
+  state.run.passive_dmgReduction   = 0;   // 0..1, damage taken multiplier reduction
+  state.run.passive_dmg            = 1;   // outgoing damage multiplier
+  state.run.passive_cooldown       = 1;   // weapon cooldown multiplier (lower = faster)
+  state.run.passive_critChance     = 0;   // 0..1, additive crit chance
+  state.run.passive_regen          = 0;   // additive HP/sec passive regen
+  state.run.passive_coinMul        = 0;   // additive coin-gain bonus (stacks w/ greedMul)
+  state.run.passive_chestRate      = 0;   // additive chest spawn rate bonus
+  state.run.passive_miniBossSigilBonus = 0; // extra sigils per mini-boss kill
+  state.run.passive_revives        = 0;   // free revives banked for this run
+  state.run.passive_overdrive      = false; // TODO(iter6-wire): Power t4 frenzy
+  state.run.passive_treasureMap    = false; // TODO(iter6-wire): Greed t4 starter chest
   // Totem-of-Swarm bookkeeping — see src/totems.js
   if (state.totems) {
     for (const t of state.totems.list) { if (t.mesh && t.mesh.parent) t.mesh.parent.remove(t.mesh); }

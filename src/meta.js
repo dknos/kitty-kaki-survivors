@@ -72,6 +72,13 @@ const DEFAULT = {
   // Most recent is auto-equipped on run start.
   relics: [],
   equippedRelic: null,    // id of the currently-equipped relic (or null)
+  // ── Iter 6 ("Meta With Teeth") ──
+  // Sigils: prestige currency earned from boss kills, quests, dailies.
+  // shopTree: { nodeId: 1 } for purchased branch-tree upgrades (SHOP_TREE below).
+  // presets: saved character+stage combos for quick re-launch from the menu.
+  sigils: 0,
+  shopTree: {},
+  presets: [],
 };
 
 // ── Affix relics (final boss loot) ───────────────────────────────────────────
@@ -423,6 +430,218 @@ export const ACHIEVEMENTS = [
   { id: 'minibox_x3',       name: 'Triple Threat',    desc: 'Defeat all 3 mini-bosses', icon: '🔥' },
 ];
 
+// ── Sigils — prestige currency (iter 6 "Meta With Teeth") ────────────────────
+// Earned from mini-bosses (1) / final bosses (5) / quest claims (2) / daily
+// best-postings (3). Spent in the branching SHOP_TREE below. Sigils granted
+// during a run are summed in _sigilsThisRun and surfaced via commitRunResults.
+let _sigilsThisRun = 0;
+
+/**
+ * Grant N sigils from a tagged source. Returns the amount actually granted
+ * (so callers can show "+N" toasts). Floors negatives + non-finite to 0.
+ * Note: granting also flows into the per-run accumulator so commitRunResults
+ * can report sigilsEarned without double-counting house/menu grants — anything
+ * not from a 'miniBoss' or 'finalBoss' source still counts toward the run
+ * total since the player saw the +N during that play session.
+ */
+export function grantSigils(n, source) {
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  const amt = Math.floor(n);
+  const meta = getMeta();
+  meta.sigils = (meta.sigils || 0) + amt;
+  _sigilsThisRun += amt;
+  saveMeta();
+  return amt;
+}
+
+/** Current sigil balance. */
+export function sigilCount() {
+  const meta = getMeta();
+  return meta.sigils || 0;
+}
+
+// ── Branching shop tree ─────────────────────────────────────────────────────
+// 3 branches × 4 tiers = 12 nodes. Each tier requires its predecessor in the
+// same branch. Costs: 4/7/12/18 per tier (≈41/branch, ≈123 for full clear).
+// Each node's effect(runState) mutates state.run.passive_* scalars at run
+// start; iter 7 plumbs the more complex flags (revives, frenzy, free chest).
+export const SHOP_TREE = [
+  // ── Survival ── durability + recovery
+  {
+    id: 'survival-1-iron-skin', branch: 'survival', tier: 1, requires: [], cost: 4,
+    name: 'Iron Skin', desc: '+5% damage reduction', icon: '🛡️',
+    effect: (runState) => {
+      runState.passive_dmgReduction = (runState.passive_dmgReduction || 0) + 0.05;
+    },
+  },
+  {
+    id: 'survival-2-second-wind', branch: 'survival', tier: 2, requires: ['survival-1-iron-skin'], cost: 7,
+    name: 'Second Wind', desc: 'Free revive at 25% HP, once per run', icon: '🪽',
+    effect: (runState) => {
+      runState.passive_revives = (runState.passive_revives || 0) + 1;
+    },
+  },
+  {
+    id: 'survival-3-regeneration', branch: 'survival', tier: 3, requires: ['survival-2-second-wind'], cost: 12,
+    name: 'Regeneration', desc: '+0.5 HP/sec passive regen', icon: '🌿',
+    effect: (runState) => {
+      runState.passive_regen = (runState.passive_regen || 0) + 0.5;
+    },
+  },
+  {
+    id: 'survival-4-phoenix', branch: 'survival', tier: 4, requires: ['survival-3-regeneration'], cost: 18,
+    name: 'Phoenix', desc: 'Revives x2 per run (caps at 6 with Vault)', icon: '🔥',
+    // TODO(iter6-wire): respawn loop reads passive_revives; cap at 6 with house.vault stacks.
+    effect: (runState) => {
+      runState.passive_revives = (runState.passive_revives || 0) + 2;
+    },
+  },
+  // ── Power ── offense + cooldown
+  {
+    id: 'power-1-sharpened-edge', branch: 'power', tier: 1, requires: [], cost: 4,
+    name: 'Sharpened Edge', desc: '+8% damage', icon: '⚔️',
+    effect: (runState) => {
+      runState.passive_dmg = (runState.passive_dmg || 1) * 1.08;
+    },
+  },
+  {
+    id: 'power-2-quick-hands', branch: 'power', tier: 2, requires: ['power-1-sharpened-edge'], cost: 7,
+    name: 'Quick Hands', desc: '−6% all weapon cooldown', icon: '⚡',
+    effect: (runState) => {
+      runState.passive_cooldown = (runState.passive_cooldown || 1) * 0.94;
+    },
+  },
+  {
+    id: 'power-3-critical-eye', branch: 'power', tier: 3, requires: ['power-2-quick-hands'], cost: 12,
+    name: 'Critical Eye', desc: '+15% crit chance', icon: '🎯',
+    effect: (runState) => {
+      runState.passive_critChance = (runState.passive_critChance || 0) + 0.15;
+    },
+  },
+  {
+    id: 'power-4-overdrive', branch: 'power', tier: 4, requires: ['power-3-critical-eye'], cost: 18,
+    name: 'Overdrive', desc: 'Every 60s: 5s frenzy (+50% atk speed, +25% dmg)', icon: '💥',
+    // TODO(iter6-wire): main loop ticks an overdrive timer when passive_overdrive=true,
+    // stacks transient multipliers onto cooldown + dmg statMul during the 5s window.
+    effect: (runState) => {
+      runState.passive_overdrive = true;
+    },
+  },
+  // ── Greed ── economy + drops
+  {
+    id: 'greed-1-magpie', branch: 'greed', tier: 1, requires: [], cost: 4,
+    name: 'Magpie', desc: '+20% coin from kills', icon: '🪙',
+    effect: (runState) => {
+      runState.passive_coinMul = (runState.passive_coinMul || 0) + 0.20;
+    },
+  },
+  {
+    id: 'greed-2-lucky-charm', branch: 'greed', tier: 2, requires: ['greed-1-magpie'], cost: 7,
+    name: 'Lucky Charm', desc: '+5% chest spawn rate', icon: '🍀',
+    effect: (runState) => {
+      runState.passive_chestRate = (runState.passive_chestRate || 0) + 0.05;
+    },
+  },
+  {
+    id: 'greed-3-sigil-sense', branch: 'greed', tier: 3, requires: ['greed-2-lucky-charm'], cost: 12,
+    name: 'Sigil Sense', desc: '+1 sigil per mini-boss', icon: '🔮',
+    effect: (runState) => {
+      runState.passive_miniBossSigilBonus = (runState.passive_miniBossSigilBonus || 0) + 1;
+    },
+  },
+  {
+    id: 'greed-4-treasure-map', branch: 'greed', tier: 4, requires: ['greed-3-sigil-sense'], cost: 18,
+    name: 'Treasure Map', desc: 'Each run starts with a free chest near you', icon: '🗺',
+    // TODO(iter6-wire): chest-spawner reads passive_treasureMap at run start,
+    // drops one common chest within ~6u of the hero before enemies appear.
+    effect: (runState) => {
+      runState.passive_treasureMap = true;
+    },
+  },
+];
+
+/** True if every prerequisite for this node is owned. Tier-1 nodes always true. */
+export function nodeUnlocked(id) {
+  const meta = getMeta();
+  if (!meta.shopTree) meta.shopTree = {};
+  const node = SHOP_TREE.find(n => n.id === id);
+  if (!node) return false;
+  for (const req of node.requires) if (!meta.shopTree[req]) return false;
+  return true;
+}
+
+/** True if the player owns this tree node. */
+export function nodeOwned(id) {
+  const meta = getMeta();
+  return !!(meta.shopTree && meta.shopTree[id]);
+}
+
+/**
+ * Buy a tree node. Returns { ok, reason? } so callers can show specific
+ * error toasts. Cost is in sigils; node must be unlocked + not already owned.
+ */
+export function purchaseTreeNode(id) {
+  const meta = getMeta();
+  if (!meta.shopTree) meta.shopTree = {};
+  const node = SHOP_TREE.find(n => n.id === id);
+  if (!node) return { ok: false, reason: 'unknown' };
+  if (meta.shopTree[id]) return { ok: false, reason: 'already_owned' };
+  if (!nodeUnlocked(id)) return { ok: false, reason: 'locked' };
+  if ((meta.sigils || 0) < node.cost) return { ok: false, reason: 'insufficient_sigils' };
+  meta.sigils -= node.cost;
+  meta.shopTree[id] = 1;
+  saveMeta();
+  return { ok: true };
+}
+
+// ── Presets — saved character+stage combos for fast re-launch ───────────────
+function _presetId() {
+  return 'p' + Date.now().toString(36) + Math.floor(Math.random() * 1000).toString(36);
+}
+
+/**
+ * Save a new preset. Empty/garbage names get a synthesized fallback so the
+ * UI list never shows blanks. Returns the new preset id so the caller can
+ * highlight it.
+ */
+export function addPreset({ name, character, stage } = {}) {
+  const meta = getMeta();
+  if (!meta.presets) meta.presets = [];
+  const id = _presetId();
+  const safeName = (typeof name === 'string' && name.trim()) ? name.trim().slice(0, 32) : `Preset ${meta.presets.length + 1}`;
+  meta.presets.push({ id, name: safeName, character: character || 'kitty', stage: stage || 'forest' });
+  saveMeta();
+  return id;
+}
+
+export function removePreset(id) {
+  const meta = getMeta();
+  if (!meta.presets) return;
+  const i = meta.presets.findIndex(p => p.id === id);
+  if (i >= 0) {
+    meta.presets.splice(i, 1);
+    saveMeta();
+  }
+}
+
+export function listPresets() {
+  const meta = getMeta();
+  if (!meta.presets) meta.presets = [];
+  // Return a defensive shallow copy so callers can sort/filter without mutating save state.
+  return meta.presets.map(p => ({ id: p.id, name: p.name, character: p.character, stage: p.stage }));
+}
+
+/** Apply a preset by id: sets selectedChar + selectedStage and saves. */
+export function applyPreset(id) {
+  const meta = getMeta();
+  if (!meta.presets) return;
+  const p = meta.presets.find(x => x.id === id);
+  if (!p) return;
+  meta.selectedChar = p.character;
+  meta.selectedStage = p.stage;
+  saveMeta();
+}
+
 let _data = null;
 
 export function loadMeta() {
@@ -467,6 +686,9 @@ export function commitRunResults({ timeSurvived, kills, dmgDealt, level, victory
   const greedMul = (typeof arguments[0] !== 'undefined' && typeof arguments[0].greedMul === 'number') ? arguments[0].greedMul : 0;
   const coinMul = (meta.optHyper ? 1.5 : 1) * (1 + 0.25 * vaultLv) * (1 + greedMul);
   const coinsEarned = Math.floor((kills + Math.floor(timeSurvived / 12)) * coinMul);
+  // Sigils accumulated this run (via grantSigils since last commit) flush into the return.
+  const sigilsEarned = _sigilsThisRun;
+  _sigilsThisRun = 0;
   // Embers — scarce hub currency. ~5 per 5-min run; +1 per 50 kills.
   const embersEarned = Math.max(0, Math.floor(timeSurvived / 60) + Math.floor(kills / 50) + (victory ? 2 : 0));
   meta.embers = (meta.embers || 0) + embersEarned;
@@ -490,7 +712,7 @@ export function commitRunResults({ timeSurvived, kills, dmgDealt, level, victory
     meta.unlockedCinder = true; unlockedCinder = true;
   }
   saveMeta();
-  return { coinsEarned, embersEarned, isBestTime, isBestKills, unlockedHyper, unlockedEndless, unlockedCinder };
+  return { coinsEarned, embersEarned, sigilsEarned, isBestTime, isBestKills, unlockedHyper, unlockedEndless, unlockedCinder };
 }
 
 export function resetMeta() {

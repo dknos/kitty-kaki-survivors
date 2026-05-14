@@ -8,7 +8,13 @@
  *   showDeathScreen(), showStartScreen(text), hideStartScreen()
  */
 import { state } from './state.js';
-import { commitRunResults, getMeta, setOption, achievementCount, ACHIEVEMENTS, SHOP_UPGRADES, upgradeCost, buyUpgrade, shopLevel, isDiscovered, dailyChallengeConfig, commitDailyRun, equippedRelic, selectedStage, HOUSE_UPGRADES, houseLevel, houseCost, buyHouseUpgrade, QUEST_TEMPLATES, availableQuests, activeQuests, acceptQuest, abandonQuest, claimQuest, maxActiveQuests } from './meta.js';
+import {
+  commitRunResults, getMeta, setOption, achievementCount, ACHIEVEMENTS, SHOP_UPGRADES, upgradeCost, buyUpgrade, shopLevel, isDiscovered, dailyChallengeConfig, commitDailyRun, equippedRelic, selectedStage, HOUSE_UPGRADES, houseLevel, houseCost, buyHouseUpgrade, QUEST_TEMPLATES, availableQuests, activeQuests, acceptQuest, abandonQuest, claimQuest, maxActiveQuests,
+  grantSigils,
+
+  SHOP_TREE, purchaseTreeNode, nodeUnlocked, nodeOwned, sigilCount,
+  addPreset, removePreset, listPresets, applyPreset,
+} from './meta.js';
 import { CHARACTERS, STAGES } from './config.js';
 import { SLOT_SYMBOLS, rollReel, resolveOutcome, applyOutcome } from './slotMachine.js';
 import { pushFocusScope, popFocusScope } from './uiFocus.js';
@@ -61,13 +67,15 @@ let _startFocusScope = null;
 let _startStageRowRef = null;
 let _startCharRowRef = null;
 let _startBtnRowRef = null;
+let _startPresetRowRef = null;
 function _refreshStartFocus() {
   if (!_startScreen) return;
   if (_startFocusScope) { popFocusScope(_startFocusScope); _startFocusScope = null; }
   const chars = _startCharRowRef ? Array.from(_startCharRowRef.children).filter(el => el.style.cursor === 'pointer') : [];
   const stages = _startStageRowRef ? Array.from(_startStageRowRef.children).filter(el => el.style.cursor === 'pointer') : [];
+  const presets = _startPresetRowRef ? Array.from(_startPresetRowRef.querySelectorAll('[data-focusable="1"]')) : [];
   const btns = _startBtnRowRef ? Array.from(_startBtnRowRef.querySelectorAll('button')) : [];
-  const els = [...chars, ...stages, ...btns];
+  const els = [...chars, ...stages, ...presets, ...btns];
   if (!els.length) return;
   _startFocusScope = pushFocusScope(els, { layout: 'auto' });
 }
@@ -834,6 +842,17 @@ export function showDeathScreen() {
   // teardown touches anything.
   try { recordRunResult(state, state.victory ? 'victory' : 'death'); } catch (_) {}
 
+  // Daily-run leaderboard commit must run BEFORE commitRunResults so the daily
+  // sigil grant is included in this run's sigilsEarned tally.
+  let dailySummary = null;
+  if (state.modes && state.modes.daily) {
+    dailySummary = commitDailyRun({ kills: state.run.kills, timeSurvived: state.time.game });
+    if (dailySummary.newKillsBest || dailySummary.newTimeBest) {
+      setTimeout(() => showBanner('★ NEW DAILY BEST', 3.5, '#c87bff'), 800);
+      grantSigils(3, 'daily');
+    }
+  }
+
   // Commit run to persistent meta and pull rewards/highlights
   const summary = commitRunResults({
     timeSurvived: state.time.game,
@@ -849,15 +868,6 @@ export function showDeathScreen() {
   if (summary.unlockedHyper) setTimeout(() => showBanner('🔥 HYPER MODE UNLOCKED', 4.0, '#ff5555'), 600);
   if (summary.unlockedEndless) setTimeout(() => showBanner('♾ ENDLESS UNLOCKED', 4.0, '#7fffe4'), 1200);
   if (summary.unlockedCinder) setTimeout(() => showBanner('🜂 CINDER CAVERNS UNLOCKED', 4.5, '#ff7a3a'), 1800);
-
-  // Daily-run leaderboard commit + toast on new personal best
-  let dailySummary = null;
-  if (state.modes && state.modes.daily) {
-    dailySummary = commitDailyRun({ kills: state.run.kills, timeSurvived: state.time.game });
-    if (dailySummary.newKillsBest || dailySummary.newTimeBest) {
-      setTimeout(() => showBanner('★ NEW DAILY BEST', 3.5, '#c87bff'), 800);
-    }
-  }
 
   _deathScreen = document.createElement('div');
   _deathScreen.className = 'kk-death';
@@ -882,6 +892,11 @@ export function showDeathScreen() {
     <div style="font-family:${F.body}; letter-spacing:0.20em; text-transform:uppercase; font-size:12px; color:rgba(245,239,225,0.72);">${label}</div>
     <div style="font-family:${F.mono}; font-size:15px; color:${C.amber}; text-align:right;">${value}${extra}</div>
   `;
+  // Custom-colored row for sigil earnings — magenta/epic shade, matches `#c87bff`.
+  const sigilRow = (label, value) => `
+    <div style="font-family:${F.body}; letter-spacing:0.20em; text-transform:uppercase; font-size:12px; color:rgba(245,239,225,0.72);">${label}</div>
+    <div style="font-family:${F.mono}; font-size:15px; color:#c87bff; text-align:right;">${value}</div>
+  `;
   stats.innerHTML = [
     statRow('Time Survived',  fmtTime(state.time.game), bestT),
     statRow('Level Reached',  state.hero.level),
@@ -890,6 +905,7 @@ export function showDeathScreen() {
     `<div style="grid-column:1/-1; height:1px; background:${C.edge}; margin:6px 0;"></div>`,
     statRow('Coins Earned',   `+${summary.coinsEarned}`),
     statRow('Embers Earned',  `+${summary.embersEarned || 0} 🔥`),
+    sigilRow('Sigils Earned', `✦ +${summary.sigilsEarned || 0}`),
     statRow('Total Coins',    meta.coins.toLocaleString()),
     statRow('Total Embers',   `${(meta.embers || 0).toLocaleString()} 🔥`),
     statRow('Runs',           meta.runs),
@@ -1322,11 +1338,13 @@ export function showStartScreen(text) {
   // Stage picker row — small inline chips. Shown when at least one stage
   // beyond the default exists; gated stages display locked until their flag
   // is satisfied (currently `unlockedHyper` = first victory).
+  // Hoisted so `paintPresets` can re-paint stages when a preset is applied.
+  let paintStages = null;
   if (STAGES.length > 1) {
     const stageRow = document.createElement('div');
     stageRow.style.cssText = `display:flex; gap:10px; margin-top:18px; pointer-events:auto;
       flex-wrap:wrap; justify-content:center; max-width:90vw;`;
-    function paintStages() {
+    paintStages = function () {
       stageRow.innerHTML = '';
       const meta2 = getMeta();
       for (const st of STAGES) {
@@ -1379,6 +1397,284 @@ export function showStartScreen(text) {
     _startStageRowRef = stageRow;
   }
 
+  // ── Presets row ────────────────────────────────────────────────────────────
+  // Convenience: save up to 6 character+stage combos. Stage + character only —
+  // not weapons or run modifiers (deliberately out of scope).
+  const PRESET_CAP = 6;
+  const PRESET_C = '#c87bff';
+  const presetRow = document.createElement('div');
+  presetRow.style.cssText = `display:flex; flex-direction:column; gap:6px;
+    margin-top:18px; pointer-events:auto; align-items:center; max-width:90vw;`;
+
+  // Empty-state subtitle — only shown when there are no user presets saved.
+  const presetSubtitle = document.createElement('div');
+  presetSubtitle.style.cssText = `font-family:${F.body}; font-size:10.5px;
+    letter-spacing:0.28em; text-transform:uppercase;
+    color: rgba(245,239,225,0.55);`;
+  presetSubtitle.textContent = 'Save your favorite character + stage combo.';
+
+  const presetChips = document.createElement('div');
+  presetChips.style.cssText = `display:flex; flex-wrap:wrap; gap:8px;
+    justify-content:center; pointer-events:auto;`;
+
+  // Inline name-prompt panel — re-used for save flow. Hidden by default.
+  const presetPrompt = document.createElement('div');
+  presetPrompt.style.cssText = `display:none; margin-top:6px; gap:6px;
+    flex-wrap:wrap; justify-content:center; align-items:center;`;
+
+  function _charIcon(charId) {
+    const c = CHARACTERS.find(x => x.id === charId);
+    return c ? c.icon : '❓';
+  }
+  function _stageName(stageId) {
+    const s = STAGES.find(x => x.id === stageId);
+    return s ? s.name : stageId;
+  }
+
+  function showSavePrompt() {
+    const m = getMeta();
+    presetPrompt.innerHTML = '';
+    // Pop the start-screen focus scope while the prompt is open. The focus
+    // module installs a capture-phase keydown listener, so Enter/Escape would
+    // otherwise be swallowed before the <input> sees them. We re-push by
+    // calling _refreshStartFocus() in closePrompt().
+    if (_startFocusScope) { popFocusScope(_startFocusScope); _startFocusScope = null; }
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.maxLength = 32;
+    input.placeholder = 'Preset name…';
+    input.style.cssText = `padding:8px 12px; font-family:${F.body}; font-size:12px;
+      background: rgba(8,14,12,0.65); color:${C.text};
+      border: 1px solid ${C.edge}; border-radius:6px;
+      letter-spacing:0.06em; min-width:180px; outline:none;`;
+    input.addEventListener('focus', () => { input.style.borderColor = PRESET_C; });
+    input.addEventListener('blur', () => { input.style.borderColor = C.edge; });
+
+    const saveBtn = document.createElement('button');
+    saveBtn.type = 'button';
+    saveBtn.textContent = 'Save';
+    saveBtn.setAttribute('data-focusable', '1');
+    saveBtn.style.cssText = `padding:8px 14px; cursor:pointer;
+      background: linear-gradient(180deg, rgba(200,123,255,0.22), rgba(110,60,180,0.18));
+      border: 1px solid ${PRESET_C}; border-radius:6px;
+      color:${PRESET_C}; font-family:${F.display}; font-size:11px;
+      letter-spacing:0.22em; font-weight:700;`;
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.setAttribute('data-focusable', '1');
+    cancelBtn.style.cssText = `padding:8px 14px; cursor:pointer;
+      background: rgba(20,28,22,0.78);
+      border: 1px solid ${C.edge}; border-radius:6px;
+      color:rgba(245,239,225,0.7); font-family:${F.display}; font-size:11px;
+      letter-spacing:0.22em;`;
+
+    const commit = () => {
+      const m2 = getMeta();
+      if (listPresets().length >= PRESET_CAP) { closePrompt(); return; }
+      addPreset({
+        name: input.value,
+        character: m2.selectedChar,
+        stage: m2.selectedStage || 'forest',
+      });
+      closePrompt();
+      paintPresets();
+      _refreshStartFocus();
+    };
+    const closePrompt = () => {
+      presetPrompt.style.display = 'none';
+      presetPrompt.innerHTML = '';
+      paintPresets();
+      _refreshStartFocus();
+    };
+
+    saveBtn.addEventListener('click', (e) => { e.stopPropagation(); commit(); });
+    cancelBtn.addEventListener('click', (e) => { e.stopPropagation(); closePrompt(); });
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') { e.preventDefault(); commit(); }
+      else if (e.key === 'Escape') { e.preventDefault(); closePrompt(); }
+    });
+
+    presetPrompt.appendChild(input);
+    presetPrompt.appendChild(saveBtn);
+    presetPrompt.appendChild(cancelBtn);
+    presetPrompt.style.display = 'flex';
+    // Defer focus until DOM committed so the input actually receives it.
+    setTimeout(() => { try { input.focus(); input.select && input.select(); } catch (_) {} }, 0);
+  }
+
+  function confirmRemove(presetId, presetName) {
+    if (typeof window.confirm === 'function') {
+      if (!window.confirm(`Delete preset "${presetName}"?`)) return;
+    }
+    removePreset(presetId);
+    paintPresets();
+    _refreshStartFocus();
+  }
+
+  function paintPresets() {
+    presetChips.innerHTML = '';
+    const presets = listPresets();
+    const full = presets.length >= PRESET_CAP;
+    // Up to 6 displayed (cap also enforces 6 max — same number).
+    const shown = presets.slice(0, PRESET_CAP);
+
+    // Empty-state subtitle: only shown when no user presets yet.
+    presetSubtitle.style.display = presets.length === 0 ? 'block' : 'none';
+
+    for (const p of shown) {
+      const chip = document.createElement('div');
+      chip.setAttribute('data-focusable', '1');
+      chip.tabIndex = 0;
+      chip.style.cssText = `
+        position: relative;
+        padding: 8px 28px 8px 14px;
+        background: linear-gradient(180deg, rgba(20,28,22,0.86), rgba(8,14,12,0.92));
+        border: 1px solid ${C.edge};
+        border-radius: 999px;
+        box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 18px rgba(0,0,0,0.5);
+        color: ${C.text};
+        cursor: pointer;
+        font-family: ${F.body};
+        display: inline-flex; align-items: center; gap: 8px;
+        transition: transform 0.14s ease, border-color 0.14s ease;
+        max-width: 220px;
+      `;
+      const charIcon = _charIcon(p.character);
+      const stageLabel = _stageName(p.stage);
+      // Truncate stage labels that would overflow the chip.
+      const stageShort = stageLabel.length > 14 ? stageLabel.slice(0, 13) + '…' : stageLabel;
+      chip.innerHTML = `
+        <span style="font-size:16px; line-height:1;">${charIcon}</span>
+        <span style="display:inline-flex; flex-direction:column; line-height:1.2; min-width:0;">
+          <span style="font-family:${F.display}; font-size:11px; letter-spacing:0.14em; font-weight:700; color:${C.text}; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:160px;">${escapeHtml(p.name)}</span>
+          <span style="font-family:${F.body}; font-size:9.5px; letter-spacing:0.18em; text-transform:uppercase; color:rgba(245,239,225,0.6);">${escapeHtml(stageShort)}</span>
+        </span>
+      `;
+
+      // Dedicated remove (✕) button — keyboard-reachable and trivial to hit.
+      const closeBtn = document.createElement('button');
+      closeBtn.type = 'button';
+      closeBtn.textContent = '✕';
+      closeBtn.title = 'Delete preset';
+      closeBtn.style.cssText = `
+        position: absolute; top: 50%; right: 6px; transform: translateY(-50%);
+        width: 18px; height: 18px; padding: 0;
+        background: transparent; border: none;
+        color: rgba(245,239,225,0.45); cursor: pointer;
+        font-family: ${F.mono}; font-size: 12px; line-height: 1;
+      `;
+      closeBtn.addEventListener('mouseenter', () => { closeBtn.style.color = C.red; });
+      closeBtn.addEventListener('mouseleave', () => { closeBtn.style.color = 'rgba(245,239,225,0.45)'; });
+      closeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        confirmRemove(p.id, p.name);
+      });
+      chip.appendChild(closeBtn);
+
+      chip.addEventListener('mouseenter', () => {
+        chip.style.transform = 'translateY(-2px)';
+        chip.style.borderColor = PRESET_C;
+      });
+      chip.addEventListener('mouseleave', () => {
+        chip.style.transform = 'translateY(0)';
+        chip.style.borderColor = C.edge;
+      });
+
+      // Long-press to delete (mobile/touch friendly) — 600ms hold.
+      let _lp = null;
+      chip.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        _lp = setTimeout(() => { _lp = null; confirmRemove(p.id, p.name); }, 600);
+      });
+      const cancelLP = () => { if (_lp) { clearTimeout(_lp); _lp = null; } };
+      chip.addEventListener('mouseup', cancelLP);
+      chip.addEventListener('mouseleave', cancelLP);
+
+      // Right-click also deletes.
+      chip.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        confirmRemove(p.id, p.name);
+      });
+
+      chip.addEventListener('click', (e) => {
+        if (_lp) return; // long-press fired
+        e.stopPropagation();
+        // applyPreset mutates the singleton meta object in place (same ref as
+        // our `meta` capture), so paintChars/paintStages re-read the new
+        // selection automatically — no manual sync needed.
+        applyPreset(p.id);
+        paintChars();
+        if (typeof paintStages === 'function') paintStages();
+        paintPresets();
+        _refreshStartFocus();
+      });
+      chip.addEventListener('keydown', (e) => {
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+          e.preventDefault();
+          e.stopPropagation();
+          confirmRemove(p.id, p.name);
+        }
+      });
+
+      presetChips.appendChild(chip);
+    }
+
+    // "+ Save Current" chip (or disabled cap chip).
+    const saveChip = document.createElement('div');
+    saveChip.setAttribute('data-focusable', '1');
+    saveChip.tabIndex = 0;
+    const disabled = full;
+    saveChip.style.cssText = `
+      padding: 8px 16px;
+      background: ${disabled
+        ? 'rgba(20,28,22,0.5)'
+        : 'linear-gradient(180deg, rgba(200,123,255,0.18), rgba(110,60,180,0.14))'};
+      border: 1px dashed ${disabled ? 'rgba(120,120,120,0.4)' : PRESET_C};
+      border-radius: 999px;
+      box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 18px rgba(0,0,0,0.5);
+      color: ${disabled ? 'rgba(120,120,120,0.6)' : PRESET_C};
+      cursor: ${disabled ? 'not-allowed' : 'pointer'};
+      font-family: ${F.display}; font-size: 11px;
+      letter-spacing: 0.20em; font-weight: 700;
+      display: inline-flex; align-items: center; gap: 6px;
+      transition: transform 0.14s ease, border-color 0.14s ease;
+    `;
+    saveChip.textContent = disabled ? `Slots Full (${PRESET_CAP})` : '+ Save Current';
+    if (!disabled) {
+      saveChip.addEventListener('mouseenter', () => {
+        saveChip.style.transform = 'translateY(-2px)';
+        saveChip.style.borderColor = '#e8a3ff';
+      });
+      saveChip.addEventListener('mouseleave', () => {
+        saveChip.style.transform = 'translateY(0)';
+        saveChip.style.borderColor = PRESET_C;
+      });
+      saveChip.addEventListener('click', (e) => {
+        e.stopPropagation();
+        showSavePrompt();
+      });
+      saveChip.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          e.stopPropagation();
+          showSavePrompt();
+        }
+      });
+    }
+    presetChips.appendChild(saveChip);
+  }
+  paintPresets();
+
+  presetRow.appendChild(presetSubtitle);
+  presetRow.appendChild(presetChips);
+  presetRow.appendChild(presetPrompt);
+  _startScreen.appendChild(presetRow);
+  _startPresetRowRef = presetRow;
+
   _startScreen.appendChild(charRow);
   _startScreen.appendChild(btnRow);
   _startCharRowRef = charRow;
@@ -1392,6 +1688,7 @@ export function hideStartScreen() {
   _startStageRowRef = null;
   _startCharRowRef = null;
   _startBtnRowRef = null;
+  _startPresetRowRef = null;
   if (_startScreen && _startScreen.parentNode) {
     _startScreen.parentNode.removeChild(_startScreen);
   }
@@ -1830,91 +2127,240 @@ export function showShop() {
   const subtitle = document.createElement('div');
   subtitle.style.cssText = `font-family: ${F.body}; font-size: 11px; letter-spacing: 0.32em;
     color: rgba(245,239,225,0.62); text-transform: uppercase; margin-bottom: 22px;`;
-  subtitle.textContent = 'Permanent upgrades — carry between runs';
+  subtitle.textContent = 'Spend sigils on a permanent meta tree — carry between runs';
 
+  // Treasury (coins) + Sigil counter side-by-side in the header. Sigils are the
+  // tree-shop currency; coins remain visible for context (legacy shops, codex).
+  const SIGIL_C = '#c87bff';
   const coinsLine = document.createElement('div');
   coinsLine.style.cssText = `font-family: ${F.display}; font-size: 22px; color: ${C.amber};
     margin-bottom: 28px; letter-spacing: 0.18em;
-    display: flex; align-items: baseline; gap: 12px;`;
+    display: flex; align-items: baseline; gap: 28px; flex-wrap: wrap; justify-content: center;`;
   function paintCoins() {
-    coinsLine.innerHTML = `<span style="font-size:13px;letter-spacing:0.32em;color:rgba(245,239,225,0.62);text-transform:uppercase;">Treasury</span> <span style="font-family:${F.mono};">${getMeta().coins.toLocaleString()}</span>`;
+    const m = getMeta();
+    coinsLine.innerHTML = `
+      <span style="display:inline-flex; align-items:baseline; gap:10px;">
+        <span style="font-family:${F.body};font-size:13px;letter-spacing:0.32em;color:rgba(245,239,225,0.62);text-transform:uppercase;">Treasury</span>
+        <span style="font-family:${F.mono};color:${C.amber};">${m.coins.toLocaleString()}</span>
+      </span>
+      <span style="display:inline-flex; align-items:baseline; gap:10px;">
+        <span style="font-family:${F.body};font-size:13px;letter-spacing:0.32em;color:rgba(245,239,225,0.62);text-transform:uppercase;">Sigils</span>
+        <span style="font-family:${F.mono};color:${SIGIL_C};">✦ ${sigilCount().toLocaleString()}</span>
+      </span>
+    `;
   }
   paintCoins();
 
+  // Three-column branching tree. One column per branch, four tiers stacked.
+  // Tier-to-tier connectors (▼) live between cards inside each column.
   const grid = document.createElement('div');
-  grid.style.cssText = 'display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; max-width: 1100px; width: 100%;';
+  grid.style.cssText = `
+    display: grid; grid-template-columns: repeat(3, minmax(240px, 1fr));
+    gap: 28px;
+    max-width: 1100px; width: 100%;
+    align-items: start;
+  `;
 
-  function paintCard(upg) {
-    const lvl = shopLevel(upg.id);
-    const maxed = lvl >= upg.max;
-    const cost = maxed ? 0 : upgradeCost(upg, lvl);
-    const can = !maxed && getMeta().coins >= cost;
-    const accent = maxed ? C.amber : (can ? C.cyan : 'rgba(120,120,120,0.5)');
+  // Branch metadata — header chrome only; node data comes from SHOP_TREE.
+  const BRANCH_META = {
+    survival: { name: 'Survival', icon: '🛡', tagline: 'Endure',  accent: C.cyan },
+    power:    { name: 'Power',    icon: '⚔', tagline: 'Strike',  accent: C.amber },
+    greed:    { name: 'Greed',    icon: '💰', tagline: 'Loot',    accent: SIGIL_C },
+  };
+
+  function paintNode(node) {
+    const unlocked = nodeUnlocked(node.id);
+    const owned = nodeOwned(node.id);
+    const sigils = sigilCount();
+    const affordable = sigils >= node.cost;
+    const lockedVisually = !unlocked && !owned;
+
+    // Three visual states drive the look: owned (amber, ✓), unlocked-purchasable
+    // (cyan, hover lift), unlocked-but-unaffordable (dim cyan), locked (gray).
+    const state =
+      owned ? 'owned' :
+      !unlocked ? 'locked' :
+      affordable ? 'buy' :
+      'poor';
+
+    const borderC =
+      state === 'owned' ? C.amber :
+      state === 'buy'   ? C.cyan :
+      state === 'poor'  ? 'rgba(127,255,228,0.32)' :
+                          'rgba(80,80,80,0.4)';
+    const txtC =
+      state === 'owned' ? C.text :
+      state === 'locked' ? 'rgba(120,120,120,0.65)' :
+                           C.text;
+    const costC =
+      state === 'owned' ? C.amber :
+      state === 'buy'   ? C.cyan :
+      state === 'poor'  ? 'rgba(127,255,228,0.5)' :
+                          'rgba(120,120,120,0.55)';
+    const iconOverlay =
+      state === 'owned'  ? '<div style="position:absolute;top:8px;right:10px;font-size:18px;color:'+C.amber+';text-shadow:0 1px 4px rgba(0,0,0,0.6);">✓</div>' :
+      state === 'locked' ? '<div style="position:absolute;top:8px;right:10px;font-size:16px;opacity:0.75;">🔒</div>' :
+      '';
+
     const card = document.createElement('div');
     card.style.cssText = `
+      position: relative;
       background: linear-gradient(180deg, rgba(20,28,22,0.94), rgba(8,14,12,0.96));
-      border: 1px solid ${maxed ? C.amber : (can ? C.edge : 'rgba(80,80,80,0.4)')};
+      border: 1px solid ${borderC};
       border-radius: 10px;
-      box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 12px 26px rgba(0,0,0,0.55);
-      padding: 16px 18px;
-      display: grid; grid-template-columns: 56px 1fr; gap: 14px; align-items: center;
-      transition: transform 0.14s ease, border-color 0.14s ease;
+      box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 12px 26px rgba(0,0,0,0.55)
+        ${state === 'owned' ? ', 0 0 18px rgba(255,210,127,0.18)' : ''};
+      padding: 14px 16px;
+      display: grid; grid-template-columns: 52px 1fr; gap: 12px; align-items: center;
+      transition: transform 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease;
+      opacity: ${state === 'locked' ? 0.6 : 1};
     `;
-    // Level pips
-    const pips = Array.from({ length: upg.max }, (_, i) =>
-      `<span style="display:inline-block;width:14px;height:5px;border-radius:2px;background:${i < lvl ? C.amber : 'rgba(255,255,255,0.10)'};"></span>`
-    ).join('');
+
+    // Tier pip row — one bright pip per tier earned on this node. Only owned
+    // nodes light their pips; locked/buy/poor nodes show empty placeholders.
+    const pips = Array.from({ length: 4 }, (_, i) => {
+      const lit = (i + 1 <= node.tier) && state === 'owned';
+      const accent = state === 'owned' ? C.amber : (state === 'buy' ? C.cyan : 'rgba(255,255,255,0.10)');
+      return `<span style="display:inline-block;width:12px;height:4px;border-radius:2px;background:${lit ? accent : 'rgba(255,255,255,0.10)'};"></span>`;
+    }).join('');
+
+    const tierLabel = `T${node.tier}`;
+    const costLine =
+      state === 'owned'  ? 'OWNED' :
+      state === 'locked' ? 'LOCKED' :
+      `✦ ${node.cost}${state === 'poor' ? ` — need ${node.cost - sigils}` : ''}`;
+
     card.innerHTML = `
-      <div style="font-size:40px;text-align:center;filter:drop-shadow(0 3px 6px rgba(0,0,0,0.5));">${upg.icon}</div>
+      ${iconOverlay}
+      <div style="font-size:34px;text-align:center;filter:drop-shadow(0 3px 6px rgba(0,0,0,0.5));opacity:${state === 'locked' ? 0.55 : 1};">${node.icon}</div>
       <div>
-        <div style="font-family:${F.display};font-size:15px;font-weight:700;letter-spacing:0.10em;color:${C.text};">${escapeHtml(upg.name)}</div>
-        <div style="font-size:11.5px;color:rgba(245,239,225,0.72);line-height:1.45;margin-top:3px;">${escapeHtml(upg.desc)}</div>
-        <div style="display:flex;gap:3px;margin-top:8px;">${pips}</div>
-        <div style="font-family:${F.mono};font-size:11px;color:${accent};margin-top:6px;letter-spacing:0.08em;">
-          ${maxed ? 'MAX LEVEL' : `${cost.toLocaleString()} coins`}
+        <div style="display:flex; align-items:baseline; gap:8px;">
+          <div style="font-family:${F.display};font-size:14px;font-weight:700;letter-spacing:0.10em;color:${txtC};">${escapeHtml(node.name)}</div>
+          <div style="font-family:${F.mono};font-size:10px;letter-spacing:0.18em;color:rgba(245,239,225,0.45);">${tierLabel}</div>
+        </div>
+        <div style="font-size:11px;color:${state === 'locked' ? 'rgba(120,120,120,0.55)' : 'rgba(245,239,225,0.72)'};line-height:1.45;margin-top:3px;">${escapeHtml(node.desc)}</div>
+        <div style="display:flex;gap:3px;margin-top:7px;">${pips}</div>
+        <div style="font-family:${F.mono};font-size:11px;color:${costC};margin-top:6px;letter-spacing:0.10em;">
+          ${costLine}
         </div>
       </div>
     `;
-    if (!maxed) {
-      card.style.cursor = can ? 'pointer' : 'not-allowed';
+
+    if (state === 'buy') {
+      card.style.cursor = 'pointer';
       card.addEventListener('mouseenter', () => {
-        if (can) { card.style.transform = 'translateY(-2px)'; card.style.borderColor = C.amber; }
+        card.style.transform = 'translateY(-2px)';
+        card.style.borderColor = C.amber;
       });
       card.addEventListener('mouseleave', () => {
         card.style.transform = 'translateY(0)';
-        card.style.borderColor = can ? C.edge : 'rgba(80,80,80,0.4)';
+        card.style.borderColor = borderC;
       });
       card.onclick = () => {
-        if (buyUpgrade(upg.id)) {
+        const r = purchaseTreeNode(node.id);
+        if (r && r.ok) {
           paintCoins();
           repaintGrid();
         }
       };
+    } else if (state === 'poor') {
+      card.style.cursor = 'not-allowed';
+    } else {
+      card.style.cursor = 'default';
     }
+
+    // Tooltip surfaces unlock requirements when locked, otherwise standard stats.
     bindTooltip(card, () => {
-      const b = shopBlurb(upg.id, lvl, upg.max) || { flavor: upg.desc, tags: ['Meta'] };
-      const nextCost = maxed ? null : upgradeCost(upg, lvl);
+      const branchMeta = BRANCH_META[node.branch];
       const stats = [
-        { label: 'Level', value: `${lvl}/${upg.max}` },
-        { label: 'Effect/Lv', value: upg.desc.replace(' per level', '') },
+        { label: 'Branch', value: branchMeta.name },
+        { label: 'Tier',   value: `${node.tier}/4` },
+        { label: 'Cost',   value: state === 'owned' ? 'OWNED' : `${node.cost} sigils` },
       ];
-      if (nextCost != null) stats.push({ label: 'Next Cost', value: `${nextCost.toLocaleString()} coins` });
-      else stats.push({ label: 'Status', value: 'MAX LEVEL' });
+      if (state === 'poor') stats.push({ label: 'Need', value: `${node.cost - sigils} more sigils` });
+      let bodyExtra = '';
+      if (state === 'locked') {
+        const reqNames = node.requires.map(rid => {
+          const r = SHOP_TREE.find(n => n.id === rid);
+          return r ? r.name : rid;
+        }).join(', ');
+        bodyExtra = `\n\nLocked. Requires: ${reqNames || 'none'}.`;
+      } else if (state === 'owned') {
+        bodyExtra = '\n\nPurchased — applies to every future run.';
+      } else if (state === 'buy') {
+        bodyExtra = '\n\nPermanent: applies to every future run.';
+      } else if (state === 'poor') {
+        bodyExtra = '\n\nEarn sigils from daily runs, quests, and mini-bosses.';
+      }
       return {
-        title: upg.name,
-        icon: upg.icon,
-        body: b.flavor + (maxed ? '\n\nFully purchased — buffs apply to every run.' : '\n\nPermanent: applies to every future run.'),
-        tags: b.tags,
+        title: node.name,
+        icon: node.icon,
+        body: node.desc + bodyExtra,
+        tags: [branchMeta.name, `Tier ${node.tier}`],
         stats,
-        accent: maxed ? '#ffd27f' : '#7fffe4',
+        accent:
+          state === 'owned'  ? '#ffd27f' :
+          state === 'locked' ? '#888' :
+                               '#7fffe4',
       };
     });
     return card;
   }
+
+  // Build a branch column: header + 4 stacked nodes + ▼ connectors.
+  function paintColumn(branchId) {
+    const meta = BRANCH_META[branchId];
+    const col = document.createElement('div');
+    col.style.cssText = 'display:flex; flex-direction:column; gap:10px;';
+
+    const header = document.createElement('div');
+    header.style.cssText = `
+      text-align: center;
+      padding: 10px 12px 14px;
+      border-bottom: 1px solid ${C.edge};
+      margin-bottom: 4px;
+    `;
+    header.innerHTML = `
+      <div style="font-size:28px;filter:drop-shadow(0 3px 6px rgba(0,0,0,0.55));">${meta.icon}</div>
+      <div style="font-family:${F.display}; font-size:18px; font-weight:700; letter-spacing:0.20em; color:${meta.accent}; margin-top:2px;">${escapeHtml(meta.name)}</div>
+      <div style="font-family:${F.body}; font-size:10.5px; letter-spacing:0.32em; text-transform:uppercase; color:rgba(245,239,225,0.55); margin-top:3px;">${escapeHtml(meta.tagline)}</div>
+    `;
+    col.appendChild(header);
+
+    const branchNodes = SHOP_TREE
+      .filter(n => n.branch === branchId)
+      .sort((a, b) => a.tier - b.tier);
+    branchNodes.forEach((node, i) => {
+      col.appendChild(paintNode(node));
+      if (i < branchNodes.length - 1) {
+        const conn = document.createElement('div');
+        const lit = nodeOwned(node.id);
+        conn.style.cssText = `text-align:center; font-family:${F.mono}; font-size:16px; line-height:1;
+          color:${lit ? meta.accent : 'rgba(245,239,225,0.22)'};
+          text-shadow:${lit ? `0 0 8px ${meta.accent}55` : 'none'};
+          margin: -2px 0;`;
+        conn.textContent = '▼';
+        col.appendChild(conn);
+      }
+    });
+    return col;
+  }
+
   let _closeBtnRef = null;
   function refreshShopFocus(initialIndex = 0) {
     if (_shopFocusScope) { popFocusScope(_shopFocusScope); _shopFocusScope = null; }
-    const cards = Array.from(grid.children);
+    // Collect every node card across the 3 columns in column-major order so
+    // gamepad up/down navigates within a branch column naturally.
+    const cards = [];
+    for (const col of grid.children) {
+      for (const child of col.children) {
+        // Skip the column header (first child) and connectors (▼ divs).
+        // Node cards are the only elements with cursor styling or pointer.
+        if (child.tagName === 'DIV' && child.children.length > 0 && child.style.gridTemplateColumns) {
+          cards.push(child);
+        }
+      }
+    }
     const els = [...cards];
     if (_closeBtnRef) els.push(_closeBtnRef);
     _shopFocusScope = pushFocusScope(els, { layout: 'auto', onCancel: hideShop, initialIndex });
@@ -1922,7 +2368,9 @@ export function showShop() {
   function repaintGrid() {
     const prevFocusIdx = _shopFocusScope ? _shopFocusScope.focused : 0;
     grid.innerHTML = '';
-    for (const upg of SHOP_UPGRADES) grid.appendChild(paintCard(upg));
+    grid.appendChild(paintColumn('survival'));
+    grid.appendChild(paintColumn('power'));
+    grid.appendChild(paintColumn('greed'));
     if (_closeBtnRef) refreshShopFocus(prevFocusIdx);
   }
   repaintGrid();
@@ -2172,7 +2620,7 @@ export function showQuestBoard() {
     if (isActive && complete) {
       btns.appendChild(mkBtn('Claim', '#ffae6a', () => {
         const result = claimQuest(tpl.id);
-        if (result) { repaint(); }
+        if (result) { grantSigils(2, 'quest'); repaint(); }
       }));
     }
     if (isActive && !complete) {

@@ -539,10 +539,10 @@ export function killEnemy(enemy) {
   }
 
   // Quest progress hooks — increment hunt/boss counters at the source.
-  import('./meta.js').then(({ questEvent }) => {
+  import('./meta.js').then(({ questEvent, grantSigils }) => {
     questEvent('kill', { tier: enemy.glbKey });
-    if (enemy.isMiniBoss)  questEvent('miniBoss');
-    if (enemy.isFinalBoss) questEvent('finalBoss');
+    if (enemy.isMiniBoss)  { questEvent('miniBoss');  grantSigils(1, 'miniBoss'); }
+    if (enemy.isFinalBoss) { questEvent('finalBoss'); grantSigils(5, 'finalBoss'); }
   });
 
   // Achievements
