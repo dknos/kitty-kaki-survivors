@@ -422,13 +422,43 @@ function _buildModal({ ENEMY_TIERS, REGISTRY, EVOLUTIONS, PASSIVES, SECRETS, ACH
   repaint();
 }
 
+// Stat-tier colors (used in the enemy detail panel). Red = dangerous, amber =
+// tough, green = manageable. Bigger HP/DMG is worse for the player; bigger
+// Speed is worse too (kite pressure). Colors are derived against the median
+// of the live ENEMY_TIERS table so the scale stays calibrated if rebalancing
+// shifts the roster.
+const _STAT_COLORS = { red: '#ff6b6b', amber: '#ffd27f', green: '#7fffa8' };
+function _median(arr) {
+  if (!arr || !arr.length) return 0;
+  const s = arr.slice().sort((a, b) => a - b);
+  const m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+function _statTierColor(kind, value, median) {
+  if (median <= 0 || typeof value !== 'number') return _STAT_COLORS.amber;
+  const r = value / median;
+  // HP / damage: 1.5× median = red (deadly outlier), >1× = amber, ≤1× = green.
+  // Speed has a tighter scale — 1.3× = red, since 2.2→3.2 is a kite-killing jump.
+  const redCut = (kind === 'spd') ? 1.30 : 1.50;
+  if (r >= redCut) return _STAT_COLORS.red;
+  if (r > 1.0)     return _STAT_COLORS.amber;
+  return _STAT_COLORS.green;
+}
+
 // Map current tab to an array of entries:
 //   { id, name, icon, lore, discovered, kills?, picks?, statLine }
+// stats: array of [label, value] or [label, value, color] — color tints the
+// value cell in the detail panel; falsy color falls back to C.amber.
 function _entriesForTab(tab, { ENEMY_TIERS, REGISTRY, EVOLUTIONS, PASSIVES, SECRETS, WEEKLY_MUTATORS }) {
   const meta = getMeta();
   const codex = meta.codex || {};
   if (tab === 'enemies') {
     const sec = codex.enemies || {};
+    // Roster-relative medians for the stat color tiering. Computed once per
+    // tab open (this function is called inside repaint); cheap on ~25 entries.
+    const medHp  = _median(ENEMY_TIERS.map(t => t.hp));
+    const medSpd = _median(ENEMY_TIERS.map(t => t.spd));
+    const medDmg = _median(ENEMY_TIERS.map(t => t.dmg));
     return ENEMY_TIERS.map(t => {
       const lore = LORE[t.glb] || { name: t.glb, icon: '❓', text: '' };
       const rec = sec[t.glb];
@@ -441,9 +471,9 @@ function _entriesForTab(tab, { ENEMY_TIERS, REGISTRY, EVOLUTIONS, PASSIVES, SECR
         kills: rec ? (rec.kills || 0) : 0,
         statLine: rec ? `Kills: ${rec.kills || 0}` : '',
         stats: [
-          ['HP',      t.hp],
-          ['Speed',   t.spd],
-          ['Damage',  t.dmg],
+          ['HP',      t.hp,  _statTierColor('hp',  t.hp,  medHp)],
+          ['Speed',   t.spd, _statTierColor('spd', t.spd, medSpd)],
+          ['Damage',  t.dmg, _statTierColor('dmg', t.dmg, medDmg)],
           ['Tier',    t.elite ? 'Elite' : (t.isMiniBoss ? 'Mini-boss' : 'Standard')],
         ],
       };
@@ -646,10 +676,14 @@ function _renderDetail(ent, onBack) {
     box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 14px 36px rgba(0,0,0,0.55);
     padding: 28px 32px;
   `;
-  const statsRows = (ent.stats || []).map(([k, v]) => `
+  const statsRows = (ent.stats || []).map((row) => {
+    const k = row[0], v = row[1];
+    const valColor = row[2] || C.amber;
+    return `
     <div style="font-family:${F.body};font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:rgba(245,239,225,0.62);">${_esc(k)}</div>
-    <div style="font-family:${F.mono};font-size:13px;color:${C.amber};text-align:right;">${_esc(v)}</div>
-  `).join('');
+    <div style="font-family:${F.mono};font-size:13px;color:${valColor};text-align:right;">${_esc(v)}</div>
+  `;
+  }).join('');
   wrap.innerHTML = `
     <div style="display:flex;align-items:center;gap:18px;margin-bottom:14px;">
       <div style="font-size:60px;line-height:1;filter:drop-shadow(0 3px 6px rgba(0,0,0,0.5));">${_esc(ent.icon)}</div>
