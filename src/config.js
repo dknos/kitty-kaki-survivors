@@ -50,8 +50,13 @@ export const DASH = {
 };
 
 export const XP = {
-  base: 5,                  // xp needed for level 2
-  growth: 1.18,             // xpNext = base * growth^(level-1)
+  // Iter 32h — level-up cadence rebalance.
+  // Old (5 / 1.18^L): L2=5, L10=19, L20=100 → trash gems = level every 4-6s,
+  // elite kills cascaded into 2-3 stacked modals (the "spam" feedback).
+  // New (12 / 1.21^L): L2=12, L10=72, L20=460 → level every ~10s early,
+  // every ~25s mid-game. Multi-level cascades from one elite are rare.
+  base: 12,                 // xp needed for level 2 (was 5)
+  growth: 1.21,             // xpNext = base * growth^(level-1) (was 1.18)
   gemValue: 1,              // default
   gemSize: 0.35,
   gemMagnetMaxSpeed: 30,
