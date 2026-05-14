@@ -60,7 +60,7 @@ const F = {
 // ── Build version ────────────────────────────────────────────────────────────
 // Flipped to '1.0.0' on the iter-11 ship commit (Shop Tree Live Wires —
 // the broken-tier-1-3-consumers gap was the last v1.0 blocker).
-export const KK_VERSION = '1.4.9';
+export const KK_VERSION = '1.4.10';
 
 // ── Module-local DOM refs ────────────────────────────────────────────────────
 let _root = null;
@@ -373,7 +373,9 @@ function injectCSS() {
       backdrop-filter: blur(8px);
       -webkit-backdrop-filter: blur(8px);
       display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
+      align-items: center; justify-content: flex-start;
+      overflow-y: auto; overflow-x: hidden;
+      padding: 40px 20px 80px;
       pointer-events: auto;
       font-family: ${F.body};
       z-index: 90;
@@ -2507,7 +2509,7 @@ export function showStartScreen(text) {
 
   const startRunBtn = document.createElement('button');
   startRunBtn.type = 'button';
-  startRunBtn.textContent = '▶  START RUN';
+  startRunBtn.textContent = '▶  PLAY';
   startRunBtn.className = 'kk-btn-primary';
   startRunBtn.style.cssText = `
     padding: 14px 38px; cursor: pointer;
