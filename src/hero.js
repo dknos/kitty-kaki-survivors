@@ -15,6 +15,7 @@ import { spawnKillRing } from './fx.js';
 import { spawnDashStreak } from './vfxBurst.js';
 import { smashLogsInRadius } from './destructibles.js';
 import { spawnHeroDamageNumber } from './damageNumbers.js';
+import { spawnImpactBurst } from './vfxBurst.js';
 
 const _tmpDir = new THREE.Vector3();
 
@@ -128,6 +129,34 @@ export function initHero(scene) {
         }
       }
     });
+    // Iter 24d — capture per-mat flash refs so takeDamage can pulse the hero
+    // red on hit (mirrors enemies.js:170-180 pattern). Always clone here so
+    // we never leak emissive mutations into the shared GLTF material cache,
+    // regardless of whether the tint loop above already cloned single-mat
+    // meshes. The extra clone for already-cloned mats is cheap (one-shot at
+    // initHero / rebuildHero, never per-frame) and keeps the path simple.
+    const heroFlashMats = [];
+    mesh.traverse((o) => {
+      if (!o.isMesh || !o.material) return;
+      if (Array.isArray(o.material)) {
+        o.material = o.material.map(m => m.clone());
+        for (const mm of o.material) {
+          heroFlashMats.push({
+            mat: mm,
+            origEmissive: mm.emissive ? mm.emissive.getHex() : 0x000000,
+            origIntensity: mm.emissiveIntensity || 0,
+          });
+        }
+      } else {
+        o.material = o.material.clone();
+        heroFlashMats.push({
+          mat: o.material,
+          origEmissive: o.material.emissive ? o.material.emissive.getHex() : 0x000000,
+          origIntensity: o.material.emissiveIntensity || 0,
+        });
+      }
+    });
+    mesh.userData.flashMats = heroFlashMats;
     group.add(mesh);
     _innerMesh = mesh;
     _baseInnerY = mesh.position.y;
@@ -360,6 +389,28 @@ export function updateHero(dt) {
     } else if (!h.mesh.visible) {
       h.mesh.visible = true;
     }
+
+    // Iter 24d — hero-hit flash (red emissive pulse on every recent takeDamage).
+    // Mirrors enemies.js:836-852: snap on at flash start, snap off when window
+    // expires. 1.5x intensity vs enemy hit-flash so the player gets a strong
+    // "I just got hit" cue. _innerMesh.userData.flashMats was captured at init.
+    if (_innerMesh && _innerMesh.userData && _innerMesh.userData.flashMats) {
+      const fm = _innerMesh.userData.flashMats;
+      const flashing = (h._flashUntil || 0) > state.time.real;
+      if (flashing !== h._wasFlashing) {
+        for (const m of fm) {
+          if (!m.mat || !m.mat.emissive) continue;
+          if (flashing) {
+            m.mat.emissive.setHex(0xff3344);    // red — matches heroDamage number color
+            m.mat.emissiveIntensity = 2.4;      // 1.5x the enemy flash for clarity
+          } else {
+            m.mat.emissive.setHex(m.origEmissive);
+            m.mat.emissiveIntensity = m.origIntensity;
+          }
+        }
+        h._wasFlashing = flashing;
+      }
+    }
   }
 
   // Mirror Step: tick the ghost-twin visuals (fade/scale out).
@@ -408,8 +459,20 @@ export function takeDamage(amt) {
   if (state.fx.shake < 0.30 + 0.30 * sev) state.fx.shake = 0.30 + 0.30 * sev;
   // Deeper "ouch" SFX for harder hits. Wired in audio.js.
   try { flashDamage(sev); } catch (_) {}
-  if (sfx && sfx.heroHurt) sfx.heroHurt();
+  // Iter 24d — heroHurt SFX gain scales with damage severity (0.42..0.78).
+  // Heavy contact (boss slam) gets a louder, lower-pitched ouch.
+  if (sfx && sfx.heroHurt) {
+    sfx.heroHurt({ gain: 0.42 + sev * 0.36, rate: 1.0 - sev * 0.08 });
+  }
   try { spawnHeroDamageNumber(amt); } catch (_) {}
+
+  // Iter 24d — hero mesh red-flash + contact-point spark burst.
+  // Flash duration scales 0.10..0.22s with severity. Spark fires at hero
+  // chest height so iso camera reads it as a hit, not a footstep.
+  h._flashUntil = state.time.real + (0.10 + sev * 0.12);
+  try {
+    spawnImpactBurst(h.pos.x, (h.pos.y || 0) + 0.9, h.pos.z, 0xff3344, 0.4 + sev * 0.5);
+  } catch (_) {}
 
   if (h.hp <= 0) {
     // ── Kitty "Nine Lives" signature: first lethal hit becomes 1 HP + i-frame.
