@@ -204,24 +204,23 @@ export function endHelltide(announce = true) {
   }
   _embers.length = 0;
   if (_emberInst) _emberInst.instanceMatrix.needsUpdate = true;
-  // Lifetime stat updates
+  // Lifetime stat updates — always credit, even on death-mid-Helltide
+  // (teardownHelltide path passes announce=false but the player still earned
+  // those embers; only the closing banner is gated on announce).
+  const banked = state.run.helltideEmbersBanked || 0;
+  state.run.helltideMaxBanked = Math.max(state.run.helltideMaxBanked || 0, banked);
+  try {
+    if (banked > 0) bumpLifetime('helltideEmbersTotal', banked);
+    const meta = getMeta();
+    if (!meta.lifetime) meta.lifetime = {};
+    const prevMax = meta.lifetime.helltideMaxBanked || 0;
+    if (banked > prevMax) {
+      meta.lifetime.helltideMaxBanked = banked;
+      saveMeta();
+    }
+  } catch (_) {}
   if (announce) {
-    const banked = state.run.helltideEmbersBanked || 0;
-    state.run.helltideMaxBanked = Math.max(state.run.helltideMaxBanked || 0, banked);
     showBanner('HELLTIDE ENDED — BANKED ' + banked + ' ⚜', 3.0, '#ff8a5a');
-    // Iter 18 — persist to meta.lifetime so the Hall of Records modal can
-    // surface the running totals. bumpLifetime() handles missing-key cases
-    // and saves automatically. Max is set explicitly (bumpLifetime adds).
-    try {
-      if (banked > 0) bumpLifetime('helltideEmbersTotal', banked);
-      const meta = getMeta();
-      if (!meta.lifetime) meta.lifetime = {};
-      const prevMax = meta.lifetime.helltideMaxBanked || 0;
-      if (banked > prevMax) {
-        meta.lifetime.helltideMaxBanked = banked;
-        saveMeta();
-      }
-    } catch (_) {}
   }
   // Hide the countdown bar
   try { hideHelltideBar(); } catch (_) {}
