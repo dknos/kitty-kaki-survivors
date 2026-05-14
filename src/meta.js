@@ -102,6 +102,11 @@ const DEFAULT = {
     // Bumped from commitRunResults when state.run.allMiniBosses is set by
     // the run-end caller. Drives triple_x3.
     fullSweepRuns: 0,
+    // Iter 18: Helltide lifetime stats — bumped from helltide.endHelltide()
+    // at every event end. Surfaced in the Hall of Records modal so the
+    // run-currency feels persistent.
+    helltideEmbersTotal: 0,   // cumulative ⚜ banked across all runs
+    helltideMaxBanked: 0,     // best single-Helltide bank across history
   },
   // Daily challenge: persistent best per-day; rolls over at local midnight
   dailyRun: {

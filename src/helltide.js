@@ -29,6 +29,7 @@ import { ENEMY_TIERS } from './config.js';
 import { spawnEnemy } from './enemies.js';
 import { showBanner, showHelltideBar, hideHelltideBar } from './ui.js';
 import { sfx } from './audio.js';
+import { bumpLifetime, getMeta, saveMeta } from './meta.js';
 import { BLOOM_LAYER } from './postfx.js';
 import { tex } from './particleTextures.js';
 import { makeRuneRingTexture } from './enemyTells.js';
@@ -208,6 +209,19 @@ export function endHelltide(announce = true) {
     const banked = state.run.helltideEmbersBanked || 0;
     state.run.helltideMaxBanked = Math.max(state.run.helltideMaxBanked || 0, banked);
     showBanner('HELLTIDE ENDED — BANKED ' + banked + ' ⚜', 3.0, '#ff8a5a');
+    // Iter 18 — persist to meta.lifetime so the Hall of Records modal can
+    // surface the running totals. bumpLifetime() handles missing-key cases
+    // and saves automatically. Max is set explicitly (bumpLifetime adds).
+    try {
+      if (banked > 0) bumpLifetime('helltideEmbersTotal', banked);
+      const meta = getMeta();
+      if (!meta.lifetime) meta.lifetime = {};
+      const prevMax = meta.lifetime.helltideMaxBanked || 0;
+      if (banked > prevMax) {
+        meta.lifetime.helltideMaxBanked = banked;
+        saveMeta();
+      }
+    } catch (_) {}
   }
   // Hide the countdown bar
   try { hideHelltideBar(); } catch (_) {}

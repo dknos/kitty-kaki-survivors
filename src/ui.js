@@ -4252,8 +4252,63 @@ export function showHallOfRecords() {
   close.addEventListener('mouseenter', () => { try { sfx.uiHover(); } catch (_) {} });
   close.onclick = hideHallOfRecords;
 
+  // ── Helltide stats panel (iter 18) ──────────────────────────────────────
+  // Sits between the subtitle and the top-runs table so it's the first thing
+  // a returning player sees — surfaces the lifetime "feels like it MATTERS"
+  // weight that iter 17's run-currency was missing. Reads from meta.lifetime
+  // which helltide.endHelltide() bumps on every event close.
+  const helltidePanel = document.createElement('div');
+  {
+    const m = (typeof getMeta === 'function') ? getMeta() : {};
+    const lt = (m && m.lifetime) || {};
+    const totalEmbers = (lt.helltideEmbersTotal | 0) || 0;
+    const maxBanked = (lt.helltideMaxBanked | 0) || 0;
+    helltidePanel.style.cssText = `
+      width: 100%; max-width: 1000px;
+      background: linear-gradient(180deg, rgba(34,18,12,0.92), rgba(20,10,8,0.94));
+      border: 1px solid rgba(255,122,40,0.45);
+      border-radius: 10px;
+      box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset,
+                  0 12px 28px rgba(0,0,0,0.55),
+                  0 0 28px rgba(255,90,40,0.10);
+      padding: 14px 22px;
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 18px; flex-wrap: wrap;
+      margin-bottom: 14px;
+    `;
+    helltidePanel.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:2px;">
+        <div style="font-family:${F.display};font-size:13px;font-weight:900;letter-spacing:0.28em;color:#ffae6a;text-transform:uppercase;">
+          🔥 Helltide
+        </div>
+        <div style="font-family:${F.body};font-size:10.5px;letter-spacing:0.22em;color:rgba(245,239,225,0.55);text-transform:uppercase;">
+          Hellfire embers — lifetime tally
+        </div>
+      </div>
+      <div style="display:flex;gap:28px;align-items:baseline;">
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;">
+          <div style="font-family:${F.mono};font-size:22px;color:#ff8a5a;letter-spacing:0.04em;">
+            ${totalEmbers.toLocaleString()} ⚜
+          </div>
+          <div style="font-family:${F.body};font-size:9.5px;letter-spacing:0.24em;color:rgba(245,239,225,0.62);text-transform:uppercase;">
+            Embers banked (lifetime)
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:2px;">
+          <div style="font-family:${F.mono};font-size:22px;color:#ff8a5a;letter-spacing:0.04em;">
+            ${maxBanked.toLocaleString()} ⚜
+          </div>
+          <div style="font-family:${F.body};font-size:9.5px;letter-spacing:0.24em;color:rgba(245,239,225,0.62);text-transform:uppercase;">
+            Most banked in one Helltide
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   _hallModal.appendChild(title);
   _hallModal.appendChild(subtitle);
+  _hallModal.appendChild(helltidePanel);
   _hallModal.appendChild(table);
   _hallModal.appendChild(close);
   _root.appendChild(_hallModal);
