@@ -58,7 +58,7 @@ const F = {
 // ── Build version ────────────────────────────────────────────────────────────
 // Flipped to '1.0.0' on the iter-11 ship commit (Shop Tree Live Wires —
 // the broken-tier-1-3-consumers gap was the last v1.0 blocker).
-export const KK_VERSION = '1.3.8';
+export const KK_VERSION = '1.3.9';
 
 // ── Module-local DOM refs ────────────────────────────────────────────────────
 let _root = null;
@@ -401,6 +401,183 @@ function injectCSS() {
       .kk-modal-title { margin-bottom: 18px; }
       .kk-hp-bar { width: 150px; }
     }
+    /* ──────────────────────────────────────────────────────────────────
+       Iter 29b — unified menu visual polish.
+       Layered ON TOP of the original class rules; reinforces consistency
+       across every modal (start screen, death, options, shop, house,
+       grimoire, quests, casino, hall, codex). Tokens stay in C/F so the
+       design language stays single-source.
+       ────────────────────────────────────────────────────────────────── */
+    /* Modal scaffold — richer backdrop, smooth fade-in entry */
+    .kk-modal, .kk-death, .kk-start {
+      animation: kk-modal-in 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes kk-modal-in {
+      from { opacity: 0; backdrop-filter: blur(0px); -webkit-backdrop-filter: blur(0px); }
+      to   { opacity: 1; }
+    }
+    /* Modal title — ornamental gold underline that draws in on entry */
+    .kk-modal-title {
+      position: relative;
+      padding-bottom: 14px;
+    }
+    .kk-modal-title::after {
+      content: '';
+      position: absolute; left: 50%; bottom: 0;
+      width: 220px; height: 2px;
+      transform: translateX(-50%);
+      background: linear-gradient(90deg,
+        transparent 0%,
+        ${C.amber} 18%,
+        ${C.amber} 50%,
+        ${C.amber} 82%,
+        transparent 100%);
+      box-shadow: 0 0 14px ${C.amber}66;
+      animation: kk-underline-in 0.6s cubic-bezier(0.4, 0, 0.2, 1) 0.18s backwards;
+    }
+    @keyframes kk-underline-in {
+      from { transform: translateX(-50%) scaleX(0); opacity: 0; }
+      to   { transform: translateX(-50%) scaleX(1); opacity: 1; }
+    }
+    /* Panel — subtle inner glow + animated top edge highlight */
+    .kk-panel {
+      position: relative;
+      background: linear-gradient(180deg, rgba(22,32,26,0.92), rgba(8,14,12,0.96)) !important;
+      border-color: rgba(255,210,127,0.22) !important;
+      box-shadow:
+        0 1px 0 rgba(255,255,255,0.06) inset,
+        0 0 0 1px rgba(0,0,0,0.45) inset,
+        0 12px 28px rgba(0,0,0,0.55),
+        0 0 0 1px rgba(255,210,127,0.08) !important;
+    }
+    .kk-panel::before {
+      content: '';
+      position: absolute; top: -1px; left: 14%; right: 14%; height: 1px;
+      background: linear-gradient(90deg, transparent, ${C.amber}, transparent);
+      opacity: 0.45;
+      pointer-events: none;
+    }
+    /* Card hover — slightly lifted glow + amber edge sheen */
+    .kk-card {
+      transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+    }
+    .kk-card:hover, .kk-card:focus {
+      transform: translateY(-6px) scale(1.015);
+    }
+    /* ── Button system (3 tiers) ──
+       Apply via .kk-btn-primary / .kk-btn-secondary / .kk-btn-danger.
+       Existing inline-styled buttons stay; new code can opt in. */
+    .kk-btn-primary, .kk-btn-secondary, .kk-btn-danger {
+      padding: 11px 24px;
+      border-radius: 8px;
+      font-family: ${F.display};
+      font-size: calc(var(--kk-font-scale, 1) * 13px);
+      font-weight: 700;
+      letter-spacing: 0.28em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: transform 0.14s ease, border-color 0.14s ease,
+                  box-shadow 0.18s ease, background 0.18s ease, color 0.18s ease;
+      backdrop-filter: blur(2px);
+    }
+    .kk-btn-primary {
+      background: linear-gradient(180deg, rgba(28,34,30,0.95), rgba(12,18,14,0.95));
+      border: 1px solid ${C.amber};
+      color: ${C.amber};
+      box-shadow:
+        0 1px 0 rgba(255,255,255,0.06) inset,
+        0 8px 22px rgba(0,0,0,0.5),
+        0 0 18px rgba(255,210,127,0.18);
+    }
+    .kk-btn-primary:hover, .kk-btn-primary:focus-visible {
+      transform: translateY(-2px);
+      background: linear-gradient(180deg, rgba(48,40,28,0.95), rgba(28,22,14,0.95));
+      box-shadow:
+        0 1px 0 rgba(255,255,255,0.08) inset,
+        0 14px 28px rgba(0,0,0,0.55),
+        0 0 26px rgba(255,210,127,0.45);
+    }
+    .kk-btn-secondary {
+      background: linear-gradient(180deg, rgba(20,28,22,0.78), rgba(8,14,12,0.86));
+      border: 1px solid ${C.edge};
+      color: ${C.text};
+      box-shadow:
+        0 1px 0 rgba(255,255,255,0.04) inset,
+        0 6px 18px rgba(0,0,0,0.5);
+    }
+    .kk-btn-secondary:hover, .kk-btn-secondary:focus-visible {
+      transform: translateY(-2px);
+      border-color: ${C.cyan};
+      color: ${C.cyan};
+      box-shadow:
+        0 1px 0 rgba(255,255,255,0.06) inset,
+        0 12px 24px rgba(0,0,0,0.55),
+        0 0 22px rgba(127,255,228,0.22);
+    }
+    .kk-btn-danger {
+      background: linear-gradient(180deg, rgba(40,16,16,0.95), rgba(20,8,8,0.95));
+      border: 1px solid ${C.red};
+      color: ${C.red};
+      box-shadow:
+        0 1px 0 rgba(255,255,255,0.04) inset,
+        0 8px 22px rgba(0,0,0,0.5),
+        0 0 18px rgba(255,94,94,0.18);
+    }
+    .kk-btn-danger:hover, .kk-btn-danger:focus-visible {
+      transform: translateY(-2px);
+      background: linear-gradient(180deg, rgba(64,20,20,0.95), rgba(28,10,10,0.95));
+      box-shadow:
+        0 1px 0 rgba(255,255,255,0.06) inset,
+        0 14px 28px rgba(0,0,0,0.55),
+        0 0 26px rgba(255,94,94,0.45);
+    }
+    /* Section headers shared across modals — uppercase amber chip with rule */
+    .kk-section-hdr {
+      font-family: ${F.display};
+      font-size: calc(var(--kk-font-scale, 1) * 12px);
+      font-weight: 700;
+      letter-spacing: 0.36em;
+      color: ${C.amber};
+      text-transform: uppercase;
+      padding: 0 0 8px 0;
+      margin: 4px 0 10px 0;
+      border-bottom: 1px solid rgba(255,210,127,0.22);
+      position: relative;
+    }
+    .kk-section-hdr::after {
+      content: '';
+      position: absolute; left: 0; bottom: -1px;
+      width: 36px; height: 1px;
+      background: ${C.amber};
+      box-shadow: 0 0 6px ${C.amber};
+    }
+    /* Scrollbar polish — dark-themed thin scrollbar in modal panels */
+    .kk-modal::-webkit-scrollbar,
+    .kk-death::-webkit-scrollbar,
+    .kk-panel::-webkit-scrollbar {
+      width: 8px; height: 8px;
+    }
+    .kk-modal::-webkit-scrollbar-track,
+    .kk-death::-webkit-scrollbar-track,
+    .kk-panel::-webkit-scrollbar-track {
+      background: rgba(8,14,12,0.55);
+      border-radius: 4px;
+    }
+    .kk-modal::-webkit-scrollbar-thumb,
+    .kk-death::-webkit-scrollbar-thumb,
+    .kk-panel::-webkit-scrollbar-thumb {
+      background: linear-gradient(180deg, ${C.amber}88, ${C.amber}44);
+      border-radius: 4px;
+      border: 1px solid rgba(0,0,0,0.4);
+    }
+    .kk-modal::-webkit-scrollbar-thumb:hover,
+    .kk-death::-webkit-scrollbar-thumb:hover,
+    .kk-panel::-webkit-scrollbar-thumb:hover {
+      background: ${C.amber};
+    }
+    /* Generic global override — make every button feel snappier */
+    #ui-root button:active { transform: translateY(0); transition-duration: 0.05s; }
+
     /* Iter 29 — small-screen modal fits.
        Modals are full-viewport flex containers; cards/grids inside use
        minmax(280-320px, 1fr) which doesn't shrink past their min and
@@ -1117,15 +1294,9 @@ export function showDeathScreen() {
   // to the start screen so the player can rebind character/stage/options.
   const menuBtn = document.createElement('button');
   menuBtn.type = 'button';
+  menuBtn.className = 'kk-btn-secondary';
   menuBtn.textContent = '↩ Main Menu';
-  menuBtn.style.cssText = `padding: 14px 24px; cursor: pointer;
-    background: linear-gradient(180deg, rgba(20,16,28,0.95), rgba(10,8,14,0.95));
-    border: 1px solid ${C.magenta};
-    border-radius: 8px;
-    color: ${C.magenta};
-    font-family: ${F.display}; font-size: calc(var(--kk-font-scale, 1) * 16px); font-weight: 700;
-    letter-spacing: 0.24em;
-    box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 12px 28px rgba(0,0,0,0.5);`;
+  menuBtn.style.cssText = `padding: 14px 24px;`;
   btnRow.appendChild(menuBtn);
 
   const hint = document.createElement('div');
@@ -4375,14 +4546,8 @@ export function showOptions() {
 
   const close = document.createElement('button');
   close.type = 'button';
-  close.className = 'kk-fs-sm';
+  close.className = 'kk-btn-secondary kk-fs-sm';
   close.textContent = 'Close · Esc';
-  close.style.cssText = `padding: 10px 26px; cursor: pointer;
-    background: linear-gradient(180deg, rgba(20,28,22,0.78), rgba(8,14,12,0.86));
-    border: 1px solid ${C.edge}; border-radius: 8px;
-    color: ${C.magenta}; font-family: ${F.display}; font-weight: 700;
-    letter-spacing: 0.28em;
-    box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 20px rgba(0,0,0,0.5);`;
   close.setAttribute('aria-label', 'Close options');
   close.addEventListener('click', hideOptions);
   footer.appendChild(close);
@@ -4390,14 +4555,8 @@ export function showOptions() {
   if (state.mode !== 'menu') {
     const menuBtn = document.createElement('button');
     menuBtn.type = 'button';
-    menuBtn.className = 'kk-fs-sm';
+    menuBtn.className = 'kk-btn-primary kk-fs-sm';
     menuBtn.textContent = '↩ Main Menu';
-    menuBtn.style.cssText = `padding: 10px 26px; cursor: pointer;
-      background: linear-gradient(180deg, rgba(20,16,28,0.85), rgba(10,8,14,0.92));
-      border: 1px solid ${C.magenta}; border-radius: 8px;
-      color: ${C.magenta}; font-family: ${F.display}; font-weight: 700;
-      letter-spacing: 0.28em;
-      box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 20px rgba(0,0,0,0.5);`;
     menuBtn.setAttribute('aria-label', 'Return to main menu');
     menuBtn.addEventListener('click', () => {
       if (typeof window.kkReturnToMenu === 'function') window.kkReturnToMenu();
