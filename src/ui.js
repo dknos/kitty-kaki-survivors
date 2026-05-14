@@ -4698,8 +4698,9 @@ export function showHelltideBar(remainingSec, totalSec, embers) {
       height: 100%; width: 100%;
       background: linear-gradient(90deg, #ffc26b, #ff5a28 60%, #b03010);
       box-shadow: 0 0 10px rgba(255,90,40,0.65) inset;
-      transition: width 0.18s linear;
     `;
+    // No CSS transition — we drive width directly each tick from showHelltideBar.
+    // A CSS transition fights the per-frame update and reads as stutter.
     track.appendChild(_helltideFill);
     _helltideBar.appendChild(header);
     _helltideBar.appendChild(track);

@@ -19,7 +19,7 @@ kills, banks on pickup, and unlocks Tortured Gift chests.
 
 | File | Purpose | LOC delta |
 |------|---------|-----------|
-| `src/helltide.js` | **NEW** — orchestration, sub-events, ember pool, rain particles | ~570 |
+| `src/helltide.js` | **NEW** — orchestration, sub-events, ember pool, rain particles | ~590 |
 | `src/miniEvents.js` | Wire init/tick/teardown; suppress new mini-events during helltide | +12 |
 | `src/spawnDirector.js` | Multiply `swarmMul` by `state.run.helltideSpawnMul` | +5 |
 | `src/env.js` | `applyHelltideOverlay(active, intensity)` — snapshot + lerp lighting | +75 |
@@ -67,23 +67,45 @@ surge    — Mini-Boss Surge (single elite at 1.5× HP, drops 30 ⚜ on death)
 Weighted pick: 35% chest, 30% threat, 20% altar, 15% surge.
 Max 4 concurrent; next fires every 25-45s. Expected total over 3 min: 6-8.
 
-### Kill-detection (poll-and-diff)
+### Kill-detection (track-and-diff)
 
 `src/enemies.js` is hands-off this iter, so the ember-on-kill drop can't be
-wired through `killEnemy`. Instead, `tickHelltide` walks
-`state.enemies.active` each tick, identifying enemies by reference:
+wired through `killEnemy`. **AND** `killEnemy` splices the dead enemy out of
+`state.enemies.active` in the same tick it kills them — so the naive
+"poll for alive=false in active[]" never observes anything. The real
+mechanic is a two-pass diff against a parallel snapshot map:
 
-1. Newly-seen enemy → pre-roll ember count using
-   `EMBER_DROP_BASE + (elite ? +0.05 : 0) + (boss ? +0.30 : 0)`. Boss-class
-   always drops ≥ 1.
-2. Previously-seen enemy whose `alive` flipped to false → spawn pre-rolled
-   embers at the (now hidden) mesh position. The mesh stays around after
-   `killEnemy` (visible=false, pooled), so position is intact.
-3. Altar bonus: if the death position is within ALTAR_RADIUS of any active
-   altar, drops × 2.
+```
+_tracked = Map<enemy ref, { count, x, z }>
+_activeScratch = Set<enemy ref>   (reused per tick)
 
-We use a `WeakSet` for seen-tracking and a `WeakMap` for the pre-roll, so
-the GC doesn't see helltide as a retention root.
+per tick:
+  1. clear _activeScratch.
+  2. for each e in state.enemies.active:
+       - add to _activeScratch.
+       - if not in _tracked:
+           pre-roll embers (base 0.20 + elite 0.05 + boss 0.30; boss >= 1)
+           insert with current mesh position.
+       - else: refresh x/z from current mesh position.
+  3. for each [e, snap] in _tracked:
+       if NOT in _activeScratch:
+         e was removed from active[] this tick (= dead, or escape).
+         spawn snap.count embers at (snap.x, snap.z), times 2× if within
+         ALTAR_RADIUS of any active altar.
+         remove from _tracked.
+```
+
+Step (2) refresh is what makes the death position correct — without it
+we'd drop embers at the spawn point.
+
+False-positive note: an escaped enemy (e.g. treasure goblin that flees
+off-screen) also vanishes from active[], so we'll drop embers for them
+too. This is acceptable — escapes are rare in the high-density helltide
+window, and the player banking a few "free" embers from a non-kill is
+strictly an upside.
+
+We use a regular `Map` (not `WeakMap`) so we can iterate; `teardownHelltide`
+clears it explicitly so memory stays bounded.
 
 ### Hellfire ember pool
 

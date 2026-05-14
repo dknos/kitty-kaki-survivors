@@ -25,7 +25,7 @@
  */
 import * as THREE from 'three';
 import { state } from './state.js';
-import { ENEMY_TIERS, STAGE } from './config.js';
+import { ENEMY_TIERS } from './config.js';
 import { spawnEnemy } from './enemies.js';
 import { showBanner, showHelltideBar, hideHelltideBar } from './ui.js';
 import { sfx } from './audio.js';
@@ -102,17 +102,26 @@ let _rainSpawnAcc = 0;
 let _rainMatrix = new THREE.Matrix4();
 let _rainHideMat = null;
 
-// Kill-detection scratch: WeakSet of seen-and-rolled enemies.
-// When an enemy goes from alive→dead (or disappears from active), we read
-// its pre-roll from _enemyEmberRoll; positive value = drop count to spawn.
-let _seen = new WeakSet();
-let _enemyEmberRoll = new WeakMap();   // enemy → embers-on-death count
+// Kill-detection scratch: Map<enemyRef, {count, x, z}> of tracked enemies.
+//
+// IMPORTANT: src/enemies.js killEnemy splices the dead enemy out of
+// state.enemies.active in the SAME tick it kills them (updateEnemies →
+// damageEnemy → killEnemy → arr.pop). By the time tickHelltide runs we
+// CANNOT observe `!alive && in active[]` — the enemy is already gone.
+//
+// Fix: track snapshots in a parallel Map keyed by enemy ref. Each tick,
+// (1) update positions for living entries, (2) detect entries no longer
+// in active[] (= dead OR escaped), and drop embers at the last snapshot.
+// We need a regular Map (not WeakMap) so we can iterate; manual clear on
+// teardown keeps memory bounded.
+let _tracked = new Map();              // enemy → { count, x, z }
+let _activeScratch = new Set();        // reused per-tick to diff active[] against _tracked
 
 // ── Public API ───────────────────────────────────────────────────────────────
 export function initHelltide(scene) {
   _scene = scene;
-  _seen = new WeakSet();
-  _enemyEmberRoll = new WeakMap();
+  _tracked.clear();
+  _activeScratch.clear();
   _subevents.length = 0;
   _embers.length = 0;
   _rain.length = 0;
@@ -408,9 +417,15 @@ function _spawnAltar() {
 }
 
 function _spawnSurge() {
-  // Mini-Boss surge — single elite with quake-cross telegraph. Reuse the
-  // spawn-director mini-boss pattern (we don't have direct access to it,
-  // so spawn an elite with the isMiniBoss flag baked in).
+  // Mini-Boss-class surge — single big elite. We intentionally DON'T set
+  // isMiniBoss=true because src/enemies.js killEnemy treats that flag as a
+  // real mini-boss (guaranteed chest, hearts/star/bomb, miniBoss quest
+  // event, sigil grant). That would inflate quest counters and stack
+  // duplicate rewards on top of the surge's 30-ember drop. Helltide surges
+  // read as boss-class to the ember-roll path (which checks isMiniBoss),
+  // so we apply that flag locally via the enemy ref AFTER spawn — the
+  // tracker reads it for ember count, but the kill-time reward path
+  // already ran from the tier we hand to spawnEnemy.
   const hp = state.hero.pos;
   const D = _approxDifficulty();
   const elites = ENEMY_TIERS.filter(tier => tier.elite && tier.minD <= D + 1);
@@ -421,11 +436,9 @@ function _spawnSurge() {
   const base = elites[Math.floor(Math.random() * elites.length)];
   const tier = {
     ...base,
-    hp: base.hp * (STAGE.miniBossHpMul || 4) * SURGE_HP_MUL / 4,  // ~1.5× elite
-    scale: (base.scale || 1) * (STAGE.miniBossScaleMul || 1.4),
+    hp: base.hp * SURGE_HP_MUL,                       // 1.5× elite HP
+    scale: (base.scale || 1) * 1.20,                  // visibly bigger silhouette
     elite: true,
-    isMiniBoss: true,
-    _patternIdx: Math.floor(Math.random() * 3),
   };
   const ang = Math.random() * Math.PI * 2;
   const r = 14 + Math.random() * 4;
@@ -544,55 +557,65 @@ function _tickSurge(ev, dt, t, idx) {
   }
 }
 
-// ── Kill-detection (poll-and-diff) ───────────────────────────────────────────
-// Walks state.enemies.active. For each newly-seen enemy, pre-roll an ember
-// drop count. For previously-seen enemies whose alive flipped to false, spawn
-// the pre-rolled embers at the (now hidden) mesh position. Falls out of the
-// loop naturally when the enemy leaves state.enemies.active (the splice in
-// updateEnemies happens after killEnemy hides the mesh + pushes to pool).
+// ── Kill-detection (track-and-diff) ──────────────────────────────────────────
+// Two-pass detector that survives same-tick splice:
+//   Pass 1: walk state.enemies.active. For each enemy:
+//     - newly-seen → pre-roll ember count, insert into _tracked with
+//       current mesh position.
+//     - seen → refresh x/z to current mesh position (so we drop embers at
+//       the death position, not the spawn position).
+//     - mark in _activeScratch so we can diff after.
+//   Pass 2: walk _tracked. Any entry NOT in _activeScratch has been
+//     removed from active[] (= dead OR despawned/escaped). Spawn the
+//     pre-rolled embers at the snapshotted x/z, then drop from _tracked.
 //
-// Pre-rolling means the visual surprise is the drop, not the chance; and we
-// don't double-count when an enemy is re-rolled in the same frame.
+// We treat "removed from active[]" as a successful kill from the player's
+// POV: ranged escapes are extremely rare for the elite/mini-boss tiers that
+// matter most. False positives on non-kill removals (e.g. treasure-goblin
+// escape) are an acceptable trade for not editing enemies.js.
 function _tickKillDetection() {
   const arr = state.enemies.active;
+  _activeScratch.clear();
   for (let i = 0; i < arr.length; i++) {
     const e = arr[i];
     if (!e || !e.mesh) continue;
-    if (!_seen.has(e)) {
-      _seen.add(e);
+    _activeScratch.add(e);
+    let snap = _tracked.get(e);
+    if (!snap) {
       // Pre-roll ember count for this enemy
       let p = EMBER_DROP_BASE;
       if (e.elite) p += EMBER_DROP_ELITE_BONUS;
-      if (e.isMiniBoss || e.isFinalBoss) p += EMBER_DROP_BOSS_BONUS;
-      // Boss-class always drops at least 1; otherwise binary roll.
+      const bossClass = e.isMiniBoss || e.isFinalBoss || e._helltideSurge;
+      if (bossClass) p += EMBER_DROP_BOSS_BONUS;
       let count = 0;
-      if (e.isMiniBoss || e.isFinalBoss) count = 1;
+      if (bossClass) count = 1;        // boss-class always >= 1
       if (Math.random() < p) count += 1;
-      _enemyEmberRoll.set(e, count);
+      snap = { count, x: e.mesh.position.x, z: e.mesh.position.z };
+      _tracked.set(e, snap);
+    } else {
+      snap.x = e.mesh.position.x;
+      snap.z = e.mesh.position.z;
     }
-    // Same-tick death detection: if alive flipped to false while still in
-    // active[], drop the pre-rolled embers now and drain the roll so we
-    // don't re-spawn on a follow-up frame (the enemy will be spliced out of
-    // active by the host code).
-    if (!e.alive && _enemyEmberRoll.has(e)) {
-      const count = _enemyEmberRoll.get(e);
-      _enemyEmberRoll.delete(e);
-      if (count > 0 && e.mesh) {
-        // Altar bonus: 2× embers within radius of any active altar.
-        let mul = 1;
-        for (const ev of _subevents) {
-          if (ev.kind !== 'altar') continue;
-          const ddx = e.mesh.position.x - ev.x;
-          const ddz = e.mesh.position.z - ev.z;
-          if (ddx * ddx + ddz * ddz <= ALTAR_RADIUS * ALTAR_RADIUS) { mul = 2; break; }
-        }
-        for (let k = 0; k < count * mul; k++) {
-          const a = Math.random() * Math.PI * 2;
-          const rr = 0.2 + Math.random() * 0.4;
-          _spawnEmber(e.mesh.position.x + Math.cos(a) * rr, e.mesh.position.z + Math.sin(a) * rr, 1);
-        }
+  }
+  // Diff: drop entries that vanished from active[] this tick.
+  for (const [e, snap] of _tracked) {
+    if (_activeScratch.has(e)) continue;
+    // Vanished → spawn pre-rolled embers at last-known position.
+    if (snap.count > 0) {
+      let mul = 1;
+      for (const ev of _subevents) {
+        if (ev.kind !== 'altar') continue;
+        const ddx = snap.x - ev.x;
+        const ddz = snap.z - ev.z;
+        if (ddx * ddx + ddz * ddz <= ALTAR_RADIUS * ALTAR_RADIUS) { mul = 2; break; }
+      }
+      for (let k = 0; k < snap.count * mul; k++) {
+        const a = Math.random() * Math.PI * 2;
+        const rr = 0.2 + Math.random() * 0.4;
+        _spawnEmber(snap.x + Math.cos(a) * rr, snap.z + Math.sin(a) * rr, 1);
       }
     }
+    _tracked.delete(e);
   }
 }
 
@@ -756,8 +779,8 @@ export function teardownHelltide() {
   }
   _rain.length = 0;
   if (_rainInst) _rainInst.instanceMatrix.needsUpdate = true;
-  _seen = new WeakSet();
-  _enemyEmberRoll = new WeakMap();
+  _tracked.clear();
+  _activeScratch.clear();
   state.run.helltideEmbersBanked = 0;
   state.run.helltideMaxBanked = 0;
   // Force the auto-trigger schedule to the first-trigger window (resetState
