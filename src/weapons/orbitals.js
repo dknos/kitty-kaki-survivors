@@ -65,7 +65,12 @@ const GLOW_MAT = new THREE.MeshBasicMaterial({
   transparent: true, opacity: 0.45, depthWrite: false, blending: THREE.AdditiveBlending,
 });
 
-const HIT_RADIUS = 0.55;
+// Iter 32j — hit-radius was 0.55, visual mesh is ~0.95 wide. Enemies could
+// pass through the visible orbital without colliding (user: "first hit of
+// game passes through mob"). 1.0 matches the visual envelope and gives the
+// orbital ring a slightly forgiving contact halo so fast-walking trash
+// can't slip between adjacent orbitals at low levels (count=2).
+const HIT_RADIUS = 1.0;
 const _glowFlat = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
 const _topDownFlat = new THREE.Euler(-Math.PI / 2, 0, 0);
 
