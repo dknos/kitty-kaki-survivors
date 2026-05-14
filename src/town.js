@@ -20,6 +20,7 @@ import { initChatBindings, tickBubbles } from './chatBubble.js';
 import { bindPrompt, setPromptLabel, formatPrompt } from './buttonPrompts.js';
 import { BLOOM_LAYER } from './postfx.js';
 import { makeRuneRingTexture } from './enemyTells.js';
+import { cloneCached } from './assets.js';
 
 // Shared rune-ring texture for town FX (statue selection ring). Cached on
 // first call so every statue + the catacomb / interior swaps share one upload.
@@ -51,66 +52,67 @@ function _matStandard(color, roughness = 0.85, metalness = 0.0) {
 }
 
 function _makeCabin() {
+  // Iter 14: Quaternius fantasy_house GLB replaces the BoxGeometry shell.
+  // Glowing windows + a roof-side chimney overlay sell "home" — we keep
+  // the PointLight cue inside.
   const g = new THREE.Group();
-  // Body
-  const body = new THREE.Mesh(new THREE.BoxGeometry(7, 4, 5), _matStandard(0x6a4a30, 0.85));
-  body.position.y = 2;
-  body.castShadow = true; body.receiveShadow = true;
-  g.add(body);
-  // Pyramid roof
-  const roof = new THREE.Mesh(new THREE.ConeGeometry(5.2, 2.6, 4), _matStandard(0x553028, 0.9));
-  roof.rotation.y = Math.PI / 4;
-  roof.position.y = 5.3;
-  roof.castShadow = true;
-  g.add(roof);
-  // Door
-  const door = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.2, 2.2),
-    new THREE.MeshStandardMaterial({ color: 0x2a1a10, roughness: 0.95, side: THREE.DoubleSide }),
-  );
-  door.position.set(0, 1.1, 2.51);
-  g.add(door);
-  // Glowing windows
-  for (const x of [-2.2, 2.2]) {
-    const w = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.9, 0.9),
-      new THREE.MeshStandardMaterial({
-        color: 0xffd86a, emissive: 0xffb050, emissiveIntensity: 0.9, roughness: 0.6,
-      }),
+  const kit = cloneCached('kit_house');
+  if (kit) {
+    kit.scale.setScalar(4.2);
+    kit.traverse(o => {
+      if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; }
+    });
+    g.add(kit);
+  } else {
+    // Fallback: small dark hut so the door interactable still has visible mass.
+    const body = new THREE.Mesh(
+      new THREE.BoxGeometry(7, 4, 5), _matStandard(0x6a4a30, 0.85),
     );
-    w.position.set(x, 2.3, 2.51);
-    g.add(w);
+    body.position.y = 2; body.castShadow = true;
+    g.add(body);
   }
-  // Chimney
-  const chim = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.6, 0.7), _matStandard(0x4a3a2a, 0.9));
-  chim.position.set(2.2, 6.0, -1.2);
-  chim.castShadow = true;
-  g.add(chim);
+  // Warm interior-light cue at the front porch (existing pattern — sells
+  // "the lights are on, walk in").
+  const porchLight = new THREE.PointLight(0xffd28a, 0.7, 7, 2);
+  porchLight.position.set(0, 2.4, 3.0);
+  g.add(porchLight);
   return g;
 }
 
 function _makeAdventureGate() {
+  // Iter 14: Quaternius castle_gate GLB. Keep the animated turquoise portal
+  // disc + point light on top (this is the iconic "exit to adventure" cue
+  // and the in-game audio is timed to its sine pulse).
   const g = new THREE.Group();
-  // Two stone pillars
-  for (const x of [-2.4, 2.4]) {
-    const p = new THREE.Mesh(new THREE.BoxGeometry(0.9, 4.2, 0.9), _matStandard(0x5a5550, 0.9));
-    p.position.set(x, 2.1, 0);
-    p.castShadow = true;
-    g.add(p);
+  const kit = cloneCached('kit_gate');
+  if (kit) {
+    kit.scale.setScalar(3.5);
+    kit.traverse(o => {
+      if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; }
+    });
+    g.add(kit);
+  } else {
+    // Fallback: two-pillar stone arch.
+    for (const x of [-2.4, 2.4]) {
+      const p = new THREE.Mesh(
+        new THREE.BoxGeometry(0.9, 4.2, 0.9), _matStandard(0x5a5550, 0.9),
+      );
+      p.position.set(x, 2.1, 0);
+      p.castShadow = true;
+      g.add(p);
+    }
+    const lintel = new THREE.Mesh(
+      new THREE.BoxGeometry(6.0, 0.9, 1.0), _matStandard(0x5a5550, 0.9),
+    );
+    lintel.position.set(0, 4.65, 0);
+    g.add(lintel);
   }
-  // Lintel
-  const lintel = new THREE.Mesh(new THREE.BoxGeometry(6.0, 0.9, 1.0), _matStandard(0x5a5550, 0.9));
-  lintel.position.set(0, 4.65, 0);
-  lintel.castShadow = true;
-  g.add(lintel);
-  // Capstone above lintel
-  const cap = new THREE.Mesh(new THREE.BoxGeometry(6.6, 0.4, 1.2), _matStandard(0x3a3530, 0.9));
-  cap.position.set(0, 5.3, 0);
-  g.add(cap);
-  // Glowing portal disc — animated in tickTown
+  // Glowing portal disc — animated in tickTown (unchanged behavior).
   _portal = new THREE.Mesh(
     new THREE.CircleGeometry(1.8, 36),
-    new THREE.MeshBasicMaterial({ color: 0x7fffd4, transparent: true, opacity: 0.55, depthWrite: false }),
+    new THREE.MeshBasicMaterial({
+      color: 0x7fffd4, transparent: true, opacity: 0.55, depthWrite: false,
+    }),
   );
   _portal.rotation.x = -Math.PI / 2;
   _portal.position.set(0, 0.06, 0);
