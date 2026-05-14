@@ -296,6 +296,8 @@ export function preloadAll() {
     // 'burger' = base orbital, 'burger_evo' = Toxic Halo (double cheeseburger).
     ['burger',     'assets/food/Cheeseburger.glb'],
     ['burger_evo', 'assets/food/Double Cheeseburger.glb'],
+    // XP gem mesh (iter 33b) — Quaternius cheese block, CC0 from Poly Pizza.
+    ['cheese',     'assets/food/cheese.glb'],
     // ── Iter 14 kits — CC0 from Poly Pizza CDN. See assets/ASSETS_MANIFEST.md.
     // Forest-district buildings (Quaternius, CC0).
     ['kit_house',     'assets/kits/town/fantasy_house.glb'],

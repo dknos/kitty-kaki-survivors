@@ -13,6 +13,7 @@ import { showLevelUpModal, hideLevelUpModal, flashLevelUp } from './ui.js';
 import { spawnMagnetSpark } from './fx.js';
 import { tex } from './particleTextures.js';
 import { BLOOM_LAYER } from './postfx.js';
+import { GLTF_CACHE } from './assets.js';
 
 const GEM_CAPACITY = 500;
 const PICKUP_DIST = 0.8;
@@ -66,26 +67,52 @@ function _placeInstance(i, pos, value = 1, yaw = 0) {
   }
 }
 
-// Per-value color + scale tier. Cheese palette — cheddar / sharp / parmesan.
+// Per-value color + scale tier. Multiplied onto the cheese-atlas texture,
+// so neutral (white) leaves the texture as cheddar yellow. Elite shifts
+// toward sharp orange-cheddar; jackpot toward bright creamy parmesan.
 const _gemColor = new THREE.Color();
 function _gemTier(value) {
-  if (value >= 20) return { color: 0xfff0a0, scale: 2.4 };  // parmesan jackpot
-  if (value >= 5)  return { color: 0xff8833, scale: 1.5 };  // sharp orange-cheddar elite
-  return { color: 0xffcc33, scale: 1.0 };                    // cheddar wedge
+  if (value >= 20) return { color: 0xfff5cc, scale: 2.4 };  // parmesan jackpot
+  if (value >= 5)  return { color: 0xffa050, scale: 1.5 };  // sharp orange-cheddar elite
+  return { color: 0xffffff, scale: 1.0 };                    // cheddar (texture base)
 }
 
 export function initXP(scene) {
-  // Triangular prism = cheese wedge. CylinderGeometry with 3 radial segments
-  // gives a 3-sided prism. Top-down it reads as a triangle; from the side a
-  // chunky slice. Replaces the cyan octahedron gem from earlier iters.
-  const geo = new THREE.CylinderGeometry(
-    XP.gemSize * 1.15,         // bottom radius (wedge width)
-    XP.gemSize * 1.15,         // top radius
-    XP.gemSize * 0.55,         // thickness (Y)
-    3                          // triangular profile
-  );
+  // Iter 33b — XP gem is a Quaternius cheese block (CC0, 968 tris, ~38 KB).
+  // Pull geometry + atlas texture out of the cached GLB, then build a cheap
+  // unlit BasicMaterial so we keep one draw call for the whole gem field.
+  // Geometry is scaled once to gem footprint; tier.scale multiplies on top.
+  let geo, baseMap = null;
+  const gltf = GLTF_CACHE.cheese;
+  if (gltf && gltf.scene) {
+    gltf.scene.traverse(o => {
+      if (o.isMesh && !geo) {
+        geo = o.geometry.clone();
+        if (o.material && o.material.map) baseMap = o.material.map;
+      }
+    });
+    if (geo) {
+      geo.computeBoundingBox();
+      const bb = geo.boundingBox;
+      const maxDim = Math.max(bb.max.x - bb.min.x, bb.max.y - bb.min.y, bb.max.z - bb.min.z) || 1;
+      const s = (XP.gemSize * 2.1) / maxDim;
+      geo.scale(s, s, s);
+      // Center on origin so per-slot yaw spins around the cube's center.
+      geo.computeBoundingBox();
+      const cx = (geo.boundingBox.max.x + geo.boundingBox.min.x) / 2;
+      const cy = (geo.boundingBox.max.y + geo.boundingBox.min.y) / 2;
+      const cz = (geo.boundingBox.max.z + geo.boundingBox.min.z) / 2;
+      geo.translate(-cx, -cy, -cz);
+    }
+  }
+  // Fallback to triangular prism if the GLB didn't load — keeps the game
+  // playable even if the cheese asset is missing.
+  if (!geo) {
+    geo = new THREE.CylinderGeometry(XP.gemSize * 1.15, XP.gemSize * 1.15, XP.gemSize * 0.55, 3);
+  }
   const mat = new THREE.MeshBasicMaterial({
-    color: 0xffffff,         // white base — per-instance color tints it
+    color: 0xffffff,           // white base — texture + per-instance color tint it
+    map: baseMap,
     transparent: true,
     opacity: 1.0,
   });
