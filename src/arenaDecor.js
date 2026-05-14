@@ -22,6 +22,7 @@
 import * as THREE from 'three';
 import { BLOOM_LAYER } from './postfx.js';
 import { cloneCached } from './assets.js';
+import { makeRuneRingTexture } from './enemyTells.js';
 
 // Active decor group + cleanup hooks, tracked module-side so clearArenaDecor
 // can be called without a handle. One group per scene is enough in this game.
@@ -179,13 +180,16 @@ function _buildTwilightDecor(group) {
   _bobbers = { mesh: crystInst, baseY, phase, amp, freq };
   _track(crystGeo); _track(crystMat);
 
-  // 2) Ground rune circles — thin emissive rings flat on the ground. Stay
-  // off bloom (subtle ambient detail; bloom would smear them into the fog).
+  // 2) Ground rune circles — textured plane (rune-ring art) lying flat on
+  // the ground. Stays off bloom (subtle ambient detail; bloom would smear
+  // them into the fog). Swapped from RingGeometry primitive to the canonical
+  // rune art so the scatter reads as inscribed glyphs, not flat outlines.
   const RUNES = 40;
-  const runeGeo = new THREE.RingGeometry(0.7, 0.95, 32, 1);
+  const runeGeo = new THREE.PlaneGeometry(1.9, 1.9);
   const runeMat = new THREE.MeshBasicMaterial({
+    map: makeRuneRingTexture(),
     color: 0x4ce0ff, transparent: true, opacity: 0.32, side: THREE.DoubleSide,
-    depthWrite: false,
+    depthWrite: false, blending: THREE.AdditiveBlending,
   });
   const runeInst = new THREE.InstancedMesh(runeGeo, runeMat, RUNES);
   for (let i = 0; i < RUNES; i++) {

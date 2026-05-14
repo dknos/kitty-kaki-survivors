@@ -8,6 +8,7 @@ import * as THREE from 'three';
 import { state } from './state.js';
 import { tex } from './particleTextures.js';
 import { BLOOM_LAYER } from './postfx.js';
+import { makeRuneRingTexture } from './enemyTells.js';
 
 const RING_CAP = 64;
 const SPARK_CAP = 64;
@@ -122,13 +123,16 @@ export function initFX(scene) {
   _ringTwinkleInst.instanceColor.needsUpdate = true;
   scene.add(_ringTwinkleInst);
 
-  // Persistent pickup-radius ring under the hero — thin cyan ring on the ground.
-  const pickupRingTex = tex('ringCyan');
+  // Persistent pickup-radius ring under the hero — inscribed rune circle on
+  // the ground. Was a flat cyan ring (read as a "green disc" against the
+  // grass shadow). Now uses the canonical rune-ring texture in a warm cream
+  // tint so it reads as the hero's standing magic circle, not a HUD overlay.
+  const pickupRingTex = makeRuneRingTexture();
   const pickupGeo = new THREE.PlaneGeometry(1, 1);
   const pickupMat = new THREE.MeshBasicMaterial({
     map: pickupRingTex,
-    color: 0x44ffcc,
-    transparent: true, opacity: 0.35,
+    color: 0xfff1cc,
+    transparent: true, opacity: 0.22,
     depthWrite: false, blending: THREE.AdditiveBlending,
   });
   _pickupRing = new THREE.Mesh(pickupGeo, pickupMat);
