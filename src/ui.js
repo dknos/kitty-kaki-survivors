@@ -11,6 +11,7 @@ import { state } from './state.js';
 import {
   commitRunResults, getMeta, setOption, achievementCount, ACHIEVEMENTS, SHOP_UPGRADES, upgradeCost, buyUpgrade, shopLevel, isDiscovered, dailyChallengeConfig, commitDailyRun, equippedRelic, selectedStage, HOUSE_UPGRADES, houseLevel, houseCost, buyHouseUpgrade, QUEST_TEMPLATES, availableQuests, activeQuests, acceptQuest, abandonQuest, claimQuest, maxActiveQuests,
   grantSigils,
+  isCharacterUnlocked,
 
   SHOP_TREE, purchaseTreeNode, nodeUnlocked, nodeOwned, sigilCount,
   addPreset, removePreset, listPresets, applyPreset,
@@ -868,6 +869,10 @@ export function showDeathScreen() {
   if (summary.unlockedHyper) setTimeout(() => showBanner('🔥 HYPER MODE UNLOCKED', 4.0, '#ff5555'), 600);
   if (summary.unlockedEndless) setTimeout(() => showBanner('♾ ENDLESS UNLOCKED', 4.0, '#7fffe4'), 1200);
   if (summary.unlockedCinder) setTimeout(() => showBanner('🜂 CINDER CAVERNS UNLOCKED', 4.5, '#ff7a3a'), 1800);
+  // Iter 7: Clockwork character unlock — Boss Rush + Twilight victory.
+  // 2.4s delay slots after the stage banners so they don't stomp each other
+  // when multiple unlocks fire from the same victory run.
+  if (summary.unlockedClockwork) setTimeout(() => showBanner('★ CHARACTER UNLOCKED: CLOCKWORK', 4.0, '#7fffe4'), 2400);
 
   _deathScreen = document.createElement('div');
   _deathScreen.className = 'kk-death';
@@ -922,6 +927,7 @@ export function showDeathScreen() {
     unlockedHyper: !!summary.unlockedHyper,
     unlockedEndless: !!summary.unlockedEndless,
     unlockedCinder: !!summary.unlockedCinder,
+    unlockedClockwork: !!summary.unlockedClockwork,
   };
 
   // Button row (RETRY in-place reset, plus hint)
@@ -1140,10 +1146,41 @@ export function showStartScreen(text) {
   // Character picker row
   const charRow = document.createElement('div');
   charRow.style.cssText = 'display:flex; gap:10px; margin-top:18px; pointer-events:auto; flex-wrap:wrap; justify-content:center; max-width:90vw;';
+  // Sigil-pip colour matches the magenta sigil treatment used in the death-screen
+  // stats row + shop tree (`#c87bff`). Don't introduce a fresh token.
+  const SIGIL_PIP_C = '#c87bff';
+  // Decode an unlock token into a human hint. `null` = always unlocked.
+  // Forms supported (per iter-7 contract):
+  //   'sigils:N'                  → "Earn N sigils to unlock"
+  //   'flag:unlockedClockwork'    → flag-specific hint string
+  //   '<achievement_id>'          → "Unlock: <id>" (legacy / current pattern)
+  function formatUnlockHint(unlock) {
+    if (unlock === null || unlock == null) return '';
+    if (typeof unlock !== 'string') return `Unlock: ${String(unlock)}`;
+    if (unlock.startsWith('sigils:')) {
+      const n = parseInt(unlock.slice(7), 10);
+      return Number.isFinite(n) ? `Earn ${n} sigils to unlock` : 'Earn sigils to unlock';
+    }
+    if (unlock.startsWith('flag:')) {
+      const flag = unlock.slice(5);
+      if (flag === 'unlockedClockwork') return 'Clear Boss Rush on Twilight Hollow to unlock.';
+      return `Unlock: ${flag}`;
+    }
+    return `Unlock: ${unlock}`;
+  }
+  // Parse `'sigils:N'` → N, else null. Used by the progress-pip path.
+  function parseSigilGate(unlock) {
+    if (typeof unlock !== 'string' || !unlock.startsWith('sigils:')) return null;
+    const n = parseInt(unlock.slice(7), 10);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
   function paintChars() {
     charRow.innerHTML = '';
     for (const ch of CHARACTERS) {
-      const unlocked = ch.unlock === null || (meta.achievements && meta.achievements[ch.unlock]);
+      // Iter 7: helper from meta.js absorbs the new unlock token forms
+      // (`sigils:N`, `flag:unlockedClockwork`) on top of the legacy
+      // achievement-id pattern. Single source of truth.
+      const unlocked = isCharacterUnlocked(ch, meta);
       const selected = ch.id === meta.selectedChar;
       const card = document.createElement('div');
       const borderC = selected ? C.amber : (unlocked ? C.edge : 'rgba(80,80,80,0.4)');
@@ -1162,10 +1199,55 @@ export function showStartScreen(text) {
         font-family: ${F.body};
         transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
       `;
+      // Signature preview chip — visible identity-in-one-glance. Only show
+      // for unlocked characters; locked cards keep the surprise so the unlock
+      // banner reads as a real reveal.
+      let signatureChip = '';
+      if (unlocked && ch.signatureName) {
+        signatureChip = `
+          <div style="margin-top:6px;display:flex;justify-content:center;">
+            <span style="
+              display:inline-block;padding:2px 8px;
+              font-family:${F.body};font-size:10px;font-weight:600;
+              letter-spacing:0.14em;text-transform:uppercase;
+              border-radius:999px;border:1px solid ${C.cyan};
+              color:${C.cyan};background:rgba(127,255,228,0.10);
+              line-height:1.4;
+            ">${escapeHtml(ch.signatureName)}</span>
+          </div>`;
+      }
+      // Sigil-gated unlock progress pip — shown UNDER locked cards whose
+      // unlock token is `'sigils:N'`. Mirrors the house-upgrade pip strip
+      // (single bar, magenta fill) — no new visual language.
+      let sigilPip = '';
+      const sigilNeed = parseSigilGate(ch.unlock);
+      if (sigilNeed != null && !unlocked) {
+        const have = (meta.lifetime && meta.lifetime.sigilsEarned) || 0;
+        const ratio = Math.max(0, Math.min(1, have / sigilNeed));
+        const pct = (ratio * 100).toFixed(0);
+        sigilPip = `
+          <div style="margin-top:8px;font-family:${F.mono};font-size:10px;letter-spacing:0.08em;color:${SIGIL_PIP_C};text-align:center;">
+            ✦ Sigils: ${Math.min(have, sigilNeed)}/${sigilNeed}
+          </div>
+          <div style="margin-top:4px;height:5px;border-radius:3px;background:rgba(255,255,255,0.08);overflow:hidden;">
+            <div style="height:100%;width:${pct}%;background:${SIGIL_PIP_C};box-shadow:0 0 6px ${SIGIL_PIP_C}66;"></div>
+          </div>`;
+      } else if (sigilNeed != null && unlocked) {
+        // Once unlocked, replace the pip with a green check so the card
+        // doesn't look "stuck at locked" if the player glances back.
+        sigilPip = `
+          <div style="margin-top:6px;font-family:${F.mono};font-size:10.5px;letter-spacing:0.08em;color:${C.green};text-align:center;">
+            ✓ Sigils complete
+          </div>`;
+      }
+      // Locked-state desc fallback uses the pretty hint instead of the raw token.
+      const descLine = unlocked ? escapeHtml(ch.desc) : escapeHtml(formatUnlockHint(ch.unlock));
       card.innerHTML = `
         <div style="font-size:36px;line-height:1;margin-bottom:6px;filter:drop-shadow(0 3px 6px rgba(0,0,0,0.5));">${unlocked ? ch.icon : '🔒'}</div>
         <div style="font-family:${F.display};font-size:13px;letter-spacing:0.18em;font-weight:700;color:${selected ? C.amber : C.text};margin-bottom:6px;">${escapeHtml(ch.name)}</div>
-        <div style="font-size:10.5px;line-height:1.45;letter-spacing:0.02em;opacity:${unlocked ? 0.78 : 0.55};">${unlocked ? escapeHtml(ch.desc) : 'Unlock: ' + escapeHtml(ch.unlock)}</div>
+        <div style="font-size:10.5px;line-height:1.45;letter-spacing:0.02em;opacity:${unlocked ? 0.78 : 0.55};">${descLine}</div>
+        ${signatureChip}
+        ${sigilPip}
       `;
       if (unlocked) {
         card.addEventListener('mouseenter', () => {
@@ -1198,12 +1280,27 @@ export function showStartScreen(text) {
           if (ch.statMul.magnet && ch.statMul.magnet !== 1)        statRows.push({ label: 'Magnet', value: `×${ch.statMul.magnet.toFixed(2)}` });
           if (ch.statMul.projSpeed && ch.statMul.projSpeed !== 1)  statRows.push({ label: 'Proj Spd', value: `×${ch.statMul.projSpeed.toFixed(2)}` });
         }
+        // Iter 7: surface signature as a top-line stat row when present.
+        if (ch.signatureName) {
+          statRows.unshift({ label: 'Signature', value: String(ch.signatureName) });
+        }
+        // Tooltip body: flavor + signature description (if defined) + starter line.
+        const bodyParts = [];
+        if (unlocked) {
+          bodyParts.push(b ? b.flavor : ch.desc);
+          if (ch.signatureDesc) bodyParts.push(`◆ ${ch.signatureName}: ${ch.signatureDesc}`);
+          bodyParts.push(`Starter weapon: ${ch.starter} (auto-equipped at run start).`);
+        } else {
+          bodyParts.push(formatUnlockHint(ch.unlock));
+          if (sigilNeed != null) {
+            const have = (meta.lifetime && meta.lifetime.sigilsEarned) || 0;
+            bodyParts.push(`Progress: ${Math.min(have, sigilNeed)} / ${sigilNeed} lifetime sigils.`);
+          }
+        }
         return {
           title: unlocked ? ch.name : `${ch.name} (Locked)`,
           icon: unlocked ? ch.icon : '🔒',
-          body: unlocked
-            ? ((b ? b.flavor : ch.desc) + `\n\nStarter weapon: ${ch.starter} (auto-equipped at run start).`)
-            : `Unlock condition: ${ch.unlock}.\n\nFinish that achievement to add this character to the roster.`,
+          body: bodyParts.join('\n\n'),
           tags: unlocked ? (b ? b.tags : ['Character']) : ['Locked'],
           stats: unlocked ? statRows : undefined,
           accent: selected ? '#ffd27f' : '#7fffe4',

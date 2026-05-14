@@ -35,6 +35,10 @@ const DEFAULT = {
   unlockedHyper: false,
   unlockedEndless: false,
   unlockedCinder: false,    // unlocked by victory on Twilight Hollow
+  // Character unlock flag — Clockwork drops on first Boss Rush victory on
+  // Twilight Hollow (hardest combination currently in-game). Flipped in
+  // commitRunResults; read by isCharacterUnlocked() for the 'flag:...' form.
+  unlockedClockwork: false,
   // Mode toggles for the next run
   optHyper: false,
   optEndless: false,
@@ -60,6 +64,11 @@ const DEFAULT = {
     bugKills: 0,      // ant/beetle/etc (tiers with procAnim)
     jackpots: 0,      // 7-7-7 slot hits
     coinsEverEarned: 0,
+    // Cumulative sigils ever earned (separate from meta.sigils, which is
+    // the *spendable* balance — buying a tree node decrements that but
+    // does NOT touch lifetime). Drives the 'sigils:N' unlock form for
+    // characters like Phoenix Vow (sigils:30).
+    sigilsEarned: 0,
   },
   // Daily challenge: persistent best per-day; rolls over at local midnight
   dailyRun: {
@@ -449,6 +458,10 @@ export function grantSigils(n, source) {
   const amt = Math.floor(n);
   const meta = getMeta();
   meta.sigils = (meta.sigils || 0) + amt;
+  // Lifetime counter — drives 'sigils:N' character unlocks (e.g. Phoenix Vow
+  // at 30). Stays monotonic even when meta.sigils is spent on SHOP_TREE.
+  if (!meta.lifetime) meta.lifetime = { bugKills: 0, jackpots: 0, coinsEverEarned: 0, sigilsEarned: 0 };
+  meta.lifetime.sigilsEarned = (meta.lifetime.sigilsEarned || 0) + amt;
   _sigilsThisRun += amt;
   saveMeta();
   return amt;
@@ -677,7 +690,7 @@ export function getMeta() {
  * Commit a finished run's results. Returns { coinsEarned, isBestTime, isBestKills }
  * so the death screen can highlight wins.
  */
-export function commitRunResults({ timeSurvived, kills, dmgDealt, level, victory, stageId }) {
+export function commitRunResults({ timeSurvived, kills, dmgDealt, level, victory, stageId, bossRush }) {
   const meta = getMeta();
   // 1 coin per kill, +5 per minute survived. Hyper boosts coin gain.
   // Vault stacks on top of Hyper coin bonus.
@@ -705,14 +718,23 @@ export function commitRunResults({ timeSurvived, kills, dmgDealt, level, victory
   if (isBestTime) meta.bestTime = timeSurvived;
   if (isBestKills) meta.bestKills = kills;
   // Mode unlocks on first victory
-  let unlockedHyper = false, unlockedEndless = false, unlockedCinder = false;
+  let unlockedHyper = false, unlockedEndless = false, unlockedCinder = false, unlockedClockwork = false;
   if (victory && !meta.unlockedHyper) { meta.unlockedHyper = true; unlockedHyper = true; }
   if (victory && !meta.unlockedEndless) { meta.unlockedEndless = true; unlockedEndless = true; }
   if (victory && stageId === 'twilight' && !meta.unlockedCinder) {
     meta.unlockedCinder = true; unlockedCinder = true;
   }
+  // Clockwork character unlock — Boss Rush victory on Twilight Hollow.
+  // Hardest currently-shippable combo (compressed timer + 1.30× HP). Caller
+  // may pass `bossRush` explicitly; fall back to meta.optBossRush (same
+  // source-of-truth the run was started with) so we work even if the call
+  // site hasn't been updated yet.
+  const inBossRush = (typeof bossRush === 'boolean') ? bossRush : !!meta.optBossRush;
+  if (victory && inBossRush && stageId === 'twilight' && !meta.unlockedClockwork) {
+    meta.unlockedClockwork = true; unlockedClockwork = true;
+  }
   saveMeta();
-  return { coinsEarned, embersEarned, sigilsEarned, isBestTime, isBestKills, unlockedHyper, unlockedEndless, unlockedCinder };
+  return { coinsEarned, embersEarned, sigilsEarned, isBestTime, isBestKills, unlockedHyper, unlockedEndless, unlockedCinder, unlockedClockwork };
 }
 
 export function resetMeta() {
@@ -828,4 +850,37 @@ export function selectedStage(STAGES) {
 export function selectedCharacter(CHARACTERS) {
   const meta = getMeta();
   return CHARACTERS.find(c => c.id === meta.selectedChar) || CHARACTERS[0];
+}
+
+/**
+ * Returns true if the given character def is unlocked for the given meta.
+ *
+ * Supported unlock-string forms (parsed in this order):
+ *   - null/undefined            → always unlocked (default character)
+ *   - 'sigils:N'                → meta.lifetime.sigilsEarned >= N
+ *   - 'flag:fieldName'          → !!meta[fieldName] (e.g. unlockedClockwork)
+ *   - <achievement-id>          → !!meta.achievements[id]
+ *
+ * Prefix forms must be checked BEFORE the achievement-map fallback —
+ * otherwise 'sigils:30' would silently look up meta.achievements['sigils:30']
+ * and never return true. Existing inline check in ui.js (~line 1146) should
+ * route through this helper so new unlock kinds plug in cleanly.
+ */
+export function isCharacterUnlocked(char, meta) {
+  if (!char) return false;
+  const u = char.unlock;
+  if (u === null || u === undefined) return true;
+  if (typeof u !== 'string') return false;
+  const m = meta || getMeta();
+  if (u.startsWith('sigils:')) {
+    const n = parseInt(u.slice(7), 10);
+    if (!Number.isFinite(n)) return false;
+    const have = (m.lifetime && m.lifetime.sigilsEarned) || 0;
+    return have >= n;
+  }
+  if (u.startsWith('flag:')) {
+    const key = u.slice(5);
+    return !!m[key];
+  }
+  return !!(m.achievements && m.achievements[u]);
 }

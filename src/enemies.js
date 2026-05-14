@@ -632,6 +632,21 @@ let _enemyHurtCounter = 0;
 // ─────────────────────────────────────────────────────────────────────────────
 export function damageEnemy(enemy, dmg, source) {
   if (!enemy || !enemy.alive) return;
+  // ── Iter 7 character signature multipliers ──
+  // Phoenix Ember Burst calls in with source='phoenix' and we skip these so the
+  // burst stays a flat 200 baseline (and avoids any future recursive surprises).
+  if (source !== 'phoenix') {
+    // Sniper "Headhunter": +200% above 80% HP, -30% below 20% HP.
+    if (state.run.signature_executeBonus) {
+      const r = enemy.hp / Math.max(1, enemy.hpMax);
+      if (r > 0.80) dmg *= 3.0;
+      else if (r < 0.20) dmg *= 0.7;
+    }
+    // Clockwork "Tempo": run-time-scaling damage bonus, capped at +60%.
+    if (state.run.signature_tempoBonus) {
+      dmg *= (1 + state.run.signature_tempoBonus);
+    }
+  }
   // Variance + crit rolls (DoT skips crit by passing dmg with isDoT flag in future)
   const variance = 1 + (Math.random() - 0.5) * 2 * DAMAGE.variance;
   const isCrit = Math.random() < DAMAGE.critChance;

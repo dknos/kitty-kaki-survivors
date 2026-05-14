@@ -96,6 +96,8 @@ const CHARACTER_BLURBS = {
   boom:       { flavor: 'Boom — Glass cannon. Trades health for raw damage and a long-reach starter that loves crowds.',     tags: ['Damage', 'Fragile'] },
   webspinner: { flavor: 'Webspinner — A trapper. Slower on foot but pulls gems hard and opens with map-control silk.',         tags: ['Control', 'Slow'] },
   sniper:     { flavor: 'Sniper — Precise. Faster bolts, slightly more damage; thrives in long runs with positioning.',        tags: ['Range', 'Single-Target'] },
+  phoenix:    { flavor: 'Phoenix Vow — A vow sworn in the last ember. When the heart stops, the ash speaks once — and the field answers in fire.', tags: ['Damage', 'Risk'] },
+  clockwork:  { flavor: 'Clockwork — Wound to outlast. Each tick of the run-clock tightens the spring; given long enough, the gears chew anything.',  tags: ['Damage', 'Duration'] },
 };
 
 // ── Public API ──────────────────────────────────────────────────────────────

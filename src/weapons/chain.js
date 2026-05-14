@@ -208,6 +208,28 @@ export default {
     try { sfx.weaponChain(); } catch (_) {}
     const cdMul = state.hero.statMul.cooldown || 1;
     inst.cd = (inst.evolved ? 0.30 : level.cooldown) * cdMul;
+
+    // ── Boom "Charged Coil" signature: every 5th arc volley fires a free
+    // re-cast at full chain count. Echo is re-entrancy-guarded so it doesn't
+    // increment the counter itself (otherwise it would re-echo infinitely).
+    if (state.run.signature_chainEcho && !inst._echoing) {
+      state.run.signature_chainEchoCounter = (state.run.signature_chainEchoCounter || 0) + 1;
+      if ((state.run.signature_chainEchoCounter % 5) === 0) {
+        inst._echoing = true;
+        // Replay the same volley path. Zero the cd so the inner tick's gate
+        // doesn't bail; dt=0 so no further drain. The recursive call's tail
+        // will re-stamp inst.cd to a fresh full cooldown.
+        const savedCd = inst.cd;
+        inst.cd = 0;
+        try { this.tick(state, 0, level, inst); }
+        finally {
+          inst._echoing = false;
+          // If the echo bailed early (e.g. _findNearest returned null inside),
+          // restore the real cd rather than letting the short fallback stick.
+          if (inst.cd < savedCd) inst.cd = savedCd;
+        }
+      }
+    }
   },
 
   refresh(state, level, inst) {

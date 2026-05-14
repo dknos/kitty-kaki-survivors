@@ -477,6 +477,11 @@ function applyMetaUpgrades() {
     }
     state.run.character = char.id;
     state.run.starterWeapon = char.starter;
+    // Character signature mechanic — stamps state.run.signature_* fields read
+    // by hero.js / enemies.js / weapons. See ITER_789_BRIEFS.md iter-7 7a/7b.
+    if (typeof char.signature === 'function') {
+      try { char.signature(state.run); } catch (e) { console.warn('[char.signature]', e); }
+    }
   }
   state.run.daily = dailyOn ? dailyCfg : null;
 
@@ -635,6 +640,15 @@ function frame(now) {
     state.time.dt = logicDt;
     state.time.game += logicDt;
 
+    // Clockwork "Tempo" signature: damage multiplier ramps with run-time.
+    // Idempotent (function of state.time.game), safe to compute in any active branch.
+    if (state.run.signature_tempo) {
+      state.run.signature_tempoBonus = Math.min(
+        state.run.signature_tempo.cap,
+        state.run.signature_tempo.ratePerSec * state.time.game,
+      );
+    }
+
     sampleInput();
     updateHero(logicDt);
     updateEnemies(logicDt);
@@ -737,6 +751,15 @@ function frame(now) {
   }
   state.time.dt = logicDt;
   state.time.game += logicDt;
+
+  // Clockwork "Tempo" signature: damage multiplier ramps with run-time.
+  // Read by enemies.js damageEnemy(). Idempotent — function of state.time.game.
+  if (state.run.signature_tempo) {
+    state.run.signature_tempoBonus = Math.min(
+      state.run.signature_tempo.cap,
+      state.run.signature_tempo.ratePerSec * state.time.game,
+    );
+  }
 
   // ── Logic phase ──
   sampleInput();

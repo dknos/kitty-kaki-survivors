@@ -396,6 +396,40 @@ export function takeDamage(amt) {
   try { spawnHeroDamageNumber(amt); } catch (_) {}
 
   if (h.hp <= 0) {
+    // ── Kitty "Nine Lives" signature: first lethal hit becomes 1 HP + i-frame.
+    // Skipped if Shop Tree Second Wind already grants a revive — prevents
+    // double-stacking the survival comeback (see ITER_789_BRIEFS.md risk flag).
+    if (
+      state.run.signature_nineLives === true &&
+      !state.run.signature_nineLivesUsed &&
+      !state.run.passive_revives
+    ) {
+      h.hp = 1;
+      h.iFramesUntil = (state.time.game + HERO.iFramesSec) + 1.5;
+      state.run.signature_nineLivesUsed = true;
+      return;
+    }
+
+    // ── Phoenix "Ember Burst" signature: on death, emit a one-shot AoE before
+    // routing to the death screen. Fires exactly once per run.
+    if (state.run.signature_emberBurst) {
+      state.run.signature_emberBurst = false;
+      try {
+        const hp = state.hero.pos;
+        const targets = queryRadius(hp, 10) || [];
+        for (const e of targets) {
+          if (!e || !e.alive || !e.mesh) continue;
+          // Knockback: normalized direction away from hero × 16
+          const dx = e.mesh.position.x - hp.x;
+          const dz = e.mesh.position.z - hp.z;
+          const len = Math.hypot(dx, dz) || 1;
+          e.knockVx = (dx / len) * 16;
+          e.knockVz = (dz / len) * 16;
+          damageEnemy(e, 200, 'phoenix');
+        }
+      } catch (err) { console.warn('[phoenix emberBurst]', err); }
+    }
+
     h.hp = 0;
     state.gameOver = true;
     state.dyingUntil = state.time.real + 1.4;

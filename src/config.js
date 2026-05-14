@@ -145,7 +145,12 @@ export const WEAPONS = {
 
 // Playable characters — each overrides starting weapon + a few base stats.
 // `id` is the persistent identifier; `unlock` is null for default or an
-// achievement id for gated characters.
+// achievement id / 'sigils:N' / 'flag:fieldName' for gated characters.
+//
+// Each character also defines a `signature(runState)` function that stamps
+// a `runState.signature_*` flag (or sets `passive_*` for the iter-6 SHOP_TREE
+// interop). Readers live in hero.js / enemies.js / weapons/*.js (iter 7b).
+// Tuning constants are locked in ITER_789_BRIEFS.md (iter 7 — Tuning targets).
 export const CHARACTERS = [
   {
     id: 'kitty',  name: 'Kitty Kaki', icon: '🐱',
@@ -155,6 +160,16 @@ export const CHARACTERS = [
     hpMax: 100,
     unlock: null,
     tint: 0xffffff, scaleMul: 1.00,    // canonical model — no tint
+    signatureName: 'Nine Lives',
+    signatureDesc: 'First lethal hit per run becomes 1 HP + 1.5s i-frame.',
+    // Use `if (!passive_revives)` (NOT +=) so we don't stack with SHOP_TREE
+    // Second Wind / Phoenix. Risk flag called out in iter-7 brief. The
+    // signature_* flag is the dedicated reader path (hero.js) and is
+    // idempotent regardless of SHOP_TREE ownership.
+    signature: (runState) => {
+      if (!runState.passive_revives) runState.passive_revives = 1;
+      runState.signature_nineLives = true;
+    },
   },
   {
     id: 'boom',   name: 'Boom',       icon: '⚡',
@@ -164,6 +179,12 @@ export const CHARACTERS = [
     hpMax: 75,
     unlock: 'first_jackpot',
     tint: 0xff7a3a, scaleMul: 0.92,    // placeholder: orange-red, smaller silhouette
+    signatureName: 'Charged Coil',
+    signatureDesc: 'Every 5th Chain Lightning arc triggers a free re-cast.',
+    signature: (runState) => {
+      runState.signature_chainEcho = true;
+      runState.signature_chainEchoCounter = 0;
+    },
   },
   {
     id: 'webspinner', name: 'Webspinner', icon: '🕷️',
@@ -173,6 +194,11 @@ export const CHARACTERS = [
     hpMax: 110,
     unlock: 'minibox_x3',
     tint: 0xa066ff, scaleMul: 1.08,    // placeholder: violet, chunkier
+    signatureName: 'Lingering Silk',
+    signatureDesc: 'Heal 0.5 HP/s while standing inside any of your webs.',
+    signature: (runState) => {
+      runState.signature_webHeal = 0.5;
+    },
   },
   {
     id: 'sniper', name: 'Sniper',      icon: '🎯',
@@ -182,6 +208,47 @@ export const CHARACTERS = [
     hpMax: 95,
     unlock: 'first_victory',
     tint: 0x66ddaa, scaleMul: 0.96,    // placeholder: pale green, slim
+    signatureName: 'Headhunter',
+    signatureDesc: '×3 dmg above 80% HP, ×0.7 below 20%. Reward openers.',
+    signature: (runState) => {
+      runState.signature_executeBonus = true;
+    },
+  },
+  {
+    // Burst-identity character: dies LOUDLY. One free 200-dmg shockwave on
+    // death — the inverse of Clockwork's slow-burn scaling. Glass cannon
+    // build, slight dmg edge, low HP, warm-red phoenix tint.
+    id: 'phoenix', name: 'Phoenix Vow', icon: '🪶',
+    desc: 'Burns hot. +15% damage, low HP. Dies in a 200-dmg shockwave.',
+    starter: 'autoaim',
+    statMul: { dmg: 1.15, moveSpeed: 1.05, magnet: 1.0 },
+    hpMax: 80,
+    unlock: 'sigils:30',
+    tint: 0xff6655, scaleMul: 0.94,    // ember-red, slightly slimmer
+    signatureName: 'Ember Burst',
+    signatureDesc: 'On dying, emit a 10u shockwave: 200 dmg + 0.5s knockback.',
+    signature: (runState) => {
+      runState.signature_emberBurst = true;
+    },
+  },
+  {
+    // Late-game scaling identity: deliberately under-tuned early so the
+    // 0.00375/s tempo accumulator (cap +60% at 2:40) reads as a real arc.
+    // The mirror of Phoenix — payoff for not-dying instead of dying-loud.
+    id: 'clockwork', name: 'Clockwork', icon: '⚙️',
+    desc: 'Slow start, late payoff. +3% damage every 8s (max +60% at 2:40).',
+    starter: 'orbitals',
+    statMul: { dmg: 0.90, moveSpeed: 1.0, magnet: 1.0 },
+    hpMax: 95,
+    unlock: 'flag:unlockedClockwork',
+    tint: 0xc89858, scaleMul: 1.00,    // brass cog
+    signatureName: 'Tempo',
+    signatureDesc: '+3% all damage every 8s of run-time (cap +60% at 2:40).',
+    signature: (runState) => {
+      // ratePerSec * t, capped. 0.00375/s = +3% / 8s. 0.60 cap reached at 160s.
+      runState.signature_tempo = { ratePerSec: 0.00375, cap: 0.60 };
+      runState.signature_tempoBonus = 0;
+    },
   },
 ];
 

@@ -132,6 +132,25 @@ export function tickWebs(dt) {
   // Hero defense flag: read by enemies.js / hero damage path. Idempotent —
   // we reset each frame so the bonus disappears the moment hero exits.
   state.hero.inSanctum = heroInsideBurn;
+
+  // ── Webspinner "Lingering Silk" signature: standing in ANY active web
+  // heals 0.5 HP/s (signature_webHeal). One heal tick per frame even if
+  // multiple webs overlap; never overheal past hpMax.
+  if (state.run.signature_webHeal > 0) {
+    let inAnyWeb = false;
+    for (let i = 0; i < list.length; i++) {
+      const w = list[i];
+      if (w.ttl <= 0) continue;
+      const hdx = heroPos.x - w.x, hdz = heroPos.z - w.z;
+      if (hdx * hdx + hdz * hdz <= w.radius * w.radius) { inAnyWeb = true; break; }
+    }
+    if (inAnyWeb) {
+      state.hero.hp = Math.min(
+        state.hero.hpMax,
+        state.hero.hp + state.run.signature_webHeal * dt,
+      );
+    }
+  }
 }
 
 function _spawnWeb(x, z, level, evolved) {
