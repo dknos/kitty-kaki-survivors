@@ -1167,7 +1167,11 @@ function _buildOverlay() {
     overflow-y: auto; flex: 1; min-height: 0;
     display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
     padding-right: 4px;
+    pointer-events: auto;
   `;
+  // Iter 26 — single delegated mousedown listener on the palette container
+  // (replaces per-card click handlers in _renderPalette). See _onPaletteMouseDown.
+  _paletteEl.addEventListener('mousedown', _onPaletteMouseDown);
   _overlayEl.appendChild(_paletteEl);
   _renderPalette();
 
@@ -1204,6 +1208,7 @@ function _renderPalette() {
     const unlocked = isHomeItemUnlocked(item.id);
     const card = document.createElement('div');
     card.dataset.itemId = item.id;
+    if (unlocked) card.dataset.unlocked = '1';
     card.style.cssText = `
       position: relative;
       background: linear-gradient(180deg, rgba(28,36,30,0.85), rgba(14,20,16,0.95));
@@ -1216,12 +1221,12 @@ function _renderPalette() {
       transition: transform 0.12s ease, border-color 0.12s ease;
     `;
     card.innerHTML = `
-      <div style="font-size: 26px; line-height: 1; margin-bottom: 6px;
+      <div style="font-size: 26px; line-height: 1; margin-bottom: 6px; pointer-events: none;
         filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));">${item.icon}${unlocked ? '' : '<span style="position:absolute;top:6px;right:8px;font-size:10px;color:#ff7ad8;">🔒</span>'}</div>
-      <div class="kk-fs-mono" style="letter-spacing: 0.05em; color: ${unlocked ? '#f5efe1' : 'rgba(245,239,225,0.55)'}; line-height: 1.2;">
+      <div class="kk-fs-mono" style="letter-spacing: 0.05em; color: ${unlocked ? '#f5efe1' : 'rgba(245,239,225,0.55)'}; line-height: 1.2; pointer-events: none;">
         ${item.name}
       </div>
-      ${!unlocked ? `<div class="kk-fs-mono" style="margin-top:4px;color:rgba(255,122,216,0.7);font-size:9px;letter-spacing:0.04em;">${escapeHtml(item.unlock)}</div>` : ''}
+      ${!unlocked ? `<div class="kk-fs-mono" style="margin-top:4px;color:rgba(255,122,216,0.7);font-size:9px;letter-spacing:0.04em;pointer-events:none;">${escapeHtml(item.unlock)}</div>` : ''}
     `;
     if (unlocked) {
       card.addEventListener('mouseenter', () => {
@@ -1232,15 +1237,38 @@ function _renderPalette() {
         card.style.transform = '';
         if (_selectedItemId !== item.id) card.style.borderColor = 'rgba(255,232,188,0.18)';
       });
-      card.addEventListener('click', () => {
-        _selectedItemId = item.id;
-        _highlightSelectedPaletteEntry();
-        try { sfx.uiClick(); } catch (_) {}
-      });
     }
     _paletteEl.appendChild(card);
   }
   _highlightSelectedPaletteEntry();
+}
+
+// ── Iter 26 — palette selection via event delegation ───────────────────────
+// Previously each card carried its own `click` handler attached in
+// _renderPalette. That worked in isolation but proved fragile: any DOM
+// rebuild dropped the listeners, and a single mid-card child element with
+// stray pointer-events could swallow the click without bubbling far enough
+// to fire it. Delegation moves the listener up to _paletteEl itself, runs
+// on `mousedown` (fires before `click` so it beats any focus-shift races),
+// and resolves the target via [data-item-id]. Children of the card are
+// marked pointer-events:none in _renderPalette so e.target is always the
+// card root — but closest() handles the alternative regardless.
+function _onPaletteMouseDown(e) {
+  if (e.button !== 0) return;        // left-click only — right-click does nothing in palette
+  const card = e.target && e.target.closest ? e.target.closest('[data-item-id]') : null;
+  if (!card || !card.dataset || !card.dataset.itemId) return;
+  // stopPropagation + preventDefault to be defensive against future canvas
+  // listeners that might try to consume mousedown bubbling up from the body.
+  e.preventDefault();
+  e.stopPropagation();
+  const itemId = card.dataset.itemId;
+  // Re-check unlocked at click time (not render time) so a syncHomeUnlocks
+  // that fired between render and click — e.g. an achievement toast still
+  // animating — doesn't lock out a now-eligible card.
+  if (!isHomeItemUnlocked(itemId)) return;
+  _selectedItemId = itemId;
+  _highlightSelectedPaletteEntry();
+  try { sfx.uiClick(); } catch (_) {}
 }
 
 function _highlightSelectedPaletteEntry() {
@@ -1266,6 +1294,12 @@ function _updatePaletteCounts() {
 }
 
 function _destroyOverlay() {
+  // Detach the delegated palette listener before nulling the ref. The DOM
+  // node is about to be removed (which also drops listeners), but explicit
+  // teardown keeps the lifecycle symmetric with _buildOverlay.
+  if (_paletteEl) {
+    try { _paletteEl.removeEventListener('mousedown', _onPaletteMouseDown); } catch (_) {}
+  }
   if (_overlayEl && _overlayEl.parentNode) _overlayEl.parentNode.removeChild(_overlayEl);
   _overlayEl = null;
   _paletteEl = null;
