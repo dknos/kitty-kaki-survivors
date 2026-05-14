@@ -14,6 +14,7 @@
  * UI accents, single-pen 4px primary outline, 2px secondary detail.
  */
 import { grantEmbers } from './meta.js';
+import { sfx } from './audio.js';
 
 const PALETTE = {
   paper:    '#f3e8cf',
@@ -356,6 +357,7 @@ function _loop(t) {
 // ── Show / close ──
 export function showSketchbook() {
   if (_open) return;
+  try { sfx.modalOpen(); } catch (_) {}
   _open = true;
   _root = document.createElement('div');
   _root.id = 'kk-sketchbook';
@@ -396,6 +398,7 @@ export function showSketchbook() {
 
 function _close() {
   if (!_open) return;
+  try { sfx.modalClose(); } catch (_) {}
   _open = false;
   if (_raf) cancelAnimationFrame(_raf);
   _raf = 0;

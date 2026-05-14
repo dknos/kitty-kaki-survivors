@@ -18,6 +18,7 @@
  */
 
 import { getMeta, saveMeta } from './meta.js';
+import { sfx } from './audio.js';
 
 // ── Theme tokens (mirror ui.js so this module renders without coupling) ─────
 const C = {
@@ -217,6 +218,7 @@ export function isCodexOpen() { return !!_modal; }
 
 export function hideCodex() {
   if (!_modal) return;
+  try { sfx.modalClose(); } catch (_) {}
   if (_modal.parentNode) _modal.parentNode.removeChild(_modal);
   _modal = null;
   _expanded = null;
@@ -225,6 +227,7 @@ export function hideCodex() {
 
 export function showCodex() {
   if (_modal) return;
+  try { sfx.modalOpen(); } catch (_) {}
   // Lazy-resolve registries so this module doesn't pull three.js at import time.
   // weeklyMutator.js is lazy too — if 9a hasn't landed yet the Mutators tab
   // just renders an empty list rather than crashing the whole codex.

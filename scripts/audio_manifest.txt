@@ -104,3 +104,32 @@ bossSpawn    | scifi_pack/Audio/lowFrequency_explosion_001.ogg | boss_spawn_rumb
 
 # bossShockwave — fast low whoosh + sweep (sci-fi engine pulse)
 bossShockwave| scifi_pack/Audio/lowFrequency_explosion_000.ogg | boss_shockwave.ogg | asetrate=44100*1.05,aresample=44100,atempo=1/1.05,atrim=0:0.50,highpass=f=200,lowpass=f=2800
+
+# ── UI BOUQUET (iter 18) ─────────────────────────────────────────────────────
+# Kenney Interface pack (CC0). 2 variants per bucket for ±3% pitch jitter to
+# keep rapid menu navigation from feeling robotic. Routed to assets/audio/ui/.
+
+# uiClick — primary confirm (sharp pop)
+uiClick      | interface_pack/Audio/confirmation_001.ogg       | ui_click_a.ogg     | atrim=0:0.18,highpass=f=400
+uiClick      | interface_pack/Audio/confirmation_003.ogg       | ui_click_b.ogg     | atrim=0:0.18,highpass=f=400
+
+# uiCancel — back / dismiss (softer descending pluck)
+uiCancel     | interface_pack/Audio/back_001.ogg               | ui_cancel_a.ogg    | atrim=0:0.20,lowpass=f=5500
+uiCancel     | interface_pack/Audio/back_003.ogg               | ui_cancel_b.ogg    | atrim=0:0.20,lowpass=f=5500
+
+# uiHover — quiet menu-tick used at low gain; throttled by audio.js (30ms) and
+# call-site debounce (~100ms) so rapid mouseenters don't machine-gun.
+uiHover      | interface_pack/Audio/tick_001.ogg               | ui_hover_a.ogg     | atrim=0:0.10,highpass=f=600
+uiHover      | interface_pack/Audio/tick_002.ogg               | ui_hover_b.ogg     | atrim=0:0.10,highpass=f=600
+
+# uiError — failed action / red toast
+uiError      | interface_pack/Audio/error_002.ogg              | ui_error_a.ogg     | atrim=0:0.25
+uiError      | interface_pack/Audio/error_004.ogg              | ui_error_b.ogg     | atrim=0:0.25
+
+# modalOpen — swoosh-up (open / maximize layered ideas, two voices)
+modalOpen    | interface_pack/Audio/open_001.ogg               | modal_open_a.ogg   | atrim=0:0.35,aecho=0.6:0.4:60:0.2
+modalOpen    | interface_pack/Audio/maximize_002.ogg           | modal_open_b.ogg   | atrim=0:0.35,aecho=0.6:0.4:60:0.2
+
+# modalClose — swoosh-down (close + minimize), slightly darker than open
+modalClose   | interface_pack/Audio/close_001.ogg              | modal_close_a.ogg  | atrim=0:0.30,lowpass=f=5000
+modalClose   | interface_pack/Audio/minimize_002.ogg           | modal_close_b.ogg  | atrim=0:0.30,lowpass=f=5000

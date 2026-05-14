@@ -39,6 +39,9 @@ declare -A BUCKET_DIR=(
   [death]=death [heroDeath]=death [explosion]=death
   [bossWarn]=boss [bossSpawn]=boss [bossShockwave]=boss
   [victory]=levelup
+  # Iter 18 — UI SFX bouquet (Kenney Interface pack, CC0).
+  [uiClick]=ui [uiCancel]=ui [uiHover]=ui [uiError]=ui
+  [modalOpen]=ui [modalClose]=ui
 )
 
 # Common loudness/trim chain prepended to every row to guarantee tight

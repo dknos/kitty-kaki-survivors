@@ -23,7 +23,7 @@ import {
 // the Options menu sliders. Imported eagerly so the Options modal sliders
 // don't have to await a dynamic import on every drag event.
 import { applyAccessibilityOptions } from './postfx.js';
-import { setMasterVolume, setMusicVolume, setSfxVolume } from './audio.js';
+import { setMasterVolume, setMusicVolume, setSfxVolume, sfx } from './audio.js';
 import { CHARACTERS, STAGES } from './config.js';
 import { SLOT_SYMBOLS, rollReel, resolveOutcome, applyOutcome } from './slotMachine.js';
 import { pushFocusScope, popFocusScope } from './uiFocus.js';
@@ -454,6 +454,11 @@ function _fallbackCopy(s) {
 function _kkShowMicroToast(text, color) {
   const root = _root || document.getElementById('ui-root') || document.body;
   if (!root) return;
+  // Iter 18 — auto-fire UI error SFX when caller passed the red color (the
+  // existing "Share failed" / "Copy failed" call sites are the contract). The
+  // green/amber/cyan toasts stay silent so success acks don't double-cue with
+  // the uiClick that triggered them.
+  if (color === C.red) { try { sfx.uiError(); } catch (_) {} }
   const toast = document.createElement('div');
   const col = color || C.green;
   toast.style.cssText = `
@@ -1520,30 +1525,35 @@ export function showStartScreen(text) {
   shopBtn.type = 'button';
   shopBtn.textContent = 'Shop';
   shopBtn.style.cssText = ghostBtn('Shop', C.amber);
+  shopBtn.addEventListener('mouseenter', () => { try { sfx.uiHover(); } catch (_) {} });
   shopBtn.addEventListener('click', (e) => { e.stopPropagation(); showShop(); });
 
   const grimBtn = document.createElement('button');
   grimBtn.type = 'button';
   grimBtn.textContent = 'Grimoire';
   grimBtn.style.cssText = ghostBtn('Grimoire', C.magenta);
+  grimBtn.addEventListener('mouseenter', () => { try { sfx.uiHover(); } catch (_) {} });
   grimBtn.addEventListener('click', (e) => { e.stopPropagation(); showGrimoire(); });
 
   const codexBtn = document.createElement('button');
   codexBtn.type = 'button';
   codexBtn.textContent = 'Codex';
   codexBtn.style.cssText = ghostBtn('Codex', C.cyan);
+  codexBtn.addEventListener('mouseenter', () => { try { sfx.uiHover(); } catch (_) {} });
   codexBtn.addEventListener('click', (e) => { e.stopPropagation(); showCodex(); });
 
   const historyBtn = document.createElement('button');
   historyBtn.type = 'button';
   historyBtn.textContent = 'History';
   historyBtn.style.cssText = ghostBtn('History', C.amber);
+  historyBtn.addEventListener('mouseenter', () => { try { sfx.uiHover(); } catch (_) {} });
   historyBtn.addEventListener('click', (e) => { e.stopPropagation(); showRunHistory(); });
 
   const optsBtn = document.createElement('button');
   optsBtn.type = 'button';
   optsBtn.textContent = 'Options';
   optsBtn.style.cssText = ghostBtn('Options', C.cyan);
+  optsBtn.addEventListener('mouseenter', () => { try { sfx.uiHover(); } catch (_) {} });
   optsBtn.addEventListener('click', (e) => { e.stopPropagation(); showOptions(); });
 
   // ── Credits + How To Play ──
@@ -1555,6 +1565,7 @@ export function showStartScreen(text) {
   creditsBtn.textContent = 'Credits';
   creditsBtn.setAttribute('aria-label', 'View credits');
   creditsBtn.style.cssText = ghostBtn('Credits', C.amber);
+  creditsBtn.addEventListener('mouseenter', () => { try { sfx.uiHover(); } catch (_) {} });
   creditsBtn.addEventListener('click', (e) => { e.stopPropagation(); showCredits(); });
 
   const howToBtn = document.createElement('button');
@@ -1562,8 +1573,10 @@ export function showStartScreen(text) {
   howToBtn.textContent = 'How To Play';
   howToBtn.setAttribute('aria-label', 'Open How To Play in a new tab');
   howToBtn.style.cssText = ghostBtn('How To Play', C.cyan);
+  howToBtn.addEventListener('mouseenter', () => { try { sfx.uiHover(); } catch (_) {} });
   howToBtn.addEventListener('click', (e) => {
     e.stopPropagation();
+    try { sfx.uiClick(); } catch (_) {}
     try { window.open('how-to-play.html', '_blank', 'noopener'); } catch (_) {}
   });
 
@@ -1760,6 +1773,7 @@ export function showStartScreen(text) {
   recordsBtn.type = 'button';
   recordsBtn.textContent = 'Records';
   recordsBtn.style.cssText = ghostBtn('Records', C.magenta);
+  recordsBtn.addEventListener('mouseenter', () => { try { sfx.uiHover(); } catch (_) {} });
   recordsBtn.addEventListener('click', (e) => { e.stopPropagation(); showHallOfRecords(); });
 
   const townBtn = document.createElement('button');
@@ -2469,6 +2483,7 @@ function _closeSlot() {
 let _grimModal = null;
 export function showGrimoire() {
   if (_grimModal) return;
+  try { sfx.modalOpen(); } catch (_) {}
   _grimModal = document.createElement('div');
   _grimModal.style.cssText = `
     position: fixed; inset: 0;
@@ -2605,6 +2620,7 @@ export function showGrimoire() {
 }
 export function hideGrimoire() {
   if (!_grimModal) return;
+  try { sfx.modalClose(); } catch (_) {}
   if (_grimModal.parentNode) _grimModal.parentNode.removeChild(_grimModal);
   _grimModal = null;
 }
@@ -2615,6 +2631,7 @@ let _shopModal = null;
 let _shopFocusScope = null;
 export function showShop() {
   if (_shopModal) return;
+  try { sfx.modalOpen(); } catch (_) {}
   _shopModal = document.createElement('div');
   _shopModal.style.cssText = `
     position: fixed; inset: 0;
@@ -2911,6 +2928,7 @@ export function showShop() {
 }
 export function hideShop() {
   if (!_shopModal) return;
+  try { sfx.modalClose(); } catch (_) {}
   if (_shopFocusScope) { popFocusScope(_shopFocusScope); _shopFocusScope = null; }
   if (_shopModal.parentNode) _shopModal.parentNode.removeChild(_shopModal);
   _shopModal = null;
@@ -2922,6 +2940,7 @@ let _houseModal = null;
 export function isHouseOpen() { return !!_houseModal; }
 export function showHouse() {
   if (_houseModal) return;
+  try { sfx.modalOpen(); } catch (_) {}
   _houseModal = document.createElement('div');
   _houseModal.style.cssText = `
     position: fixed; inset: 0;
@@ -3036,6 +3055,7 @@ export function showHouse() {
 }
 export function hideHouse() {
   if (!_houseModal) return;
+  try { sfx.modalClose(); } catch (_) {}
   if (_houseModal.parentNode) _houseModal.parentNode.removeChild(_houseModal);
   _houseModal = null;
 }
@@ -3045,6 +3065,7 @@ let _questModal = null;
 export function isQuestBoardOpen() { return !!_questModal; }
 export function showQuestBoard() {
   if (_questModal) return;
+  try { sfx.modalOpen(); } catch (_) {}
   const meta = getMeta();
   const lain = !!(meta.quests && meta.quests.lainTerminal);
   _questModal = document.createElement('div');
@@ -3193,6 +3214,7 @@ export function showQuestBoard() {
 }
 export function hideQuestBoard() {
   if (!_questModal) return;
+  try { sfx.modalClose(); } catch (_) {}
   if (_questModal.parentNode) _questModal.parentNode.removeChild(_questModal);
   _questModal = null;
 }
@@ -3245,6 +3267,7 @@ function _applyAccessibilityLive() {
 }
 
 export function showOptions() {
+  try { sfx.modalOpen(); } catch (_) {}
   if (_optionsPanel) return;
   _ensureFontScaleStyle();
   const meta = getMeta();
@@ -3770,6 +3793,7 @@ function _showResetConfirmModal(onConfirm) {
 
 export function hideOptions() {
   if (!_optionsPanel) return;
+  try { sfx.modalClose(); } catch (_) {}
   if (_optionsPanel.parentNode) _optionsPanel.parentNode.removeChild(_optionsPanel);
   _optionsPanel = null;
   if (!state.gameOver && state.started) state.time.paused = false;
@@ -4074,11 +4098,13 @@ let _hallModal = null;
 export function isHallOfRecordsOpen() { return !!_hallModal; }
 export function hideHallOfRecords() {
   if (!_hallModal) return;
+  try { sfx.modalClose(); } catch (_) {}
   if (_hallModal.parentNode) _hallModal.parentNode.removeChild(_hallModal);
   _hallModal = null;
 }
 export function showHallOfRecords() {
   if (_hallModal) return;
+  try { sfx.modalOpen(); } catch (_) {}
   if (!_root) {
     injectCSS();
     _root = document.getElementById('ui-root');
@@ -4173,8 +4199,10 @@ export function showHallOfRecords() {
         color: ${C.cyan};
         font-family: ${F.mono}; font-size: 11px; letter-spacing: 0.04em;
       `;
+      seedBtn.addEventListener('mouseenter', () => { try { sfx.uiHover(); } catch (_) {} });
       seedBtn.addEventListener('click', (ev) => {
         ev.stopPropagation();
+        try { sfx.uiClick(); } catch (_) {}
         if (r.stage) setOption('selectedStage', r.stage);
         if (r.char)  setOption('selectedChar',  r.char);
         // Always clear ALL mode toggles first, then flip the one that matches
@@ -4221,6 +4249,7 @@ export function showHallOfRecords() {
     border: 1px solid ${C.edge}; border-radius: 8px;
     color: ${C.magenta}; font-family: ${F.display}; font-size: 13px; font-weight: 700;
     letter-spacing: 0.28em;`;
+  close.addEventListener('mouseenter', () => { try { sfx.uiHover(); } catch (_) {} });
   close.onclick = hideHallOfRecords;
 
   _hallModal.appendChild(title);
@@ -4286,6 +4315,7 @@ let _creditsFocusScope = null;
 
 export function showCredits() {
   if (_creditsModal || !_root) return;
+  try { sfx.modalOpen(); } catch (_) {}
 
   _creditsModal = document.createElement('div');
   _creditsModal.setAttribute('role', 'dialog');
@@ -4390,6 +4420,7 @@ export function showCredits() {
 
 export function hideCredits() {
   if (!_creditsModal) return;
+  try { sfx.modalClose(); } catch (_) {}
   if (_creditsFocusScope) { popFocusScope(_creditsFocusScope); _creditsFocusScope = null; }
   if (_creditsModal.parentNode) _creditsModal.parentNode.removeChild(_creditsModal);
   _creditsModal = null;

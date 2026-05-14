@@ -199,6 +199,15 @@ const SFX_MANIFEST = {
   bossSpawnBell:['audio/boss/boss_spawn_bell.ogg'],   // layered components — sfx.bossSpawn() plays both
   bossSpawnRumble:['audio/boss/boss_spawn_rumble.ogg'],
   bossShockwave:['audio/boss/boss_shockwave.ogg'],
+  // UI bouquet (iter 18) — 2 variants per bucket so menu navigation jitters
+  // gracefully under the ±3% pitch shift. Kept low-gain at the call sites
+  // (audio.js per-call gain, plus the sfx submaster) so they sit under combat.
+  uiClick:      ['audio/ui/ui_click_a.ogg',   'audio/ui/ui_click_b.ogg'],
+  uiCancel:     ['audio/ui/ui_cancel_a.ogg',  'audio/ui/ui_cancel_b.ogg'],
+  uiHover:      ['audio/ui/ui_hover_a.ogg',   'audio/ui/ui_hover_b.ogg'],
+  uiError:      ['audio/ui/ui_error_a.ogg',   'audio/ui/ui_error_b.ogg'],
+  modalOpen:    ['audio/ui/modal_open_a.ogg', 'audio/ui/modal_open_b.ogg'],
+  modalClose:   ['audio/ui/modal_close_a.ogg','audio/ui/modal_close_b.ogg'],
 };
 
 const SFX_BANK = Object.fromEntries(Object.keys(SFX_MANIFEST).map(k => [k, []]));
@@ -339,6 +348,29 @@ export const sfx = {
     _play('bossSpawnRumble', { gain: 0.55, delay: 0.08 });
   }),
   bossShockwave: _throttled('bossShockwave', () => _play('bossShockwave', { gain: 0.55 })),
+
+  // ── UI bouquet (iter 18) ───────────────────────────────────────────────────
+  // Modal open/close intentionally lower-gain than clicks — they're "weight"
+  // sounds that frame the click, not the click itself. uiHover uses a longer
+  // throttle (separate from the 30ms default) so rapid mouseenter across a
+  // row of cards doesn't machine-gun the bus.
+  uiClick:    _throttled('uiClick',    () => _play('uiClick',    { gain: 0.45 })),
+  uiCancel:   _throttled('uiCancel',   () => _play('uiCancel',   { gain: 0.40 })),
+  uiError:    _throttled('uiError',    () => _play('uiError',    { gain: 0.55 })),
+  modalOpen:  _throttled('modalOpen',  () => _play('modalOpen',  { gain: 0.55 })),
+  modalClose: _throttled('modalClose', () => _play('modalClose', { gain: 0.50 })),
+  // Hover has its own 100ms debounce on top of the per-call throttle so
+  // dragging across a row of buttons doesn't fire on every microtick.
+  uiHover:    (() => {
+    let _lastHover = 0;
+    const HOVER_DEBOUNCE_MS = 100;
+    return () => {
+      const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+      if (now - _lastHover < HOVER_DEBOUNCE_MS) return;
+      _lastHover = now;
+      _play('uiHover', { gain: 0.22 });
+    };
+  })(),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
