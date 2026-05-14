@@ -158,6 +158,12 @@ export function triggerHelltide() {
   state.run.helltideEndAt = now + HELLTIDE_DURATION;
   state.run.helltideSpawnMul = SPAWN_MUL_DURING;
   state.run.helltideEliteBonus = 0.15;
+  // Per-event earned counter — resets on every Helltide trigger so multi-event
+  // runs credit only the delta. helltideEmbersBanked is the SPENDABLE balance
+  // (decremented at chests); helltideEmbersEarnedThisEvent is the LIFETIME-
+  // credit input (never decremented, resets here). Codex flagged the prior
+  // single-counter design as double-counting across repeated events.
+  state.run.helltideEmbersEarnedThisEvent = 0;
   // Apply visual overlay (env.js lerps over ~1.5s)
   if (state.envGroup && typeof state.envGroup.userData.applyHelltideOverlay === 'function') {
     state.envGroup.userData.applyHelltideOverlay(true, 1.0);
@@ -204,18 +210,20 @@ export function endHelltide(announce = true) {
   }
   _embers.length = 0;
   if (_emberInst) _emberInst.instanceMatrix.needsUpdate = true;
-  // Lifetime stat updates — always credit, even on death-mid-Helltide
-  // (teardownHelltide path passes announce=false but the player still earned
-  // those embers; only the closing banner is gated on announce).
+  // Lifetime stat updates — credit the per-event EARNED counter, NOT the
+  // spendable balance. Codex flagged a double-count bug where multi-event
+  // runs credited the cumulative balance every time + spending at chests
+  // made totals depend on spending timing instead of pickups.
+  const earned = state.run.helltideEmbersEarnedThisEvent || 0;
   const banked = state.run.helltideEmbersBanked || 0;
-  state.run.helltideMaxBanked = Math.max(state.run.helltideMaxBanked || 0, banked);
+  state.run.helltideMaxBanked = Math.max(state.run.helltideMaxBanked || 0, earned);
   try {
-    if (banked > 0) bumpLifetime('helltideEmbersTotal', banked);
+    if (earned > 0) bumpLifetime('helltideEmbersTotal', earned);
     const meta = getMeta();
     if (!meta.lifetime) meta.lifetime = {};
     const prevMax = meta.lifetime.helltideMaxBanked || 0;
-    if (banked > prevMax) {
-      meta.lifetime.helltideMaxBanked = banked;
+    if (earned > prevMax) {
+      meta.lifetime.helltideMaxBanked = earned;
       saveMeta();
     }
   } catch (_) {}
@@ -699,7 +707,11 @@ function _tickEmbers(dt) {
     if (dx * dx + dz * dz <= EMBER_PICKUP_R2) {
       em.alive = false;
       _emberInst.setMatrixAt(em.slot, _emberHideMat);
-      state.run.helltideEmbersBanked = (state.run.helltideEmbersBanked || 0) + (em.value || 1);
+      const v = em.value || 1;
+      state.run.helltideEmbersBanked = (state.run.helltideEmbersBanked || 0) + v;
+      // Per-event earned tracker (never decremented by chest spending) — what
+      // endHelltide credits to lifetime. See triggerHelltide comment.
+      state.run.helltideEmbersEarnedThisEvent = (state.run.helltideEmbersEarnedThisEvent || 0) + v;
       // tiny spark burst for feedback
       spawnMagnetSpark(em.x, 0.6, em.z, 0xff5a28);
       if (sfx && sfx.pickup) sfx.pickup();

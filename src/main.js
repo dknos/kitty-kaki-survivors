@@ -450,6 +450,13 @@ function _teardownActiveRun() {
   // Tear down arena decor (re-built when the next run's stage tint applies).
   if (state.scene) clearArenaDecor(state.scene);
 
+  // Finalize Helltide BEFORE resetState wipes its state. teardownHelltide
+  // reads state.run.helltideActive + helltideEmbersBanked to credit lifetime
+  // stats; if resetState fires first those flags are gone and the credit
+  // never happens (Codex review found this defeated the iter 20 fix).
+  // teardownMiniEvents calls into teardownHelltide internally.
+  teardownMiniEvents();
+
   // Reset core state (clears weapons, fillerCounts, etc.)
   resetState();
   resetZoom();
@@ -462,7 +469,6 @@ function _teardownActiveRun() {
   resetEnemyTells();
   resetStageHazards();
   clearStageRule(state);
-  teardownMiniEvents();
   resetArenaProps();
   resetCatacomb();
   resetBossTelegraphs();
