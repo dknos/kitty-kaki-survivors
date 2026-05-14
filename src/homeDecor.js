@@ -36,6 +36,8 @@ import {
 } from './meta.js';
 import { cloneCached } from './assets.js';
 import { sfx } from './audio.js';
+import { gamepadState } from './gamepad.js';
+import { consumePadInteract } from './input.js';
 
 // ── Room geometry (mirrors interior.js constants — keep in sync) ────────────
 export const ROOM_W = 14;
@@ -270,6 +272,32 @@ let _paletteEl = null;
 let _placementsDirty = false;    // batched save flag — flushed on commit
 let _onCloseCb = null;           // optional caller hook (re-show interior prompt)
 
+// ── Iter 23b — gamepad / input-mode state ──────────────────────────────────
+// Decorate mode supports mouse+kbm AND gamepad. _inputMode tracks which
+// device was last seen so cursor rendering branches cleanly between the
+// raycast path (mouse) and the discrete-grid path (gamepad). A mousemove
+// flips back to 'mouse'; ANY gamepad activity flips to 'gamepad'.
+let _inputMode = 'mouse';        // 'mouse' | 'gamepad'
+// Gamepad-driven focus position. Mirrors _hoverTile / _hoverWall shape so
+// the rest of the placement plumbing can stay agnostic. When _inputMode is
+// 'gamepad' these are the active focus; in 'mouse' they're shadow state
+// (kept around so toggling back to gamepad lands where you left off).
+let _gpFocusTile = { gx: 5, gz: 4 };   // default = roughly room center
+let _gpFocusWall = null;               // { side, slot } when traversed onto a wall
+// Left-stick edge detection — analog axes need one-shot-per-deflection
+// logic. We track the previous frame's quantized direction and re-fire
+// after _STICK_REPEAT_S of continued hold for hold-to-repeat.
+let _stickPrevDir = { x: 0, z: 0 };
+let _stickRepeatT = 0;
+const _STICK_THRESH = 0.55;
+const _STICK_REPEAT_S = 0.18;
+// D-pad hold-to-repeat (held buttons re-fire after the same cadence so
+// players can sweep across the grid without machine-gunning the d-pad).
+let _dpadRepeatT = { up: 0, down: 0, left: 0, right: 0 };
+const _DPAD_REPEAT_S = 0.18;
+// Frame timer (delta accumulated each tickHomeDecor for repeat math).
+let _lastTickT = 0;
+
 // ── Public API ──────────────────────────────────────────────────────────────
 
 /**
@@ -359,6 +387,21 @@ export function closeDecorateMode() {
   _selectedItemId = null;
   _hoverTile = null;
   _hoverWall = null;
+  // Iter 23b — reset gamepad transients so a re-open lands in mouse mode by
+  // default and the d-pad repeat clocks don't carry across sessions.
+  _inputMode = 'mouse';
+  _gpFocusWall = null;
+  _stickPrevDir = { x: 0, z: 0 };
+  _stickRepeatT = 0;
+  _dpadRepeatT = { up: 0, down: 0, left: 0, right: 0 };
+  _lastTickT = 0;
+  // Also drain a stale pad-interact queue: B-to-exit fires _gpSecondaryAction
+  // which calls closeDecorateMode here; the same B-press already enqueued
+  // _padInteractQueued in input.js. If we don't drain it now, the very next
+  // frame after close will fire an interact on whatever interactable the
+  // hero is standing on. tickHomeDecor already drains while active — this
+  // catches the close-mid-frame edge case.
+  try { consumePadInteract(); } catch (_) {}
   // Flush any pending placements (defensive — placeItem saves immediately,
   // but a session crash mid-rotate could leave _placementsDirty set).
   if (_placementsDirty) { saveMeta(); _placementsDirty = false; }
@@ -371,9 +414,21 @@ export function setOnClose(cb) { _onCloseCb = cb; }
 /**
  * Per-frame tick from interior.js. Updates cursor position from the mouse,
  * snaps to the nearest tile or wall slot. No-op while decorate mode is off.
+ * Iter 23b — also services gamepad navigation + button actions.
  */
 export function tickHomeDecor() {
   if (!_decorateActive) return;
+  // Derive dt locally — interior.js's tickInterior() doesn't forward one to
+  // us, and we only need it for the stick/d-pad hold-to-repeat clocks.
+  const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+  const dt = _lastTickT ? Math.min(0.1, (now - _lastTickT) / 1000) : 0;
+  _lastTickT = now;
+  // Drain the global pad-interact queue regardless of input mode — if we
+  // don't, B-press for "exit decorate" would also fire an interact on the
+  // first frame after closing decorate. We consume it now and route it
+  // through our own gamepad dispatcher below.
+  const padInteract = consumePadInteract();
+  _gpTick(dt, padInteract);
   _updateCursor();
 }
 
@@ -647,6 +702,10 @@ function _nearestWallSlot(wx, wz) {
 
 function _updateCursor() {
   if (!_cursorMesh || !_wallCursorMesh) return;
+  if (_inputMode === 'gamepad') {
+    _updateCursorGamepad();
+    return;
+  }
   const hit = _floorIntersect();
   if (!hit) {
     _cursorMesh.visible = false;
@@ -660,15 +719,8 @@ function _updateCursor() {
     const ws = _nearestWallSlot(hit.x, hit.z);
     _hoverTile = null;
     _hoverWall = ws;
-    if (ws) {
-      const w = wallSlotToWorld(ws.side, ws.slot);
-      _wallCursorMesh.position.set(w.x, w.y, w.z);
-      _wallCursorMesh.rotation.y = w.rotY;
-      _wallCursorMesh.visible = true;
-      _cursorMesh.visible = false;
-    } else {
-      _wallCursorMesh.visible = false;
-    }
+    if (ws) _paintWallCursor(ws);
+    else _wallCursorMesh.visible = false;
     return;
   }
   // Floor placement (or pickup with no item held)
@@ -680,18 +732,57 @@ function _updateCursor() {
     return;
   }
   _hoverTile = { gx, gz };
+  _paintFloorCursor(gx, gz, def);
+}
+
+/**
+ * Iter 23b — gamepad cursor branch. The d-pad / left-stick code has already
+ * moved `_gpFocusTile` or `_gpFocusWall`; we just project those into world
+ * space and tint the cursor mesh. Hover-state mirrors mouse mode so the
+ * existing _placementsFootprintAt / _canPlaceAt feedback paints normally.
+ */
+function _updateCursorGamepad() {
+  const def = _selectedItemId ? HOME_CATALOG.find(c => c.id === _selectedItemId) : null;
+  if (_gpFocusWall) {
+    _hoverTile = null;
+    _hoverWall = _gpFocusWall;
+    _paintWallCursor(_gpFocusWall);
+    return;
+  }
+  const { gx, gz } = _gpFocusTile;
+  _hoverWall = null;
+  _hoverTile = { gx, gz };
+  _paintFloorCursor(gx, gz, def);
+}
+
+function _paintWallCursor(ws) {
+  const w = wallSlotToWorld(ws.side, ws.slot);
+  _wallCursorMesh.position.set(w.x, w.y, w.z);
+  _wallCursorMesh.rotation.y = w.rotY;
+  _wallCursorMesh.visible = true;
+  _cursorMesh.visible = false;
+}
+
+function _paintFloorCursor(gx, gz, def) {
   const center = tileToWorld(gx, gz);
   _cursorMesh.position.set(center.x, 0.03, center.z);
   const reserved = isReserved(gx, gz);
   const occupied = _placementsFootprintAt(gx, gz);
   let canPlace = false;
   if (def) canPlace = _canPlaceAt(def, gx, gz);
+  // Gamepad mode uses amber (#ffd27f) as its baseline focus color so it
+  // reads as "controller cursor"; mouse keeps the cyan baseline. Both still
+  // surface the red/cyan place-validity feedback.
+  const gp = _inputMode === 'gamepad';
   _cursorMesh.material.color.setHex(
     reserved ? 0xff5e5e :
+    canPlace ? (gp ? 0xffd27f : 0x7fffe4) :
     occupied ? 0xffd27f :
-    canPlace ? 0x7fffe4 :
     0xb0b0b0,
   );
+  // In gamepad mode bump the opacity slightly so the focus tile is
+  // visually punchier than a passive mouse hover.
+  _cursorMesh.material.opacity = gp ? 0.55 : 0.32;
   _cursorMesh.visible = true;
   _wallCursorMesh.visible = false;
 }
@@ -701,6 +792,10 @@ function _updateCursor() {
 function _onMouseMove(e) {
   _mouse.clientX = e.clientX;
   _mouse.clientY = e.clientY;
+  // Iter 23b — mouse activity flips the input mode back to 'mouse'. This is
+  // the only hook that triggers the flip; gamepad activity flips the other
+  // way inside _gpTick.
+  if (_inputMode !== 'mouse') _inputMode = 'mouse';
 }
 
 function _onMouseDown(e) {
@@ -749,6 +844,251 @@ function _onContextMenu(e) {
   if (!_decorateActive) return;
   if (_overlayEl && _overlayEl.contains(e.target)) return;
   e.preventDefault();
+}
+
+// ── Iter 23b — gamepad input dispatcher ───────────────────────────────────
+// Polls gamepadState (already refreshed by input.js#sampleInput each frame)
+// and turns d-pad / stick / button activity into the same actions the
+// mouse+kbm handlers fire. Lives inside the same module so it shares
+// _selectedItemId / _hoverTile / _hoverWall etc.
+
+/**
+ * Translate a d-pad / left-stick "direction nudge" into a focus-tile delta.
+ * Mapping is grid-aligned (advisor said keep it simple): up=gz-1, down=gz+1,
+ * left=gx-1, right=gx+1. From the far edge of the floor in any direction,
+ * one more nudge moves onto the corresponding wall.
+ */
+function _gpMoveFocus(dir /* 'up'|'down'|'left'|'right' */) {
+  // If we're currently on a wall, the inverse direction returns us to the
+  // floor; same-axis nudges scroll along the wall slots.
+  if (_gpFocusWall) {
+    const w = _gpFocusWall;
+    if (w.side === 'N') {
+      if (dir === 'down') { _gpFocusWall = null; _gpFocusTile = { gx: _wallSlotToGx(w.slot), gz: 0 }; return; }
+      if (dir === 'left')  { _gpFocusWall = { side: 'N', slot: Math.max(0, w.slot - 1) }; return; }
+      if (dir === 'right') { _gpFocusWall = { side: 'N', slot: Math.min(WALL_SLOTS - 1, w.slot + 1) }; return; }
+      return;
+    }
+    if (w.side === 'S') {
+      if (dir === 'up') { _gpFocusWall = null; _gpFocusTile = { gx: _wallSlotToGx(WALL_SLOTS - 1 - w.slot), gz: GRID_ROWS - 1 }; return; }
+      if (dir === 'left')  { _gpFocusWall = { side: 'S', slot: Math.max(0, w.slot - 1) }; return; }
+      if (dir === 'right') { _gpFocusWall = { side: 'S', slot: Math.min(WALL_SLOTS - 1, w.slot + 1) }; return; }
+      return;
+    }
+    if (w.side === 'E') {
+      if (dir === 'left') { _gpFocusWall = null; _gpFocusTile = { gx: GRID_COLS - 1, gz: _wallSlotToGz(w.slot) }; return; }
+      if (dir === 'up')   { _gpFocusWall = { side: 'E', slot: Math.max(0, w.slot - 1) }; return; }
+      if (dir === 'down') { _gpFocusWall = { side: 'E', slot: Math.min(WALL_SLOTS - 1, w.slot + 1) }; return; }
+      return;
+    }
+    if (w.side === 'W') {
+      if (dir === 'right') { _gpFocusWall = null; _gpFocusTile = { gx: 0, gz: _wallSlotToGz(WALL_SLOTS - 1 - w.slot) }; return; }
+      if (dir === 'up')    { _gpFocusWall = { side: 'W', slot: Math.max(0, w.slot - 1) }; return; }
+      if (dir === 'down')  { _gpFocusWall = { side: 'W', slot: Math.min(WALL_SLOTS - 1, w.slot + 1) }; return; }
+      return;
+    }
+  }
+  // On the floor — nudge until we slide off an edge, then step onto the
+  // corresponding wall.
+  let { gx, gz } = _gpFocusTile;
+  if (dir === 'up')    gz--;
+  if (dir === 'down')  gz++;
+  if (dir === 'left')  gx--;
+  if (dir === 'right') gx++;
+  if (gz < 0) {
+    _gpFocusWall = { side: 'N', slot: _gxToWallSlot(_gpFocusTile.gx) };
+    return;
+  }
+  if (gz >= GRID_ROWS) {
+    _gpFocusWall = { side: 'S', slot: (WALL_SLOTS - 1) - _gxToWallSlot(_gpFocusTile.gx) };
+    return;
+  }
+  if (gx < 0) {
+    _gpFocusWall = { side: 'W', slot: (WALL_SLOTS - 1) - _gzToWallSlot(_gpFocusTile.gz) };
+    return;
+  }
+  if (gx >= GRID_COLS) {
+    _gpFocusWall = { side: 'E', slot: _gzToWallSlot(_gpFocusTile.gz) };
+    return;
+  }
+  _gpFocusTile = { gx, gz };
+}
+function _gxToWallSlot(gx) {
+  // 10 columns → 8 slots: linear remap, rounded.
+  return Math.max(0, Math.min(WALL_SLOTS - 1, Math.round(gx / (GRID_COLS - 1) * (WALL_SLOTS - 1))));
+}
+function _gzToWallSlot(gz) {
+  return Math.max(0, Math.min(WALL_SLOTS - 1, Math.round(gz / (GRID_ROWS - 1) * (WALL_SLOTS - 1))));
+}
+function _wallSlotToGx(slot) {
+  return Math.max(0, Math.min(GRID_COLS - 1, Math.round(slot / (WALL_SLOTS - 1) * (GRID_COLS - 1))));
+}
+function _wallSlotToGz(slot) {
+  return Math.max(0, Math.min(GRID_ROWS - 1, Math.round(slot / (WALL_SLOTS - 1) * (GRID_ROWS - 1))));
+}
+
+/** Cycle palette selection by step (+1 = next unlocked, -1 = previous). */
+function _gpCyclePalette(step) {
+  const unlockedIds = HOME_CATALOG.filter(i => isHomeItemUnlocked(i.id)).map(i => i.id);
+  if (unlockedIds.length === 0) return;
+  let idx = _selectedItemId ? unlockedIds.indexOf(_selectedItemId) : -1;
+  if (idx < 0) idx = (step > 0) ? -1 : 0;
+  idx = (idx + step + unlockedIds.length) % unlockedIds.length;
+  _selectedItemId = unlockedIds[idx];
+  _highlightSelectedPaletteEntry();
+  // Scroll the palette so the new selection is visible — important since
+  // the catalog has 16 entries and the overlay is 76vh tall.
+  try {
+    const card = _paletteEl && _paletteEl.querySelector(`[data-item-id="${_selectedItemId}"]`);
+    if (card && card.scrollIntoView) card.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+  } catch (_) {}
+  try { sfx.uiClick(); } catch (_) {}
+}
+
+/**
+ * Page palette categories. Catalog layout (HOME_CATALOG above) is 11 floor
+ * items followed by 5 wall items. LB = jump to start of floor section; RB
+ * = jump to start of wall section.
+ */
+function _gpPagePalette(dir /* -1 = floor, +1 = wall */) {
+  const targetWall = dir > 0;
+  const unlocked = HOME_CATALOG.filter(i => isHomeItemUnlocked(i.id) && !!i.wall === targetWall);
+  if (unlocked.length === 0) return;
+  _selectedItemId = unlocked[0].id;
+  _highlightSelectedPaletteEntry();
+  try {
+    const card = _paletteEl && _paletteEl.querySelector(`[data-item-id="${_selectedItemId}"]`);
+    if (card && card.scrollIntoView) card.scrollIntoView({ block: 'nearest', behavior: 'instant' });
+  } catch (_) {}
+  try { sfx.uiClick(); } catch (_) {}
+}
+
+/** A button: place (if item held) else pick up at focus. */
+function _gpPrimaryAction() {
+  if (_selectedItemId) {
+    const def = HOME_CATALOG.find(c => c.id === _selectedItemId);
+    if (!def) return;
+    if (def.wall) {
+      if (_gpFocusWall) _placeWallItem(_selectedItemId, _gpFocusWall.side, _gpFocusWall.slot);
+    } else if (!_gpFocusWall) {
+      _placeFloorItem(_selectedItemId, _gpFocusTile.gx, _gpFocusTile.gz);
+    }
+    _updatePaletteCounts();
+    return;
+  }
+  // Nothing held — pick up under the focus.
+  if (_gpFocusWall) _pickupWallAt(_gpFocusWall.side, _gpFocusWall.slot);
+  else _pickupAt(_gpFocusTile.gx, _gpFocusTile.gz);
+  _updatePaletteCounts();
+}
+
+/** B button: pick up at focus, OR exit if nothing under focus and nothing held. */
+function _gpSecondaryAction() {
+  // Try pickup first
+  let picked = false;
+  if (_gpFocusWall) picked = _pickupWallAt(_gpFocusWall.side, _gpFocusWall.slot);
+  else picked = _pickupAt(_gpFocusTile.gx, _gpFocusTile.gz);
+  if (picked) { _updatePaletteCounts(); return; }
+  // Nothing to pick up — if nothing is held either, B exits decorate mode.
+  if (!_selectedItemId) {
+    closeDecorateMode();
+  } else {
+    // Clear selection so the next B-press exits (two-step "drop, then exit").
+    _selectedItemId = null;
+    _highlightSelectedPaletteEntry();
+    try { sfx.uiClick(); } catch (_) {}
+  }
+}
+
+function _gpRotateAction() {
+  if (_gpFocusWall) return; // wall items don't rotate
+  _rotateAt(_gpFocusTile.gx, _gpFocusTile.gz);
+}
+
+function _gpTick(dt, padInteractDrained) {
+  // padInteractDrained is the value already pulled from consumePadInteract()
+  // by tickHomeDecor — pad-B triggers the input.js queue, but we route it
+  // through our own _gpSecondaryAction below using gamepadState.justPressed.b
+  // directly. The drain is just to keep interior.js from re-firing it on the
+  // first frame after decorate closes. (See advisor note 2.)
+  void padInteractDrained;
+
+  if (!gamepadState.connected) return;
+  const jp = gamepadState.justPressed;
+  const b = gamepadState.buttons;
+
+  // ── Detect any gamepad activity → flip _inputMode = 'gamepad' ───────────
+  const stickActive = Math.hypot(gamepadState.lx, gamepadState.ly) > _STICK_THRESH;
+  const anyEdge = jp.a || jp.b || jp.x || jp.y || jp.lb || jp.rb ||
+                  jp.start || jp.back ||
+                  jp.dpadUp || jp.dpadDown || jp.dpadLeft || jp.dpadRight;
+  const anyHeld = b.dpadUp || b.dpadDown || b.dpadLeft || b.dpadRight;
+  if (anyEdge || stickActive || anyHeld) {
+    if (_inputMode !== 'gamepad') {
+      _inputMode = 'gamepad';
+      // Seed wall focus from the current mouse hover if available so the
+      // first nudge doesn't snap the cursor across the room.
+      if (_hoverWall) { _gpFocusWall = { ..._hoverWall }; }
+      else if (_hoverTile) { _gpFocusTile = { ..._hoverTile }; _gpFocusWall = null; }
+    }
+  }
+
+  // ── Navigation: d-pad (digital, edge-detect + hold-repeat) ──────────────
+  // dir is also the key into _dpadRepeatT so the clock math reads cleanly.
+  const stepDpad = (key, dir) => {
+    if (jp[key]) {
+      _gpMoveFocus(dir);
+      _dpadRepeatT[dir] = _DPAD_REPEAT_S;
+      return;
+    }
+    if (b[key]) {
+      _dpadRepeatT[dir] -= dt;
+      if (_dpadRepeatT[dir] <= 0) {
+        _gpMoveFocus(dir);
+        _dpadRepeatT[dir] = _DPAD_REPEAT_S;
+      }
+    } else {
+      _dpadRepeatT[dir] = 0;
+    }
+  };
+  stepDpad('dpadUp', 'up');
+  stepDpad('dpadDown', 'down');
+  stepDpad('dpadLeft', 'left');
+  stepDpad('dpadRight', 'right');
+
+  // ── Navigation: left stick (analog, quantized to cardinal). Diagonal
+  // input commits the dominant axis. Edge fires on cross-threshold; hold
+  // re-fires every _STICK_REPEAT_S. ──
+  const lx = gamepadState.lx, ly = gamepadState.ly;
+  let curDir = { x: 0, z: 0 };
+  if (Math.abs(lx) > _STICK_THRESH || Math.abs(ly) > _STICK_THRESH) {
+    if (Math.abs(lx) > Math.abs(ly)) curDir = { x: Math.sign(lx), z: 0 };
+    else                              curDir = { x: 0, z: Math.sign(ly) };
+  }
+  const sameAsPrev = (curDir.x === _stickPrevDir.x && curDir.z === _stickPrevDir.z);
+  if (!sameAsPrev) {
+    // Direction changed (or rest → deflect, or deflect → rest, or flipped).
+    if (curDir.x !== 0 || curDir.z !== 0) {
+      _gpMoveFocus(curDir.x < 0 ? 'left' : curDir.x > 0 ? 'right' : curDir.z < 0 ? 'up' : 'down');
+      _stickRepeatT = _STICK_REPEAT_S;
+    }
+    _stickPrevDir = curDir;
+  } else if (curDir.x !== 0 || curDir.z !== 0) {
+    _stickRepeatT -= dt;
+    if (_stickRepeatT <= 0) {
+      _gpMoveFocus(curDir.x < 0 ? 'left' : curDir.x > 0 ? 'right' : curDir.z < 0 ? 'up' : 'down');
+      _stickRepeatT = _STICK_REPEAT_S;
+    }
+  }
+
+  // ── Button edges ────────────────────────────────────────────────────────
+  if (jp.a) _gpPrimaryAction();
+  if (jp.b) _gpSecondaryAction();
+  if (jp.x) _gpRotateAction();
+  if (jp.y) _gpCyclePalette(+1);
+  if (jp.lb) _gpPagePalette(-1);   // jump to floor section
+  if (jp.rb) _gpPagePalette(+1);   // jump to wall section
+  if (jp.start || jp.back) closeDecorateMode();
 }
 
 function _attachInputListeners() {
@@ -840,10 +1180,18 @@ function _buildOverlay() {
     color: rgba(245,239,225,0.7); letter-spacing: 0.10em; line-height: 1.6;
   `;
   strip.innerHTML =
-    '<b style="color:#ffd27f;">CLICK</b> to place &nbsp;·&nbsp; ' +
+    '<b style="color:#ffd27f;">CLICK</b> place &nbsp;·&nbsp; ' +
     '<b style="color:#ffd27f;">R</b> rotate &nbsp;·&nbsp; ' +
     '<b style="color:#ffd27f;">RIGHT-CLICK</b> pick up &nbsp;·&nbsp; ' +
-    '<b style="color:#ffd27f;">H / ESC</b> exit';
+    '<b style="color:#ffd27f;">H / ESC</b> exit' +
+    '<br><span style="opacity:0.7;">' +
+    '<b style="color:#ffd27f;">D-PAD</b> nav &nbsp;·&nbsp; ' +
+    '<b style="color:#ffd27f;">A</b> place &nbsp;·&nbsp; ' +
+    '<b style="color:#ffd27f;">B</b> pick up / exit &nbsp;·&nbsp; ' +
+    '<b style="color:#ffd27f;">X</b> rotate &nbsp;·&nbsp; ' +
+    '<b style="color:#ffd27f;">Y</b> cycle &nbsp;·&nbsp; ' +
+    '<b style="color:#ffd27f;">LB/RB</b> page' +
+    '</span>';
   _overlayEl.appendChild(strip);
 
   document.body.appendChild(_overlayEl);

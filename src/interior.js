@@ -23,6 +23,8 @@ import {
   HOME_CATALOG,
 } from './homeDecor.js';
 import { sfx } from './audio.js';
+import { gamepadState } from './gamepad.js';
+import { consumePadLevelUpConfirm } from './input.js';
 
 // Shared rune texture for interior FX (furnace ring). Lazy-cached.
 let _runeTex = null;
@@ -583,7 +585,7 @@ export function buildInterior(scene) {
       box-shadow: 0 6px 18px rgba(0,0,0,0.55);
       display: none;
     `;
-    _decoratePromptEl.innerHTML = '<b style="color:#ffd27f;">H</b> · Decorate';
+    _decoratePromptEl.innerHTML = '<b style="color:#ffd27f;">H</b> / <b style="color:#ffd27f;">[Y]</b> · Decorate';
     document.body.appendChild(_decoratePromptEl);
   }
   return g;
@@ -699,6 +701,17 @@ export function tickInterior(dt) {
   if (isDecorateActive()) {
     if (_promptEl) _promptEl.style.display = 'none';
     if (_decoratePromptEl) _decoratePromptEl.style.display = 'none';
+    return;
+  }
+
+  // Iter 23b — gamepad Y opens decorate mode (mirrors the H keybind).
+  // input.js queues `_padLevelUpConfirmQueued` on every Y-press globally;
+  // it's only consumed by the level-up modal, which never fires inside the
+  // interior. We drain it here AND act on it. Reading justPressed.y directly
+  // is also fine since the queue + edge fire on the same frame, but going
+  // through consume() keeps the drain explicit.
+  if (gamepadState.connected && consumePadLevelUpConfirm()) {
+    try { openDecorateMode(); } catch (_) {}
     return;
   }
 
