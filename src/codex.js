@@ -109,6 +109,15 @@ export const LORE = {
   shielded:  { name: 'Shielded',  icon: '🛡️', text: 'A gilded rim of warding flickers along its hide, eating big hits whole. Sustained DPS strips it; the burst opener just bounces.' },
   swift:     { name: 'Swift',     icon: '💨', text: 'Lean, dry-boned, and faster than it has any right to be. Lead your shots — it\'s glassy if you can catch it.' },
   frosted:   { name: 'Frosted',   icon: '❄️', text: 'A breath of winter clings to its shoulders, sapping the warmth from anything close. Stay at the edge of its aura or you\'ll move like cold honey.' },
+
+  // Weekly mutators (keyed by WEEKLY_MUTATORS[*].id in weeklyMutator.js).
+  // Two-sentence wolf-tone flavor each. Surface in the codex Mutators tab.
+  DOUBLE_SPAWNS:    { name: 'Hour of the Tide',      icon: '🌊', text: 'The grove forgets its restraint and pours the swarm out twice over. There is no quiet minute this week — every horizon you scan, the count has already doubled.' },
+  HALF_HP_HALF_DMG: { name: 'Glass and Vellum',      icon: '🪶', text: 'Everything in the wood has grown brittle and slow to bruise — strikes split easier, but so does your skin. A duel of paper knives; whoever cuts faster wins.' },
+  CHEST_LOCKDOWN:   { name: 'The Long Vault',        icon: '🔒', text: 'The chests have all sworn an oath of silence for the first five minutes. You earn nothing from the ground until the swarm has earned its right to be ignored.' },
+  BOSS_PARADE:      { name: 'Procession of Wardens', icon: '🐗', text: 'A fourth crown arrives uninvited, and the wardens of the wood walk in single file. Three mini-bosses were already a tide; the fourth is the reckoning.' },
+  NO_PASSIVES:      { name: 'Steelwright\'s Vow',    icon: '⚔️', text: 'A pact has been signed in the under-grove: only weapons may enter, no passive comforts. Every level-up is a blade choice — there is no growing softer.' },
+  XP_FAMINE:        { name: 'Famine Moon',           icon: '🌑', text: 'The gems are dim and the kills feed thin — a thirty-percent tithe is taken from every soul you split. Patience or perish; there is no levelling out of this one.' },
 };
 
 // Affix tells — short counterplay hints used by the Legend overlay.
@@ -217,22 +226,28 @@ export function hideCodex() {
 export function showCodex() {
   if (_modal) return;
   // Lazy-resolve registries so this module doesn't pull three.js at import time.
+  // weeklyMutator.js is lazy too — if 9a hasn't landed yet the Mutators tab
+  // just renders an empty list rather than crashing the whole codex.
   Promise.all([
     import('./config.js'),
     import('./weapons/index.js'),
     import('./meta.js'),
-  ]).then(([cfg, weapons, metaMod]) => {
+    import('./weeklyMutator.js').catch(() => ({ WEEKLY_MUTATORS: [] })),
+  ]).then(([cfg, weapons, metaMod, weeklyMod]) => {
     _buildModal({
       ENEMY_TIERS: cfg.ENEMY_TIERS,
       REGISTRY: weapons.REGISTRY,
       EVOLUTIONS: weapons.EVOLUTIONS,
       PASSIVES: weapons.PASSIVES,
       SECRETS: metaMod.SECRETS,
+      ACHIEVEMENTS: metaMod.ACHIEVEMENTS || [],
+      achievementChain: typeof metaMod.achievementChain === 'function' ? metaMod.achievementChain : null,
+      WEEKLY_MUTATORS: weeklyMod.WEEKLY_MUTATORS || [],
     });
   });
 }
 
-function _buildModal({ ENEMY_TIERS, REGISTRY, EVOLUTIONS, PASSIVES, SECRETS }) {
+function _buildModal({ ENEMY_TIERS, REGISTRY, EVOLUTIONS, PASSIVES, SECRETS, ACHIEVEMENTS, achievementChain, WEEKLY_MUTATORS }) {
   const root = document.getElementById('ui-root') || document.body;
   _modal = document.createElement('div');
   _modal.style.cssText = `
@@ -266,11 +281,13 @@ function _buildModal({ ENEMY_TIERS, REGISTRY, EVOLUTIONS, PASSIVES, SECRETS }) {
   const tabBar = document.createElement('div');
   tabBar.style.cssText = `display:flex; gap:8px; margin-bottom: 22px; flex-wrap:wrap; justify-content:center;`;
   const TABS = [
-    { id: 'enemies',    label: 'Enemies' },
-    { id: 'weapons',    label: 'Weapons' },
-    { id: 'passives',   label: 'Passives' },
-    { id: 'affixes',    label: 'Affixes' },
-    { id: 'secrets',    label: 'Secrets' },
+    { id: 'enemies',      label: 'Enemies' },
+    { id: 'weapons',      label: 'Weapons' },
+    { id: 'passives',     label: 'Passives' },
+    { id: 'affixes',      label: 'Affixes' },
+    { id: 'achievements', label: 'Achievements' },
+    { id: 'mutators',     label: 'Mutators' },
+    { id: 'secrets',      label: 'Secrets' },
   ];
   const tabBtns = {};
   for (const t of TABS) {
@@ -341,7 +358,14 @@ function _buildModal({ ENEMY_TIERS, REGISTRY, EVOLUTIONS, PASSIVES, SECRETS }) {
       return;
     }
 
-    const entries = _entriesForTab(_activeTab, { ENEMY_TIERS, REGISTRY, EVOLUTIONS, PASSIVES, SECRETS });
+    // Achievements tab is rendered as a 3-column DAG, not a card grid — the
+    // visual story is "what unlocks what", which the grid can't tell.
+    if (_activeTab === 'achievements') {
+      body.appendChild(_renderAchievementDAG(ACHIEVEMENTS, achievementChain));
+      return;
+    }
+
+    const entries = _entriesForTab(_activeTab, { ENEMY_TIERS, REGISTRY, EVOLUTIONS, PASSIVES, SECRETS, WEEKLY_MUTATORS });
     if (_expanded && _expanded.tab === _activeTab) {
       const ent = entries.find(e => e.id === _expanded.id);
       if (ent) {
@@ -394,7 +418,7 @@ function _buildModal({ ENEMY_TIERS, REGISTRY, EVOLUTIONS, PASSIVES, SECRETS }) {
 
 // Map current tab to an array of entries:
 //   { id, name, icon, lore, discovered, kills?, picks?, statLine }
-function _entriesForTab(tab, { ENEMY_TIERS, REGISTRY, EVOLUTIONS, PASSIVES, SECRETS }) {
+function _entriesForTab(tab, { ENEMY_TIERS, REGISTRY, EVOLUTIONS, PASSIVES, SECRETS, WEEKLY_MUTATORS }) {
   const meta = getMeta();
   const codex = meta.codex || {};
   if (tab === 'enemies') {
@@ -501,6 +525,29 @@ function _entriesForTab(tab, { ENEMY_TIERS, REGISTRY, EVOLUTIONS, PASSIVES, SECR
         stats: [
           ['Tell',        discovered ? tell.swatch : '???'],
           ['Counterplay', discovered ? tell.counter : '???'],
+        ],
+      };
+    });
+  }
+  if (tab === 'mutators') {
+    // Weekly mutators — always shown (no discovery gate). The 6 weekly rules
+    // rotate by ISO week, so players want to know what they're walking into
+    // even before they've encountered each one. Highlight the active week.
+    const active = (meta.weeklyBest && meta.weeklyBest.mutatorId) || null;
+    const list = Array.isArray(WEEKLY_MUTATORS) ? WEEKLY_MUTATORS : [];
+    return list.map(m => {
+      const lore = LORE[m.id] || { name: m.label || m.id, icon: '🌀', text: '' };
+      const isActive = (m.id === active);
+      return {
+        id: m.id,
+        name: lore.name,
+        icon: lore.icon,
+        lore: lore.text,
+        discovered: true,
+        statLine: isActive ? '★ This week' : (m.label || ''),
+        stats: [
+          ['Code',  m.id],
+          ['Label', m.label || ''],
         ],
       };
     });
@@ -620,6 +667,212 @@ function _renderDetail(ent, onBack) {
     letter-spacing: 0.28em;`;
   backBtn.onclick = onBack;
   wrap.appendChild(backBtn);
+  return wrap;
+}
+
+// ── Achievement DAG ────────────────────────────────────────────────────────
+// 3-column tree: Tier 1 (left) → Tier 2 (middle) → Tier 3 (right). Dotted SVG
+// lines connect each child to its `requires` parents. Locked nodes show "???"
+// with the parent-name hint underneath. We render the columns first inside a
+// CSS grid, THEN overlay an absolute-positioned SVG whose line endpoints are
+// computed from each card's bounding rect — this way the SVG follows reflows
+// without us recomputing during render.
+
+function _renderAchievementDAG(ACHIEVEMENTS, achievementChain) {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = `
+    max-width: 1180px; margin: 0 auto;
+    background: linear-gradient(180deg, rgba(20,28,22,0.94), rgba(8,14,12,0.96));
+    border: 1px solid ${C.amber};
+    border-radius: 12px;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 14px 36px rgba(0,0,0,0.55);
+    padding: 22px 24px 24px;
+    position: relative;
+  `;
+
+  const header = document.createElement('div');
+  header.style.cssText = `display:flex; align-items:baseline; justify-content:space-between; margin-bottom: 14px;`;
+  const meta = getMeta();
+  const unlockedCount = (ACHIEVEMENTS || []).reduce((n, a) =>
+    n + (meta.achievements && meta.achievements[a.id] ? 1 : 0), 0);
+  header.innerHTML = `
+    <div>
+      <div style="font-family:${F.display};font-size:20px;letter-spacing:0.20em;font-weight:900;color:${C.amber};">Achievements</div>
+      <div style="font-family:${F.body};font-size:10.5px;letter-spacing:0.22em;text-transform:uppercase;color:rgba(245,239,225,0.55);margin-top:4px;">
+        Tier 1 → 2 → 3 · unlock parents to light up children
+      </div>
+    </div>
+    <div style="font-family:${F.mono};font-size:11px;color:${C.amber};">${unlockedCount} / ${(ACHIEVEMENTS || []).length}</div>
+  `;
+  wrap.appendChild(header);
+
+  // Group by tier. ACHIEVEMENTS without a tier field (pre-9a) default to tier 1
+  // so partial-merge states still render coherently.
+  const byTier = { 1: [], 2: [], 3: [] };
+  for (const a of (ACHIEVEMENTS || [])) {
+    const t = a.tier || 1;
+    if (byTier[t]) byTier[t].push(a);
+    else byTier[1].push(a);
+  }
+
+  // 3-column grid container
+  const grid = document.createElement('div');
+  grid.style.cssText = `
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 14px 36px;
+    position: relative;
+    z-index: 2;
+  `;
+
+  const columnHeader = (label, color) => {
+    const h = document.createElement('div');
+    h.style.cssText = `
+      font-family: ${F.display}; font-size: 11px; letter-spacing: 0.32em;
+      text-transform: uppercase; color: ${color};
+      padding-bottom: 8px; margin-bottom: 4px;
+      border-bottom: 1px solid ${C.edge};
+      text-align: center;
+    `;
+    h.textContent = label;
+    return h;
+  };
+
+  // Build 3 column wrappers
+  const cols = [document.createElement('div'), document.createElement('div'), document.createElement('div')];
+  for (const c of cols) c.style.cssText = 'display:flex; flex-direction:column; gap:10px;';
+  cols[0].appendChild(columnHeader('Tier 1 · Foundations', C.cyan));
+  cols[1].appendChild(columnHeader('Tier 2 · Pursuits',    C.amber));
+  cols[2].appendChild(columnHeader('Tier 3 · Mastery',     C.magenta));
+
+  // Card index by id so the line-drawing pass can look up DOM nodes.
+  const cardById = {};
+
+  const cardFor = (a) => {
+    const unlocked = !!(meta.achievements && meta.achievements[a.id]);
+    // Resolve parent names — for locked nodes we surface the requirement so
+    // the player understands the dependency without opening another modal.
+    const parents = Array.isArray(a.requires) ? a.requires : [];
+    const parentNames = parents
+      .map(pid => (ACHIEVEMENTS || []).find(x => x.id === pid))
+      .filter(Boolean)
+      .map(p => p.name);
+    const card = document.createElement('div');
+    card.dataset.achId = a.id;
+    const accent = unlocked
+      ? ((a.tier || 1) === 3 ? C.magenta : (a.tier || 1) === 2 ? C.amber : C.cyan)
+      : 'rgba(120,120,120,0.45)';
+    card.style.cssText = `
+      background: linear-gradient(180deg, rgba(14,20,18,0.94), rgba(6,10,9,0.96));
+      border: 1px solid ${accent};
+      border-radius: 8px;
+      padding: 10px 12px;
+      display: grid;
+      grid-template-columns: 32px 1fr;
+      gap: 10px;
+      align-items: center;
+      opacity: ${unlocked ? 1 : 0.62};
+      box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 6px 16px rgba(0,0,0,0.45);
+    `;
+    const icon = unlocked ? _esc(a.icon || '★') : '???';
+    const title = unlocked ? _esc(a.name) : '???';
+    const body = unlocked
+      ? _esc(a.desc || '')
+      : (parentNames.length
+          ? `Requires: ${_esc(parentNames.join(' + '))}`
+          : 'Hidden achievement');
+    card.innerHTML = `
+      <div style="font-size:22px; line-height:1; text-align:center; ${unlocked ? '' : 'color:rgba(120,120,120,0.55); font-family:' + F.mono + '; font-size:13px;'}">${icon}</div>
+      <div>
+        <div style="font-family:${F.display}; font-size:12.5px; letter-spacing:0.10em; font-weight:700; color:${unlocked ? C.text : 'rgba(180,180,180,0.65)'};">${title}</div>
+        <div style="font-family:${F.body}; font-size:10.5px; color:rgba(245,239,225,0.65); margin-top:3px; line-height:1.35;">${body}</div>
+      </div>
+    `;
+    cardById[a.id] = card;
+    return card;
+  };
+
+  for (const a of byTier[1]) cols[0].appendChild(cardFor(a));
+  for (const a of byTier[2]) cols[1].appendChild(cardFor(a));
+  for (const a of byTier[3]) cols[2].appendChild(cardFor(a));
+
+  grid.appendChild(cols[0]);
+  grid.appendChild(cols[1]);
+  grid.appendChild(cols[2]);
+  wrap.appendChild(grid);
+
+  // SVG overlay for parent → child dotted lines. We measure after the cards
+  // are in the DOM tree; the parent wrap is position:relative so the SVG
+  // (position:absolute) inherits the right reference frame. Re-measure on
+  // window resize so the lines track reflows; cleared when the modal closes.
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+  svg.style.cssText = `
+    position: absolute; inset: 0; pointer-events: none; z-index: 1;
+  `;
+  wrap.appendChild(svg);
+
+  const drawLines = () => {
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    const wrapRect = wrap.getBoundingClientRect();
+    svg.setAttribute('width',  String(wrapRect.width));
+    svg.setAttribute('height', String(wrapRect.height));
+    svg.setAttribute('viewBox', `0 0 ${wrapRect.width} ${wrapRect.height}`);
+    for (const a of (ACHIEVEMENTS || [])) {
+      const parents = Array.isArray(a.requires) ? a.requires : [];
+      if (parents.length === 0) continue;
+      const childCard = cardById[a.id];
+      if (!childCard) continue;
+      const cr = childCard.getBoundingClientRect();
+      const cx = cr.left - wrapRect.left;
+      const cy = cr.top + cr.height / 2 - wrapRect.top;
+      const childUnlocked = !!(meta.achievements && meta.achievements[a.id]);
+      for (const pid of parents) {
+        const parentCard = cardById[pid];
+        if (!parentCard) continue;
+        const pr = parentCard.getBoundingClientRect();
+        const px = pr.right - wrapRect.left;
+        const py = pr.top + pr.height / 2 - wrapRect.top;
+        // Smooth curve via cubic Bezier midpoints — reads as a tree connector
+        // rather than a corridor of straight lines.
+        const dx = (cx - px) * 0.5;
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', `M${px},${py} C${px + dx},${py} ${cx - dx},${cy} ${cx},${cy}`);
+        path.setAttribute('fill', 'none');
+        path.setAttribute('stroke', childUnlocked ? C.amber : 'rgba(180,180,180,0.32)');
+        path.setAttribute('stroke-width', '1.4');
+        path.setAttribute('stroke-dasharray', '3 4');
+        path.setAttribute('opacity', childUnlocked ? '0.85' : '0.55');
+        svg.appendChild(path);
+      }
+    }
+  };
+  // Defer measurement until after the wrap is in the DOM tree.
+  setTimeout(drawLines, 0);
+  // Resize listener — `drawLines` early-outs when `wrap` is no longer in the
+  // DOM, so a stale listener costs one boundingClientRect call. We also poll
+  // once per second to retire the listener when the modal closes; this is
+  // cheaper than MutationObserver on document.body (which would fire on every
+  // HUD update + damage number) and good enough for a modal whose lifetime is
+  // typically seconds, not minutes.
+  let resizeAttached = true;
+  const onResize = () => {
+    if (!wrap.isConnected) {
+      if (resizeAttached) { window.removeEventListener('resize', onResize); resizeAttached = false; }
+      return;
+    }
+    drawLines();
+  };
+  window.addEventListener('resize', onResize);
+  const tidy = () => {
+    if (!wrap.isConnected) {
+      if (resizeAttached) { window.removeEventListener('resize', onResize); resizeAttached = false; }
+      return;
+    }
+    setTimeout(tidy, 1000);
+  };
+  setTimeout(tidy, 1000);
+
   return wrap;
 }
 

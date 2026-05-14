@@ -151,7 +151,11 @@ export function tickSpawnDirector(dt) {
   // final-boss time (Twilight Hollow = 12 min instead of 15).
   const bossRush  = !!(state.modes && state.modes.bossRush);
   const stageFB   = state.run && state.run.stageFinalBossAt;
-  const miniSched = bossRush ? [25, 75, 135] : STAGE.miniBossSchedule;
+  const baseSched = bossRush ? [25, 75, 135] : STAGE.miniBossSchedule;
+  // Weekly BOSS_PARADE: a fourth mini-boss at 11:00 (660s). Only stacks onto
+  // the normal schedule (not boss-rush) so we don't break that mode's pacing.
+  const weeklyExtra = !bossRush && state.run && state.run.weeklyExtraMiniBoss;
+  const miniSched = weeklyExtra ? [...baseSched, 660] : baseSched;
   const finalBossAt = bossRush
     ? 200
     : (stageFB != null ? stageFB : STAGE.finalBossAt);
@@ -175,7 +179,12 @@ export function tickSpawnDirector(dt) {
   }
 
   // ── Periodic chest spawn ──
-  if (t >= _nextChest) {
+  // Weekly CHEST_LOCKDOWN gates the entire schedule for the first N seconds
+  // (default 300s = 5 min). We don't advance _nextChest during the lock window;
+  // the first chest naturally spawns the instant the gate lifts because
+  // _nextChest is already in the past.
+  const weeklyChestLockSec = state.run && state.run.weeklyChestLockUntilSec ? state.run.weeklyChestLockUntilSec : 0;
+  if (t >= _nextChest && t >= weeklyChestLockSec) {
     spawnChestNearHero(7, 14);
     // Luck shop upgrade speeds up the chest cadence by 3% per level.
     const luckMul = 1 - 0.03 * shopLevel('luck');
@@ -206,9 +215,13 @@ export function tickSpawnDirector(dt) {
   if (allowedTiers.length === 0) return;
 
   // ── Continuous top-up ──
-  const dailyMul = state.run && state.run.dailySpawnMul ? state.run.dailySpawnMul : 1;
-  const ruleMul  = state.run && state.run.stageRuleSpawnMul ? state.run.stageRuleSpawnMul : 1;
-  const swarmMul = dailyMul * ruleMul;
+  const dailyMul  = state.run && state.run.dailySpawnMul  ? state.run.dailySpawnMul  : 1;
+  const ruleMul   = state.run && state.run.stageRuleSpawnMul ? state.run.stageRuleSpawnMul : 1;
+  const weeklyMul = state.run && state.run.weeklySpawnMul ? state.run.weeklySpawnMul : 1;
+  // Weekly DOUBLE_SPAWNS multiplies the target alive cap. Compose with daily +
+  // stage-rule swarms so a Daily SWARM_DAY happening to be Weekly DOUBLE_SPAWNS
+  // doesn't compound past targetAliveCap (still hard-capped below).
+  const swarmMul = dailyMul * ruleMul * weeklyMul;
   // Boss rush: tiny ambient swarm (3-4 alive) so the player still has XP and
   // pickups, but the focus is the bosses.
   const target = bossRush

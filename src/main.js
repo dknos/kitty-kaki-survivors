@@ -9,7 +9,9 @@ import { preloadAll } from './assets.js';
 import { createComposer, resizeComposer, BLOOM_LAYER } from './postfx.js';
 import { buildEnv } from './env.js';
 import { unlockAudio, startMusic, stopMusic, setMusicTier, setVolume, sfx } from './audio.js';
-import { getMeta, shopLevel, selectedCharacter, dailyChallengeConfig, commitDailyRun, equippedRelic, selectedStage, QUEST_TEMPLATES } from './meta.js';
+import { getMeta, shopLevel, selectedCharacter, dailyChallengeConfig, commitDailyRun, equippedRelic, selectedStage, QUEST_TEMPLATES, weeklyMutatorConfig, commitWeeklyRun, setOption } from './meta.js';
+import { applyWeeklyMutator } from './weeklyMutator.js';
+import { recordRun } from './leaderboard.js';
 import { CHARACTERS, STAGES } from './config.js';
 
 // Module imports (filled in by parallel agents)
@@ -133,9 +135,50 @@ function renderFrame() {
   window.addEventListener(ev, unlockAudio, { once: true })
 );
 
+// ── URL replay-seed parsing ──────────────────────────────────────────────────
+// Format produced by leaderboard.makeSeed(): `<S>-<CC>-<MM>[-yy-mm-dd]` where
+// S = stage first char, CC = char first two chars, MM = mode first two chars.
+// We reverse the prefix tokens by matching against CHARACTERS/STAGES ids so a
+// future renamed stage/char doesn't silently misroute. The date suffix is
+// informational only — players can replay any day's seed, not just today's.
+// Defensive: malformed seed = no-op + console.warn (do NOT throw on boot).
+function _parseReplaySeedFromURL() {
+  if (typeof window === 'undefined' || !window.location) return;
+  const params = new URLSearchParams(window.location.search || '');
+  const seed = params.get('seed');
+  if (!seed) return;
+  const parts = seed.split('-');
+  if (parts.length < 3) { console.warn('[replaySeed] malformed (need 3+ tokens):', seed); return; }
+  const [sTok, cTok, mTok] = parts;
+
+  const stage = STAGES.find(s => (s.id || '').toUpperCase().startsWith(sTok));
+  const char  = CHARACTERS.find(c => (c.id || '').toUpperCase().startsWith(cTok));
+  if (!stage || !char) {
+    console.warn('[replaySeed] unknown stage/char tokens:', sTok, cTok);
+    return;
+  }
+  // Mode mapping (2-char prefix of the makeSeed mode string).
+  // 'NM'→normal, 'HY'→hyper, 'EN'→endless, 'DA'→daily, 'BO'→boss-rush, 'WE'→weekly
+  const MODE_MAP = { NM: 'normal', HY: 'hyper', EN: 'endless', DA: 'daily', BO: 'boss-rush', WE: 'weekly' };
+  const mode = MODE_MAP[mTok] || 'normal';
+
+  setOption('selectedStage', stage.id);
+  setOption('selectedChar',  char.id);
+  // We deliberately do NOT toggle optHyper/optDaily/etc here — letting the
+  // user opt into a mode is a deliberate click. The selection just preloads
+  // stage + character.
+  state.replaySeed = { seed, stage: stage.id, character: char.id, mode };
+}
+
 // ── Async init ────────────────────────────────────────────────────────────────
 
 async function boot() {
+  // URL param `?seed=F-KI-NM-26-05-13` lets a player open a friend's run with
+  // the stage + character + mode preselected. We DON'T start the run — just
+  // stamp meta so the character picker reflects the seed, and stash a
+  // state.replaySeed for 9c's "Replaying X's run" header.
+  try { _parseReplaySeedFromURL(); } catch (e) { console.warn('[boot.replaySeed]', e); }
+
   showStartScreen('Loading…');
   initParticleTextures();   // synchronous canvas → texture, no network
   await preloadAll();
@@ -460,9 +503,12 @@ export function _resetSecretChecks() {
 function applyMetaUpgrades() {
   const h = state.hero;
   const meta = getMeta();
-  // Daily-challenge override: force today's character + skip shop bonuses for
-  // a level playing field across the leaderboard.
-  const dailyOn = !!(meta && meta.optDaily);
+  // Mode exclusivity — Weekly takes precedence over Daily/BossRush so a leaderboard
+  // entry can't be tagged with two competing modifier sets. We *don't* mutate the
+  // saved options (no setOption here) so the user's toggles persist when they
+  // switch back; we just suppress the others for this run.
+  const weeklyOn = !!(meta && meta.optWeekly);
+  const dailyOn = !weeklyOn && !!(meta && meta.optDaily);
   let char = selectedCharacter(CHARACTERS);
   let dailyCfg = null;
   if (dailyOn) {
@@ -485,8 +531,27 @@ function applyMetaUpgrades() {
   }
   state.run.daily = dailyOn ? dailyCfg : null;
 
-  if (!dailyOn) {
-    // Shop upgrades stack on top (skipped in daily mode for fair leaderboard)
+  // Iter 9: weekly mutator stamps state.run.weekly* fields read by spawnDirector,
+  // enemies.spawnEnemy, xp.js (gem-value mul), and weaponChoices (NO_PASSIVES).
+  // Like Daily, weekly suppresses shop bonuses for a fair leaderboard.
+  // _weeklyCommitted is a per-run one-shot guard for the run-end commit below.
+  state.run._weeklyCommitted = false;
+  if (weeklyOn) {
+    const cfg = weeklyMutatorConfig();
+    const mutator = applyWeeklyMutator(state.run, cfg.mutatorId);
+    state.run.weekly = { weekKey: cfg.weekKey, mutatorId: cfg.mutatorId, mutatorLabel: cfg.mutatorLabel };
+    if (!mutator) console.warn('[weekly] unknown mutator', cfg.mutatorId);
+  } else {
+    state.run.weekly = null;
+  }
+
+  // Fair-leaderboard gate: Daily AND Weekly both suppress shop/house/relic
+  // bonuses so the run is character-only + active modifier (daily challenge
+  // tweak or weekly mutator). Centralized so adding future leaderboard modes
+  // is a one-liner.
+  const runFair = dailyOn || weeklyOn;
+  if (!runFair) {
+    // Shop upgrades stack on top (skipped in daily/weekly for fair leaderboard)
     const hpLv = shopLevel('hp');
     if (hpLv > 0) { h.hpMax += 10 * hpLv; h.hp = h.hpMax; }
     const magLv = shopLevel('magnet');
@@ -495,7 +560,7 @@ function applyMetaUpgrades() {
     if (spdLv > 0) h.statMul.moveSpeed *= (1 + 0.05 * spdLv);
     const dmgLv = shopLevel('damage');
     if (dmgLv > 0) h.statMul.dmg *= (1 + 0.05 * dmgLv);
-  } else {
+  } else if (dailyOn) {
     // Daily modifier: apply a small thematic tweak so each day plays distinctly
     switch (dailyCfg.modifier) {
       case 'LOW HP':       h.hpMax = Math.max(30, Math.floor(h.hpMax * 0.6)); h.hp = h.hpMax; break;
@@ -505,25 +570,27 @@ function applyMetaUpgrades() {
       // 'NO SHOP BONUSES' is the implicit default — already covered above.
     }
   }
+  // Weekly mutator was already applied above (stamps state.run.weekly*); no
+  // per-mutator dispatch here — readers in spawnDirector / xp / enemies do the work.
 
   // ── House upgrades (Embers currency) — apply regardless of daily mode since
   // they represent long-term home investment, not run-specific shop bonuses.
-  // Some upgrades still respect daily for fairness (handled per-track below).
+  // Some upgrades still respect daily/weekly for fairness (handled per-track below).
   const house = (meta.house || {});
   const kitchenLv  = house.kitchen  || 0;
   const cellarLv   = house.cellar   || 0;
   const gardenLv   = house.garden   || 0;
   const shrineLv   = house.shrine   || 0;
   const apoLv      = house.apothecary || 0;
-  if (kitchenLv  > 0 && !dailyOn) { h.hpMax += 20 * kitchenLv; h.hp = h.hpMax; }
+  if (kitchenLv  > 0 && !runFair) { h.hpMax += 20 * kitchenLv; h.hp = h.hpMax; }
   // Cellar gets applied after acquireWeapon runs (see below). Stash on run.
-  state.run.cellarLv = (cellarLv > 0 && !dailyOn) ? cellarLv : 0;
-  if (gardenLv   > 0 && !dailyOn) state.run.heartPotency = 1 + 0.5 * gardenLv;
-  if (shrineLv   > 0 && !dailyOn) h.rerolls += shrineLv;
-  if (apoLv      > 0 && !dailyOn) h.regenPerSec += 0.5 * apoLv;
+  state.run.cellarLv = (cellarLv > 0 && !runFair) ? cellarLv : 0;
+  if (gardenLv   > 0 && !runFair) state.run.heartPotency = 1 + 0.5 * gardenLv;
+  if (shrineLv   > 0 && !runFair) h.rerolls += shrineLv;
+  if (apoLv      > 0 && !runFair) h.regenPerSec += 0.5 * apoLv;
 
-  // Equipped relic affixes stack on top of shop/character (skipped in daily).
-  if (!dailyOn) {
+  // Equipped relic affixes stack on top of shop/character (skipped in daily/weekly).
+  if (!runFair) {
     const relic = equippedRelic();
     if (relic && relic.affixes) {
       for (const a of relic.affixes) {
@@ -541,17 +608,19 @@ function applyMetaUpgrades() {
     }
   }
 
-  // Mode flags snapshot
-  state.modes.hyper = !!(meta.unlockedHyper && meta.optHyper) && !dailyOn;
-  state.modes.endless = !!(meta.unlockedEndless && meta.optEndless) && !dailyOn;
+  // Mode flags snapshot. Weekly is mutually exclusive with Daily/BossRush —
+  // dailyOn was already gated above so the && !dailyOn guards subsume weekly.
+  state.modes.hyper = !!(meta.unlockedHyper && meta.optHyper) && !dailyOn && !weeklyOn;
+  state.modes.endless = !!(meta.unlockedEndless && meta.optEndless) && !dailyOn && !weeklyOn;
   state.modes.daily = dailyOn;
+  state.modes.weekly = weeklyOn;
   // Boss Rush is gated by first-victory (same unlock as Hyper), and is
-  // incompatible with Daily (Daily picks its own modifier set).
-  state.modes.bossRush = !!(meta.unlockedHyper && meta.optBossRush) && !dailyOn;
+  // incompatible with Daily / Weekly (each picks its own modifier set).
+  state.modes.bossRush = !!(meta.unlockedHyper && meta.optBossRush) && !dailyOn && !weeklyOn;
 
   // Stage selection — modifies enemy HP, final-boss timing, ground tint.
-  // Daily forces stage 1 so the leaderboard is fair.
-  const stage = dailyOn ? STAGES[0] : selectedStage(STAGES);
+  // Daily / Weekly force stage 1 so the leaderboard is fair.
+  const stage = (dailyOn || weeklyOn) ? STAGES[0] : selectedStage(STAGES);
   state.run.stage = stage;
   if (stage && stage.id !== 'forest') {
     state.run.stageHpMul = stage.enemyHpMul || 1;
@@ -735,6 +804,36 @@ function frame(now) {
       updateDeathAnim(realDt);
       updateDamageNumbers(realDt);
       applyShake(realDt);
+      // ── Weekly run-end commit (iter 9). One-shot on gameOver transition.
+      // 9a designed commitRunResults to forward `weekly: true`, but 9c's
+      // showDeathScreen currently doesn't pass it — so we commit defensively
+      // here from main.js per the brief's "run-end commit in main.js" mandate.
+      // _weeklyCommitted (stamped false in applyMetaUpgrades) prevents the
+      // per-frame loop from double-committing. Also records a leaderboard
+      // entry with mode:'weekly' so the Hall of Records modal can list it.
+      if (state.modes && state.modes.weekly && state.run && !state.run._weeklyCommitted) {
+        state.run._weeklyCommitted = true;
+        try {
+          commitWeeklyRun({
+            kills: state.run.kills,
+            time: state.time.game,
+            character: state.run.character,
+            stage: state.run.stage ? state.run.stage.id : null,
+          });
+        } catch (e) { console.warn('[weekly.commit]', e); }
+        try {
+          recordRun({
+            stage: state.run.stage ? state.run.stage.id : 'forest',
+            char: state.run.character || 'kitty',
+            mode: 'weekly',
+            kills: state.run.kills,
+            timeSurvived: state.time.game,
+            level: state.hero.level,
+            dmgDealt: state.run.dmgDealt,
+            victory: !!state.victory,
+          });
+        } catch (e) { console.warn('[weekly.recordRun]', e); }
+      }
     }
     if (state.postFXPass) state.postFXPass.uniforms.time.value = state.time.real;
     renderFrame();

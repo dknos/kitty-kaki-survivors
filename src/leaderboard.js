@@ -103,3 +103,21 @@ export function formatTime(seconds) {
   const s = Math.max(0, Math.floor(seconds));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
+
+/**
+ * Format a one-line seed-share string for clipboard / Discord paste.
+ * Tolerant of both shapes that flow through this module:
+ *   - leaderboard `recordRun` entries: { seed, kills, timeSurvived, char }
+ *   - runHistory entries (meta.runHistory[]): { seed, kills, durationSec, character }
+ * Output: "F-KI-NM-26-05-13 · 423k · 12:34 · kitty"
+ */
+export function formatSeedShareString(entry) {
+  if (!entry) return '';
+  const seed = entry.seed || '?';
+  const kills = entry.kills | 0;
+  const time = (typeof entry.timeSurvived === 'number') ? entry.timeSurvived
+             : (typeof entry.durationSec === 'number') ? entry.durationSec
+             : 0;
+  const character = entry.character || entry.char || '?';
+  return `${seed} · ${kills}k · ${formatTime(time)} · ${character}`;
+}

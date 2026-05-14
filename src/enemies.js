@@ -312,17 +312,20 @@ export function spawnEnemy(tierConfig, x, z) {
   // Hyper mode: 1.5× HP/spd/dmg across the board.
   // Daily 'HARDER SPAWNS' modifier stacks an additional HP multiplier.
   // Stage 2+ also stacks an HP multiplier (e.g. Twilight Hollow = 1.30×).
-  const hyper   = state.modes && state.modes.hyper ? 1.5 : 1;
-  const dailyHp = state.run && state.run.dailyHpMul ? state.run.dailyHpMul : 1;
-  const stageHp = state.run && state.run.stageHpMul ? state.run.stageHpMul : 1;
-  const hpMul   = hyper * dailyHp * stageHp;
+  // Weekly HALF_HP_HALF_DMG (iter 9) stamps weeklyEnemyHpMul=0.5 & weeklyEnemyDmgMul=0.5.
+  const hyper    = state.modes && state.modes.hyper ? 1.5 : 1;
+  const dailyHp  = state.run && state.run.dailyHpMul ? state.run.dailyHpMul : 1;
+  const stageHp  = state.run && state.run.stageHpMul ? state.run.stageHpMul : 1;
+  const weeklyHp = state.run && state.run.weeklyEnemyHpMul ? state.run.weeklyEnemyHpMul : 1;
+  const weeklyDg = state.run && state.run.weeklyEnemyDmgMul ? state.run.weeklyEnemyDmgMul : 1;
+  const hpMul    = hyper * dailyHp * stageHp * weeklyHp;
   const enemy = {
     mesh,
     glbKey: key,
     hp: tierConfig.hp * hpMul,
     hpMax: tierConfig.hp * hpMul,
     spd: tierConfig.spd * hyper,
-    dmg: tierConfig.dmg * hyper,
+    dmg: tierConfig.dmg * hyper * weeklyDg,
     contactCooldown: 0,
     elite: !!tierConfig.elite,
     isFinalBoss: !!tierConfig.isFinalBoss,

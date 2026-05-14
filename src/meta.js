@@ -48,6 +48,9 @@ const DEFAULT = {
   optManualAim: false,
   // Boss Rush mode — compressed boss-only run. Unlocks alongside Hyper/Endless.
   optBossRush: false,
+  // Weekly mutator mode — opt-in for the next run. Mutually exclusive with
+  // Daily/BossRush (enforced by main.js applyMetaUpgrades). Iter 9.
+  optWeekly: false,
   // Discovered evolutions: { evolutionId: timestamp }
   discoveries: {},
   // Passive codex: high-water-mark level reached for each passive id, across runs.
@@ -69,6 +72,14 @@ const DEFAULT = {
     // does NOT touch lifetime). Drives the 'sigils:N' unlock form for
     // characters like Phoenix Vow (sigils:30).
     sigilsEarned: 0,
+    // Iter 9: cumulative chests opened across all runs. Bumped from the
+    // existing questEvent('chestOpen') handler so we don't add a new call
+    // site — drives the chest_hoarder tier-2 achievement.
+    chestsOpened: 0,
+    // Iter 9: distinct runs where the player defeated ALL 3 mini-bosses.
+    // Bumped from commitRunResults when state.run.allMiniBosses is set by
+    // the run-end caller. Drives triple_x3.
+    fullSweepRuns: 0,
   },
   // Daily challenge: persistent best per-day; rolls over at local midnight
   dailyRun: {
@@ -77,6 +88,12 @@ const DEFAULT = {
     bestKills: 0,
     bestTime: 0,
   },
+  // Iter 9: Weekly mutator best. Keyed by ISO 8601 week ('2026-W19'). Resets
+  // on rollover (Monday 00:00 UTC by isoWeekKey()). Two independent bests
+  // (kills + time) mirror the daily contract.
+  weeklyBestKey: '',
+  weeklyBest: { kills: 0, time: 0, character: 'kitty', stage: 'forest' },
+  weeklyAttempts: 0,
   // Affix relics dropped by the final boss. Each = { id, name, tier, affixes }.
   // Most recent is auto-equipped on run start.
   relics: [],
@@ -199,6 +216,123 @@ export function dailyChallengeConfig(characterIds) {
     modifier: modifiers[modIdx],
     seed,
   };
+}
+
+/**
+ * ISO 8601 week key, e.g. '2026-W19'. Thursday determines the year; weeks
+ * start Monday. Computed entirely in UTC to avoid the Sun/Mon midnight drift
+ * that bit us in early daily testing — leaderboard cadence MUST be globally
+ * consistent so two players in different TZs see the same active mutator.
+ */
+export function isoWeekKey() {
+  const d = new Date();
+  const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = t.getUTCDay() || 7;
+  t.setUTCDate(t.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
+  const weekNum = Math.ceil((((t - yearStart) / 86400000) + 1) / 7);
+  return `${t.getUTCFullYear()}-W${String(weekNum).padStart(2, '0')}`;
+}
+
+/**
+ * Pick this week's mutator deterministically from the ISO week key. Mirrors
+ * dailyChallengeConfig: same xfnv1a hash → bounded index into the WEEKLY_MUTATORS
+ * pool. Returns { weekKey, mutatorId, mutatorLabel, seed } so callers can
+ * render flavor + dispatch the apply() side-effect from weeklyMutator.js.
+ *
+ * The pool is imported lazily to keep this module's import graph clean
+ * (weeklyMutator.js only re-imports the constant labels, not behavior).
+ */
+export function weeklyMutatorConfig() {
+  // Local mirror of WEEKLY_MUTATORS shape — keep ids in sync with
+  // src/weeklyMutator.js. Six total; one rolls per ISO week.
+  const POOL = [
+    { id: 'DOUBLE_SPAWNS',    label: 'Double Spawns' },
+    { id: 'HALF_HP_HALF_DMG', label: 'Glass Hordes' },
+    { id: 'CHEST_LOCKDOWN',   label: 'Chest Lockdown' },
+    { id: 'BOSS_PARADE',      label: 'Boss Parade' },
+    { id: 'NO_PASSIVES',      label: 'No Passives' },
+    { id: 'XP_FAMINE',        label: 'XP Famine' },
+  ];
+  const weekKey = isoWeekKey();
+  const seed = _hashStr(weekKey);
+  const pick = POOL[seed % POOL.length];
+  return {
+    weekKey,
+    mutatorId: pick.id,
+    mutatorLabel: pick.label,
+    seed,
+  };
+}
+
+/**
+ * Commit a weekly-mutator run. Bumps attempts; resets the record on week
+ * rollover. Mirrors commitDailyRun's two-independent-bests contract (kills
+ * and time are tracked separately, so a kill-record run and a survive-record
+ * run can both land in the same week). Returns { newKillsBest, newTimeBest,
+ * weekKey } so the death screen can toast.
+ *
+ * character + stage are persisted on the best entry so the records modal can
+ * show the loadout that achieved it.
+ */
+export function commitWeeklyRun({ kills, time, character, stage } = {}) {
+  const meta = getMeta();
+  const weekKey = isoWeekKey();
+  if (!meta.weeklyBest || meta.weeklyBestKey !== weekKey) {
+    meta.weeklyBestKey = weekKey;
+    meta.weeklyBest = { kills: 0, time: 0, character: character || 'kitty', stage: stage || 'forest' };
+    meta.weeklyAttempts = 0;
+  }
+  meta.weeklyAttempts = (meta.weeklyAttempts || 0) + 1;
+  const k = Number(kills) || 0;
+  const t = Number(time) || 0;
+  let newKillsBest = false, newTimeBest = false;
+  if (k > (meta.weeklyBest.kills || 0)) {
+    meta.weeklyBest.kills = k;
+    meta.weeklyBest.character = character || meta.weeklyBest.character;
+    meta.weeklyBest.stage = stage || meta.weeklyBest.stage;
+    newKillsBest = true;
+  }
+  if (t > (meta.weeklyBest.time || 0)) {
+    meta.weeklyBest.time = t;
+    meta.weeklyBest.character = character || meta.weeklyBest.character;
+    meta.weeklyBest.stage = stage || meta.weeklyBest.stage;
+    newTimeBest = true;
+  }
+  saveMeta();
+  return { newKillsBest, newTimeBest, weekKey };
+}
+
+/**
+ * Walk the achievement DAG for `id`, returning the entry plus its immediate
+ * parents/children defs and a 0..1 percentComplete (1 if unlocked, else the
+ * progress() lambda or 0 for binary-only entries). Defensive against typo'd
+ * `requires` edges — unknown parent ids are silently skipped so a future
+ * build's save data can't crash today's codex render.
+ */
+export function achievementChain(id) {
+  const meta = getMeta();
+  const achievement = ACHIEVEMENTS.find(a => a.id === id);
+  if (!achievement) {
+    return { achievement: null, parents: [], children: [], percentComplete: 0 };
+  }
+  const parents = (achievement.requires || [])
+    .map(pid => ACHIEVEMENTS.find(a => a.id === pid))
+    .filter(Boolean);
+  const children = ACHIEVEMENTS.filter(a =>
+    Array.isArray(a.requires) && a.requires.includes(id)
+  );
+  const unlocked = !!(meta.achievements && meta.achievements[id]);
+  let percentComplete;
+  if (unlocked) {
+    percentComplete = 1;
+  } else if (typeof achievement.progress === 'function') {
+    const p = achievement.progress(meta);
+    percentComplete = Math.max(0, Math.min(1, Number(p) || 0));
+  } else {
+    percentComplete = 0;
+  }
+  return { achievement, parents, children, percentComplete };
 }
 
 /**
@@ -370,6 +504,14 @@ export function claimQuest(id) {
  */
 export function questEvent(kind, payload) {
   const meta = getMeta();
+  // Iter 9 piggyback: bump lifetime chest counter on the existing chestOpen
+  // signal so the chest_hoarder tier-2 achievement has progress without us
+  // inventing a new call site. Runs even when no active quests need it.
+  if (kind === 'chestOpen') {
+    if (!meta.lifetime) meta.lifetime = { bugKills: 0, jackpots: 0, coinsEverEarned: 0, sigilsEarned: 0, chestsOpened: 0, fullSweepRuns: 0 };
+    meta.lifetime.chestsOpened = (meta.lifetime.chestsOpened || 0) + 1;
+    saveMeta();
+  }
   if (!meta.quests || !meta.quests.active.length) return;
   let dirty = false;
   for (const q of meta.quests.active) {
@@ -428,15 +570,95 @@ export function buyHouseUpgrade(id) {
   return true;
 }
 
+/**
+ * Achievement DAG (iter 9). Each entry carries:
+ *   - tier:     1 (current 8) | 2 (gated by tier-1 parent) | 3 (gated by tier-2)
+ *   - requires: [parentId, ...] — must all be unlocked before this one lights up
+ *   - progress: (meta) => 0..1  — fraction toward the goal (binary for "first X")
+ *
+ * Tier-1 entries keep their original IDs so existing unlock call sites work
+ * unchanged. Tier-2/3 are layered on top by extending lifetime counters or
+ * by reading achievement state directly — no new tracking required outside
+ * of the chest_hoarder + fullSweepRuns piggybacks added above.
+ */
 export const ACHIEVEMENTS = [
-  { id: 'first_kill',       name: 'First Blood',      desc: 'Defeat your first enemy', icon: '⚔️' },
-  { id: 'first_elite',      name: 'Giant Slayer',     desc: 'Defeat an elite',        icon: '🛡️' },
-  { id: 'kills_100',        name: 'Centurion',        desc: '100 kills in one run',   icon: '💯' },
-  { id: 'first_chest',      name: 'Treasure Hunter',  desc: 'Open your first chest',  icon: '🎁' },
-  { id: 'first_jackpot',    name: 'Jackpot!',         desc: 'Hit a 7-7-7 jackpot',    icon: '🎰' },
-  { id: 'first_victory',    name: 'Champion',         desc: 'Defeat the final boss',  icon: '👑' },
-  { id: 'first_evolution',  name: 'Evolved',          desc: 'Unlock a weapon evolution', icon: '🌟' },
-  { id: 'minibox_x3',       name: 'Triple Threat',    desc: 'Defeat all 3 mini-bosses', icon: '🔥' },
+  // ── Tier 1 (original 8) — root unlocks ────────────────────────────────────
+  { id: 'first_kill',       name: 'First Blood',      desc: 'Defeat your first enemy',     icon: '⚔️', tier: 1, requires: [] },
+  { id: 'first_elite',      name: 'Giant Slayer',     desc: 'Defeat an elite',             icon: '🛡️', tier: 1, requires: [] },
+  { id: 'kills_100',        name: 'Centurion',        desc: '100 kills in one run',        icon: '💯', tier: 1, requires: [] },
+  { id: 'first_chest',      name: 'Treasure Hunter',  desc: 'Open your first chest',       icon: '🎁', tier: 1, requires: [] },
+  { id: 'first_jackpot',    name: 'Jackpot!',         desc: 'Hit a 7-7-7 jackpot',         icon: '🎰', tier: 1, requires: [] },
+  { id: 'first_victory',    name: 'Champion',         desc: 'Defeat the final boss',       icon: '👑', tier: 1, requires: [] },
+  { id: 'first_evolution',  name: 'Evolved',          desc: 'Unlock a weapon evolution',   icon: '🌟', tier: 1, requires: [] },
+  { id: 'minibox_x3',       name: 'Triple Threat',    desc: 'Defeat all 3 mini-bosses',    icon: '🔥', tier: 1, requires: [] },
+  // ── Tier 2 — compound mastery, gated by a single tier-1 parent ────────────
+  {
+    id: 'centurion_x10', name: 'Decimator',
+    desc: '1,000 lifetime kills',
+    icon: '🗡',
+    tier: 2, requires: ['kills_100'],
+    progress: (m) => Math.min(1, ((m && m.totalKills) || 0) / 1000),
+  },
+  {
+    id: 'evolver', name: 'Triple Bloom',
+    desc: '3 evolutions in a single run',
+    icon: '🌸',
+    tier: 2, requires: ['first_evolution'],
+    // Run-scoped — binary. Caller (run-end commit) flips the achievement when
+    // the count is met; we surface 0/1 here so the DAG renders correctly.
+  },
+  {
+    id: 'champion_twilight', name: 'Hollow Champion',
+    desc: 'Victory on Twilight Hollow',
+    icon: '🌒',
+    tier: 2, requires: ['first_victory'],
+  },
+  {
+    id: 'chest_hoarder', name: 'Hoarder of Coffers',
+    desc: '50 lifetime chests opened',
+    icon: '📦',
+    tier: 2, requires: ['first_chest'],
+    progress: (m) => Math.min(1, ((m && m.lifetime && m.lifetime.chestsOpened) || 0) / 50),
+  },
+  {
+    id: 'sigil_collector', name: 'Sigil Reaper',
+    desc: '50 lifetime sigils earned',
+    icon: '🔱',
+    tier: 2, requires: ['first_kill'],
+    progress: (m) => Math.min(1, ((m && m.lifetime && m.lifetime.sigilsEarned) || 0) / 50),
+  },
+  {
+    id: 'triple_x3', name: 'Trial of Trials',
+    desc: 'Sweep all 3 mini-bosses in 3 separate runs',
+    icon: '⚜',
+    tier: 2, requires: ['minibox_x3'],
+    progress: (m) => Math.min(1, ((m && m.lifetime && m.lifetime.fullSweepRuns) || 0) / 3),
+  },
+  // ── Tier 3 — capstone, gated by a tier-2 parent ───────────────────────────
+  {
+    id: 'master_collector', name: 'Lorekeeper',
+    desc: 'Discover every weapon evolution',
+    icon: '📚',
+    tier: 3, requires: ['evolver'],
+    // Discoveries map count vs. known evolution count is hard to read from
+    // here without coupling — codex (9c) renders binary completion based on
+    // its own evolution count. We report 0 here so percentComplete stays
+    // valid until the achievement itself unlocks.
+  },
+  {
+    id: 'apex_predator', name: 'Apex Predator',
+    desc: '5,000 lifetime kills',
+    icon: '🦴',
+    tier: 3, requires: ['centurion_x10'],
+    progress: (m) => Math.min(1, ((m && m.totalKills) || 0) / 5000),
+  },
+  {
+    id: 'void_walker', name: 'Void Walker',
+    desc: 'Victory on the Void stage',
+    icon: '🌀',
+    tier: 3, requires: ['champion_twilight'],
+    // Void stage is post-iter-9; entry placeholder so the DAG renders fully.
+  },
 ];
 
 // ── Sigils — prestige currency (iter 6 "Meta With Teeth") ────────────────────
@@ -690,7 +912,7 @@ export function getMeta() {
  * Commit a finished run's results. Returns { coinsEarned, isBestTime, isBestKills }
  * so the death screen can highlight wins.
  */
-export function commitRunResults({ timeSurvived, kills, dmgDealt, level, victory, stageId, bossRush }) {
+export function commitRunResults({ timeSurvived, kills, dmgDealt, level, victory, stageId, bossRush, weekly, character, fullSweep }) {
   const meta = getMeta();
   // 1 coin per kill, +5 per minute survived. Hyper boosts coin gain.
   // Vault stacks on top of Hyper coin bonus.
@@ -733,8 +955,30 @@ export function commitRunResults({ timeSurvived, kills, dmgDealt, level, victory
   if (victory && inBossRush && stageId === 'twilight' && !meta.unlockedClockwork) {
     meta.unlockedClockwork = true; unlockedClockwork = true;
   }
+  // Iter 9: full-mini-boss-sweep tally. Caller passes `fullSweep: true` when
+  // all 3 mini-bosses fell in this run. Drives the triple_x3 tier-2 chain.
+  if (fullSweep) {
+    if (!meta.lifetime) meta.lifetime = { bugKills: 0, jackpots: 0, coinsEverEarned: 0, sigilsEarned: 0, chestsOpened: 0, fullSweepRuns: 0 };
+    meta.lifetime.fullSweepRuns = (meta.lifetime.fullSweepRuns || 0) + 1;
+  }
+  // Iter 9: weekly mutator commit. Mirrors the daily contract — caller sets
+  // `weekly: true` when state.modes.weekly was active. We piggyback here
+  // instead of forcing 9b's death-screen path to know about isoWeekKey().
+  let weeklyResult = null;
+  if (weekly) {
+    weeklyResult = commitWeeklyRun({
+      kills,
+      time: timeSurvived,
+      character: character || meta.selectedChar,
+      stage: stageId || meta.selectedStage,
+    });
+  }
   saveMeta();
-  return { coinsEarned, embersEarned, sigilsEarned, isBestTime, isBestKills, unlockedHyper, unlockedEndless, unlockedCinder, unlockedClockwork };
+  return {
+    coinsEarned, embersEarned, sigilsEarned, isBestTime, isBestKills,
+    unlockedHyper, unlockedEndless, unlockedCinder, unlockedClockwork,
+    weeklyResult,
+  };
 }
 
 export function resetMeta() {

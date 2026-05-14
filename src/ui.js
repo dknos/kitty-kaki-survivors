@@ -15,6 +15,7 @@ import {
 
   SHOP_TREE, purchaseTreeNode, nodeUnlocked, nodeOwned, sigilCount,
   addPreset, removePreset, listPresets, applyPreset,
+  weeklyMutatorConfig,
 } from './meta.js';
 import { CHARACTERS, STAGES } from './config.js';
 import { SLOT_SYMBOLS, rollReel, resolveOutcome, applyOutcome } from './slotMachine.js';
@@ -25,6 +26,8 @@ import { bindTooltip, unbindTooltip, hideTooltip } from './tooltips.js';
 import { weaponBlurb, passiveBlurb, shopBlurb, fillerBlurb, characterBlurb, weaponStatRows, passiveStatRows } from './weapons/descriptions.js';
 import { showCodex, hideCodex, isCodexOpen } from './codex.js';
 import { showRunHistory, hideRunHistory, isRunHistoryOpen, recordRunResult } from './runHistory.js';
+import { downloadShareCard, renderShareCard } from './shareCard.js';
+import { topRunsAcrossAll, formatSeedShareString } from './leaderboard.js';
 
 // ── Theme constants ──────────────────────────────────────────────────────────
 const C = {
@@ -403,6 +406,95 @@ function hpColorFor(pct) {
   if (pct < 0.30) return C.red;
   if (pct < 0.60) return C.amber;
   return C.green;
+}
+
+// ── Iter-9 helpers: share clipboard + small green toast ─────────────────────
+// `copyTextToClipboard` prefers navigator.clipboard.writeText (HTTPS / modern)
+// but falls back to a hidden textarea + execCommand('copy') so the affordance
+// still works on localhost dev and older browsers. Returns a Promise<boolean>.
+function copyTextToClipboard(text) {
+  const s = String(text == null ? '' : text);
+  // Modern path
+  if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+    try {
+      return navigator.clipboard.writeText(s).then(() => true).catch(() => _fallbackCopy(s));
+    } catch (_) { /* fall through to fallback */ }
+  }
+  return Promise.resolve(_fallbackCopy(s));
+}
+function _fallbackCopy(s) {
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = s;
+    ta.setAttribute('readonly', '');
+    ta.style.cssText = 'position:fixed; left:-9999px; top:0; opacity:0;';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return !!ok;
+  } catch (_) { return false; }
+}
+
+// 1.4s green pulse — matches the achievement toast cadence called out in the
+// iter-9 tuning table. Anchored top-center so it doesn't fight the death/start
+// modals stacked beneath it.
+function _kkShowMicroToast(text, color) {
+  const root = _root || document.getElementById('ui-root') || document.body;
+  if (!root) return;
+  const toast = document.createElement('div');
+  const col = color || C.green;
+  toast.style.cssText = `
+    position: fixed; left: 50%; top: 12%;
+    transform: translateX(-50%);
+    padding: 8px 18px;
+    background: linear-gradient(180deg, rgba(20,28,22,0.86), rgba(8,14,12,0.92));
+    border: 1px solid ${col};
+    border-radius: 8px;
+    font-family: ${F.body};
+    font-size: 12px; letter-spacing: 0.22em; text-transform: uppercase;
+    color: ${col};
+    text-shadow: 0 0 6px ${col}55;
+    box-shadow: 0 8px 22px rgba(0,0,0,0.55), 0 0 18px ${col}33;
+    pointer-events: none;
+    z-index: 200;
+    animation: kk-fade-in 0.18s ease-out;
+  `;
+  toast.textContent = text;
+  root.appendChild(toast);
+  setTimeout(() => { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 1400);
+}
+
+// Compose a runHistory-style entry from the live state — what we hand to the
+// share-card renderer when there's no committed runHistory entry yet. Mirrors
+// recordRunResult's shape (see src/runHistory.js).
+function _runEntryFromState() {
+  if (!state) return null;
+  const stageId = (state.run && state.run.stage && state.run.stage.id) || 'forest';
+  const charId  = (state.run && state.run.character) || 'kitty';
+  const mode    = state.modes && state.modes.hyper ? 'hyper'
+              : state.modes && state.modes.endless ? 'endless'
+              : state.modes && state.modes.daily ? 'daily'
+              : state.modes && state.modes.weekly ? 'weekly'
+              : state.modes && state.modes.bossRush ? 'boss-rush'
+              : 'normal';
+  const weaponsUsed = Array.isArray(state.weapons)
+    ? state.weapons.map(w => ({ id: w.id, level: w.level || 1, evolved: !!(w.inst && w.inst.evolved) }))
+    : [];
+  return {
+    stage: stageId,
+    character: charId,
+    mode,
+    durationSec: Math.max(0, Math.floor((state.time && state.time.game) || 0)),
+    level: (state.hero && state.hero.level) || 0,
+    kills: (state.run && state.run.kills) || 0,
+    dmgDealt: Math.floor((state.run && state.run.dmgDealt) || 0),
+    weaponsUsed,
+    outcome: state.victory ? 'victory' : 'death',
+    endedAt: new Date().toISOString(),
+    // The committed entry will have a seed; the leaderboard's makeSeed is
+    // available at share time but we leave the fallback to shareCard.js.
+  };
 }
 
 function getRegistry() {
@@ -840,8 +932,11 @@ export function showDeathScreen() {
 
   // Run-history log: snapshot the run into meta.runHistory[]. Runs first so the
   // history entry reflects the live state (weapons, evolutions, kills) before
-  // teardown touches anything.
-  try { recordRunResult(state, state.victory ? 'victory' : 'death'); } catch (_) {}
+  // teardown touches anything. Capture the return value so the SHARE button
+  // and preview thumbnail render against the same canonical entry shape.
+  let latestRunEntry = null;
+  try { latestRunEntry = recordRunResult(state, state.victory ? 'victory' : 'death'); } catch (_) {}
+  if (!latestRunEntry) latestRunEntry = _runEntryFromState();
 
   // Daily-run leaderboard commit must run BEFORE commitRunResults so the daily
   // sigil grant is included in this run's sigilsEarned tally.
@@ -1048,14 +1143,84 @@ export function showDeathScreen() {
     `;
   }
 
+  // ── Iter-9: SHARE panel ──
+  // Big amber SHARE button next to RETRY, plus a 200×105 preview thumbnail of
+  // the rendered share card so the player sees what's going on the wire
+  // BEFORE they download. The preview is the same renderShareCard() canvas at
+  // a smaller display size — no second render pass, no PNG round-trip.
+  // Adds the button into the existing btnRow so layout matches RETRY width
+  // and the focus scope picks it up automatically.
+  const sharePanel = document.createElement('div');
+  sharePanel.style.cssText = `
+    display: flex; gap: 18px; align-items: center; justify-content: center;
+    margin: 4px 0 2px 0;
+  `;
+  const previewWrap = document.createElement('div');
+  previewWrap.style.cssText = `
+    width: 200px; height: 105px;
+    border: 1px solid ${C.amber};
+    border-radius: 6px;
+    background: linear-gradient(180deg, rgba(20,28,22,0.78), rgba(8,14,12,0.86));
+    box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 22px rgba(0,0,0,0.55), 0 0 18px rgba(255,210,127,0.18);
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+  `;
+  // Best-effort preview render. If shareCard.js (9b) hasn't merged, swallow
+  // the error and leave the empty thumbnail frame — the SHARE button itself
+  // still attempts the download and will fail loudly if needed.
+  try {
+    const previewCanvas = renderShareCard(latestRunEntry);
+    if (previewCanvas) {
+      previewCanvas.style.cssText = 'width: 100%; height: 100%; display:block; image-rendering: -webkit-optimize-contrast;';
+      previewWrap.appendChild(previewCanvas);
+    }
+  } catch (e) {
+    // Friendly fallback label so the area doesn't read as broken.
+    previewWrap.innerHTML = `<div style="font-family:${F.body}; font-size:11px; letter-spacing:0.18em; color:rgba(245,239,225,0.55); text-transform:uppercase;">preview</div>`;
+  }
+  // SHARE button — sized to read at first glance, accent-matched to victory
+  // (amber) or death (cyan) like RETRY so the row reads as one composition.
+  const shareBtn = document.createElement('button');
+  shareBtn.type = 'button';
+  shareBtn.textContent = '📷 SHARE';
+  const shareAccent = state.victory ? C.amber : C.cyan;
+  shareBtn.style.cssText = `padding: 14px 26px; cursor: pointer;
+    background: linear-gradient(180deg, rgba(28,20,16,0.95), rgba(14,10,8,0.95));
+    border: 1px solid ${shareAccent};
+    border-radius: 8px;
+    color: ${shareAccent};
+    font-family: ${F.display}; font-size: 16px; font-weight: 700;
+    letter-spacing: 0.28em;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 12px 28px rgba(0,0,0,0.5), 0 0 16px ${shareAccent}33;`;
+  shareBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (shareBtn.disabled) return;
+    shareBtn.disabled = true;
+    const prev = shareBtn.textContent;
+    shareBtn.textContent = '…rendering';
+    try {
+      await downloadShareCard(latestRunEntry);
+      _kkShowMicroToast('Share card saved', C.amber);
+      shareBtn.textContent = '✓ SAVED';
+      setTimeout(() => { shareBtn.textContent = prev; shareBtn.disabled = false; }, 1400);
+    } catch (err) {
+      shareBtn.textContent = prev;
+      shareBtn.disabled = false;
+      _kkShowMicroToast('Share failed', C.red);
+    }
+  });
+  sharePanel.appendChild(previewWrap);
+  sharePanel.appendChild(shareBtn);
+
   _deathScreen.appendChild(title);
   _deathScreen.appendChild(stats);
   _deathScreen.appendChild(breakdown);
   if (relicPanel) _deathScreen.appendChild(relicPanel);
+  _deathScreen.appendChild(sharePanel);
   _deathScreen.appendChild(btnRow);
   _deathScreen.appendChild(hint);
   _root.appendChild(_deathScreen);
-  _deathFocusScope = pushFocusScope([retryBtn, townBtn], { layout: 'list' });
+  _deathFocusScope = pushFocusScope([retryBtn, shareBtn, townBtn], { layout: 'list' });
 
   const restart = () => {
     // Tear down listeners + the modal first, then trigger the in-place reset
@@ -1355,10 +1520,40 @@ export function showStartScreen(text) {
   optsBtn.style.cssText = ghostBtn('Options', C.cyan);
   optsBtn.addEventListener('click', (e) => { e.stopPropagation(); showOptions(); });
 
+  // ── Daily / Weekly toggle pair ──
+  // Mutually exclusive with each other and with BossRush; toggling one ON
+  // untoggles the other two so the run-mode pipeline stays deterministic.
+  // Each card carries a small 📋 icon that copies the seed-share string to
+  // the clipboard for instant sharing (iter-9 retention hook #1).
+  const purple = '#c87bff';
+  const weeklyMagenta = '#c87bff'; // matches iter-9 brief; same family as Daily
+                                    // for visual cohesion but distinguished by
+                                    // border + "WEEKLY" label.
+  const _untoggleOther = (mode) => {
+    if (mode !== 'daily')   setOption('optDaily',    false);
+    if (mode !== 'weekly')  setOption('optWeekly',   false);
+    if (mode !== 'bossRush')setOption('optBossRush', false);
+  };
+
+  // Inline 📋 share-pill — appears in the bottom-right corner of each card.
+  // Stops propagation so clicking it doesn't toggle the parent card mode.
+  const _shareIconHTML = `<span class="kk-share-pip" style="
+    position:absolute; right:6px; bottom:6px;
+    width:22px; height:22px;
+    display:flex; align-items:center; justify-content:center;
+    border-radius:5px;
+    border:1px solid rgba(245,239,225,0.28);
+    background: rgba(8,14,12,0.66);
+    font-size:11px;
+    color:rgba(245,239,225,0.85);
+    cursor:pointer;
+    transition: transform 0.12s ease, border-color 0.12s ease;
+  " title="Copy seed">📋</span>`;
+
   // Daily challenge toggle — fixed character + modifier, no shop bonuses.
   const dailyBtn = document.createElement('button');
   dailyBtn.type = 'button';
-  const purple = '#c87bff';
+  dailyBtn.style.position = 'relative';
   const paintDaily = () => {
     const m = getMeta();
     const cfg = dailyChallengeConfig(CHARACTERS.map(c => c.id));
@@ -1371,22 +1566,154 @@ export function showStartScreen(text) {
       <div style="font-family:${F.display}; font-size:13px; font-weight:700; letter-spacing:0.28em;">Daily ${on ? '★' : ''}</div>
       <div style="font-family:${F.body}; font-size:9.5px; opacity:0.82; margin-top:3px; letter-spacing:0.12em; text-transform:uppercase;">${escapeHtml(cfg.date)} · ${escapeHtml(cfg.modifier)}</div>
       <div style="font-family:${F.mono}; font-size:10px; opacity:0.85; margin-top:2px;">${best}</div>
+      ${_shareIconHTML}
     `;
-    dailyBtn.style.cssText = `padding: 10px 18px; cursor: pointer;
+    dailyBtn.style.cssText = `padding: 10px 26px 10px 18px; cursor: pointer; position:relative;
       background: ${on ? 'linear-gradient(180deg, rgba(200,123,255,0.22), rgba(110,60,180,0.18))' : 'linear-gradient(180deg, rgba(20,28,22,0.78), rgba(8,14,12,0.86))'};
       border: 1px solid ${on ? purple : C.edge};
       border-radius: 8px;
       color: ${purple};
       box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 20px rgba(0,0,0,0.5);
       line-height: 1.15; text-align:center;`;
+    // Wire the share-pip after innerHTML reset.
+    const pip = dailyBtn.querySelector('.kk-share-pip');
+    if (pip) {
+      pip.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const cfg2 = dailyChallengeConfig(CHARACTERS.map(c => c.id));
+        const m2 = getMeta();
+        const entry = {
+          stage:     'forest',
+          character: cfg2.character || 'kitty',
+          mode:      'daily',
+          kills:     (m2.dailyRun && m2.dailyRun.bestKills) || 0,
+          timeSurvived: (m2.dailyRun && m2.dailyRun.bestTime) || 0,
+          seed:      cfg2.seed || cfg2.date || '',
+        };
+        const text = typeof formatSeedShareString === 'function'
+          ? formatSeedShareString(entry)
+          : `${entry.seed} · ${entry.kills}k · ${fmtTime(entry.timeSurvived)} · ${entry.character}`;
+        copyTextToClipboard(text).then((ok) => {
+          _kkShowMicroToast(ok ? 'Seed copied' : 'Copy failed', ok ? C.green : C.red);
+        });
+      });
+    }
   };
   paintDaily();
   dailyBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     const m = getMeta();
-    setOption('optDaily', !m.optDaily);
+    const next = !m.optDaily;
+    if (next) _untoggleOther('daily');
+    setOption('optDaily', next);
+    paintDaily();
+    if (typeof paintWeekly === 'function') paintWeekly();
+  });
+
+  // Weekly mutator toggle — same shape as Daily, magenta accent, ISO-week
+  // keyed mutator pulled from weeklyMutatorConfig(). Personal best read from
+  // meta.weeklyBest (initialized by 9a's commitWeeklyRun).
+  const weeklyBtn = document.createElement('button');
+  weeklyBtn.type = 'button';
+  weeklyBtn.style.position = 'relative';
+  let _weeklyCfgCache = null;
+  const _weeklyCfg = () => {
+    if (_weeklyCfgCache) return _weeklyCfgCache;
+    try {
+      _weeklyCfgCache = typeof weeklyMutatorConfig === 'function'
+        ? weeklyMutatorConfig() : null;
+    } catch (_) { _weeklyCfgCache = null; }
+    return _weeklyCfgCache;
+  };
+  function paintWeekly() {
+    const m = getMeta();
+    const cfg = _weeklyCfg();
+    const on = !!m.optWeekly;
+    const label = cfg ? (cfg.mutatorLabel || cfg.mutatorId || 'MUTATOR') : 'MUTATOR PENDING';
+    const wk = cfg ? (cfg.weekKey || '') : '';
+    const best = (m.weeklyBest && m.weeklyBest.kills)
+      ? `BEST ${m.weeklyBest.kills}K · ${fmtTime(m.weeklyBest.time || 0)}`
+      : 'NO RUNS YET';
+    weeklyBtn.innerHTML = `
+      <div style="font-family:${F.display}; font-size:13px; font-weight:700; letter-spacing:0.28em;">Weekly ${on ? '★' : ''}</div>
+      <div style="font-family:${F.body}; font-size:9.5px; opacity:0.82; margin-top:3px; letter-spacing:0.12em; text-transform:uppercase;">${escapeHtml(wk)} · ${escapeHtml(label)}</div>
+      <div style="font-family:${F.mono}; font-size:10px; opacity:0.85; margin-top:2px;">${best}</div>
+      ${_shareIconHTML}
+    `;
+    weeklyBtn.style.cssText = `padding: 10px 26px 10px 18px; cursor: pointer; position:relative;
+      background: ${on ? 'linear-gradient(180deg, rgba(255,122,216,0.22), rgba(160,60,140,0.18))' : 'linear-gradient(180deg, rgba(20,28,22,0.78), rgba(8,14,12,0.86))'};
+      border: 1px solid ${on ? C.magenta : C.edge};
+      border-radius: 8px;
+      color: ${C.magenta};
+      box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 20px rgba(0,0,0,0.5);
+      line-height: 1.15; text-align:center;`;
+    const pip = weeklyBtn.querySelector('.kk-share-pip');
+    if (pip) {
+      pip.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const cfg2 = _weeklyCfg();
+        const m2 = getMeta();
+        const wb = m2.weeklyBest || {};
+        const entry = {
+          stage:     wb.stage     || 'forest',
+          character: wb.character || 'kitty',
+          mode:      'weekly',
+          kills:     wb.kills || 0,
+          timeSurvived: wb.time || 0,
+          seed:      (cfg2 && cfg2.seed) || (cfg2 && cfg2.weekKey) || '',
+        };
+        const text = typeof formatSeedShareString === 'function'
+          ? formatSeedShareString(entry)
+          : `${entry.seed} · ${entry.kills}k · ${fmtTime(entry.timeSurvived)} · ${entry.character}`;
+        copyTextToClipboard(text).then((ok) => {
+          _kkShowMicroToast(ok ? 'Seed copied' : 'Copy failed', ok ? C.green : C.red);
+        });
+      });
+    }
+  }
+  paintWeekly();
+  weeklyBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const m = getMeta();
+    const next = !m.optWeekly;
+    if (next) _untoggleOther('weekly');
+    setOption('optWeekly', next);
+    paintWeekly();
     paintDaily();
   });
+  // Hover tooltip — surfaces mutator label + flavor + personal best.
+  bindTooltip(weeklyBtn, () => {
+    const cfg = _weeklyCfg();
+    const m = getMeta();
+    const wb = m.weeklyBest || {};
+    const bestLine = wb.kills
+      ? `Personal best: ${wb.kills} kills · ${fmtTime(wb.time || 0)} · ${String(wb.character || '?').toUpperCase()}`
+      : 'No weekly runs yet.';
+    const flavor = (cfg && cfg.mutatorLabel) ? cfg.mutatorLabel : 'Pending — weekly mutator not yet rolled.';
+    const body = [
+      `Mutator: ${cfg && cfg.mutatorId ? cfg.mutatorId : '—'}`,
+      flavor,
+      bestLine,
+      'Mutually exclusive with Daily and Boss Rush.',
+    ].join('\n\n');
+    return {
+      title: 'Weekly Challenge',
+      icon: '🌑',
+      body,
+      tags: ['Mutator', 'Leaderboard'],
+      accent: C.magenta,
+    };
+  });
+
+  // ── Hall of Records ──
+  // Surfaces local leaderboard.topRunsAcrossAll(20) as a single-screen table.
+  // Seed column is click-to-replay — sets selectedChar/selectedStage and shows
+  // a green "Loaded seed X" toast, then hides the modal.
+  const recordsBtn = document.createElement('button');
+  recordsBtn.type = 'button';
+  recordsBtn.textContent = 'Records';
+  recordsBtn.style.cssText = ghostBtn('Records', C.magenta);
+  recordsBtn.addEventListener('click', (e) => { e.stopPropagation(); showHallOfRecords(); });
 
   const townBtn = document.createElement('button');
   townBtn.type = 'button';
@@ -1402,8 +1729,38 @@ export function showStartScreen(text) {
   btnRow.appendChild(grimBtn);
   btnRow.appendChild(codexBtn);
   btnRow.appendChild(historyBtn);
+  btnRow.appendChild(recordsBtn);
   btnRow.appendChild(dailyBtn);
+  btnRow.appendChild(weeklyBtn);
   btnRow.appendChild(optsBtn);
+
+  // URL-replay header — appended first so it floats above the title when
+  // state.replaySeed is set by 9b's boot-time URL parser. Pure display tag;
+  // mode toggles happen in main.js. Defensive read (state.replaySeed may not
+  // exist yet during 9b merge windows).
+  const replay = (state && state.replaySeed) || null;
+  if (replay && (replay.seed || replay.kills != null || replay.time != null)) {
+    const replayHeader = document.createElement('div');
+    replayHeader.style.cssText = `
+      margin: 0 auto 18px auto;
+      padding: 8px 18px;
+      background: linear-gradient(180deg, rgba(127,255,228,0.14), rgba(60,140,120,0.08));
+      border: 1px solid ${C.cyan};
+      border-radius: 8px;
+      font-family: ${F.body};
+      font-size: 11.5px; letter-spacing: 0.18em; text-transform: uppercase;
+      color: ${C.cyan};
+      box-shadow: 0 0 14px rgba(127,255,228,0.22), 0 6px 18px rgba(0,0,0,0.4);
+      max-width: 80vw;
+    `;
+    const seedTxt = escapeHtml(String(replay.seed || '—'));
+    const killTxt = (replay.kills != null) ? `· kills ${replay.kills | 0}` : '';
+    const timeTxt = (replay.time != null) ? `· ${fmtTime(replay.time | 0)}` : '';
+    const charTxt = replay.character ? `· ${escapeHtml(String(replay.character).toUpperCase())}` : '';
+    const stageTxt = replay.stage ? `· ${escapeHtml(String(replay.stage).toUpperCase())}` : '';
+    replayHeader.innerHTML = `Replaying ${seedTxt} ${killTxt} ${timeTxt} ${charTxt} ${stageTxt}`.trim();
+    _startScreen.appendChild(replayHeader);
+  }
 
   _startScreen.appendChild(ornamentTop);
   _startScreen.appendChild(title);
@@ -3236,6 +3593,185 @@ export function flashLevelUp() {
   _luFadeTO = setTimeout(() => {
     if (_luOverlay) _luOverlay.style.opacity = '0';
   }, 200);
+}
+
+// ── Hall of Records ──────────────────────────────────────────────────────────
+// Iter-9 retention surface #5: surfaces local leaderboard.topRunsAcrossAll(20)
+// as a single-screen table. Defaults to topRunsAcrossAll's existing sort order
+// (timeSurvived desc, kills desc) — the brief calls "sortable" but lists no
+// per-column toggle, so we don't gold-plate click-to-resort headers. Seed cell
+// is click-to-replay: it pre-loads the entry's stage/character/mode into the
+// next run via setOption, then closes the modal.
+let _hallModal = null;
+export function isHallOfRecordsOpen() { return !!_hallModal; }
+export function hideHallOfRecords() {
+  if (!_hallModal) return;
+  if (_hallModal.parentNode) _hallModal.parentNode.removeChild(_hallModal);
+  _hallModal = null;
+}
+export function showHallOfRecords() {
+  if (_hallModal) return;
+  if (!_root) {
+    injectCSS();
+    _root = document.getElementById('ui-root');
+    if (!_root) return;
+  }
+  const runs = (typeof topRunsAcrossAll === 'function') ? (topRunsAcrossAll(20) || []) : [];
+
+  _hallModal = document.createElement('div');
+  _hallModal.style.cssText = `
+    position: fixed; inset: 0;
+    background:
+      radial-gradient(ellipse at 50% 30%, rgba(255,122,216,0.06), transparent 60%),
+      radial-gradient(ellipse at center, rgba(0,0,0,0.55), rgba(0,0,0,0.92) 80%);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: flex-start;
+    padding: 48px 20px;
+    pointer-events: auto;
+    font-family: ${F.body};
+    z-index: 130; overflow-y: auto;
+  `;
+
+  const title = document.createElement('div');
+  title.style.cssText = `font-family: ${F.display}; font-size: 44px; font-weight: 900;
+    letter-spacing: 0.20em; color: ${C.magenta};
+    text-shadow: 0 2px 16px rgba(0,0,0,0.55), 0 0 24px rgba(255,122,216,0.22);
+    margin-bottom: 6px;`;
+  title.textContent = 'Hall of Records';
+
+  const subtitle = document.createElement('div');
+  subtitle.style.cssText = `font-family: ${F.body}; font-size: 11px; letter-spacing: 0.32em;
+    color: rgba(245,239,225,0.62); text-transform: uppercase; margin-bottom: 22px;`;
+  subtitle.textContent = `Top ${Math.min(runs.length, 20)} runs across all categories · click a seed to replay`;
+
+  const table = document.createElement('div');
+  table.style.cssText = `
+    width: 100%; max-width: 1000px;
+    background: linear-gradient(180deg, rgba(20,28,22,0.94), rgba(8,14,12,0.96));
+    border: 1px solid ${C.edge}; border-radius: 10px;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 14px 36px rgba(0,0,0,0.55);
+    padding: 14px 18px;
+    display: flex; flex-direction: column; gap: 4px;
+  `;
+
+  // Header row
+  const header = document.createElement('div');
+  header.style.cssText = `
+    display: grid;
+    grid-template-columns: 48px 1.2fr 1.2fr 0.9fr 0.8fr 0.9fr 1.6fr;
+    column-gap: 12px;
+    padding: 8px 10px;
+    font-family: ${F.display}; font-size: 10.5px; letter-spacing: 0.30em;
+    text-transform: uppercase; color: ${C.amber};
+    border-bottom: 1px solid ${C.edge};
+  `;
+  for (const lbl of ['Rank', 'Character', 'Stage', 'Mode', 'Kills', 'Time', 'Seed']) {
+    const c = document.createElement('div'); c.textContent = lbl; header.appendChild(c);
+  }
+  table.appendChild(header);
+
+  if (runs.length === 0) {
+    const empty = document.createElement('div');
+    empty.style.cssText = `padding: 28px; text-align: center; color: rgba(245,239,225,0.62); font-size: 13px; letter-spacing: 0.16em;`;
+    empty.textContent = 'No records yet. Survive a run to appear here.';
+    table.appendChild(empty);
+  } else {
+    runs.forEach((r, i) => {
+      const row = document.createElement('div');
+      const isTop3 = i < 3;
+      const accentC = i === 0 ? C.amber : i === 1 ? C.cyan : i === 2 ? C.magenta : 'rgba(245,239,225,0.78)';
+      row.style.cssText = `
+        display: grid;
+        grid-template-columns: 48px 1.2fr 1.2fr 0.9fr 0.8fr 0.9fr 1.6fr;
+        column-gap: 12px;
+        padding: 8px 10px;
+        align-items: center;
+        font-family: ${F.mono}; font-size: 12px;
+        color: ${C.text};
+        border-bottom: 1px solid rgba(255,232,188,0.06);
+        ${isTop3 ? 'background: linear-gradient(90deg, rgba(255,210,127,0.05), transparent);' : ''}
+      `;
+      const seedBtn = document.createElement('button');
+      seedBtn.type = 'button';
+      seedBtn.textContent = r.seed || '—';
+      seedBtn.title = 'Click to load this seed for the next run';
+      seedBtn.style.cssText = `
+        padding: 4px 8px; cursor: pointer;
+        background: rgba(8,14,12,0.66);
+        border: 1px solid ${C.cyan};
+        border-radius: 6px;
+        color: ${C.cyan};
+        font-family: ${F.mono}; font-size: 11px; letter-spacing: 0.04em;
+      `;
+      seedBtn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        if (r.stage) setOption('selectedStage', r.stage);
+        if (r.char)  setOption('selectedChar',  r.char);
+        // Always clear ALL mode toggles first, then flip the one that matches
+        // the recorded run. Otherwise a player with Daily on, clicking a hyper
+        // seed, ends up with BOTH Daily and Hyper active — which the run
+        // pipeline (main.js applyMetaUpgrades) treats as a bug state.
+        setOption('optHyper',    false);
+        setOption('optEndless',  false);
+        setOption('optBossRush', false);
+        setOption('optDaily',    false);
+        setOption('optWeekly',   false);
+        if (r.mode === 'hyper')     setOption('optHyper',    true);
+        else if (r.mode === 'endless')   setOption('optEndless',  true);
+        else if (r.mode === 'boss-rush') setOption('optBossRush', true);
+        // daily/weekly seeds are date-locked — don't auto-toggle those.
+        // The player can opt-in explicitly via the Daily/Weekly button.
+        _kkShowMicroToast(`Loaded seed ${r.seed || ''}`, C.amber);
+        setTimeout(() => { hideHallOfRecords(); }, 350);
+      });
+      const charLabel = (r.char || '?').toUpperCase();
+      const stageLabel = (r.stage || '?').toUpperCase();
+      const modeLabel = (r.mode || 'normal').toUpperCase();
+      row.innerHTML = `
+        <div style="color:${accentC};font-family:${F.mono};font-size:14px;">#${i + 1}</div>
+        <div style="font-family:${F.display};font-size:12px;letter-spacing:0.10em;color:${C.text};">${escapeHtml(charLabel)}</div>
+        <div style="font-family:${F.body};font-size:11px;letter-spacing:0.12em;color:rgba(245,239,225,0.82);text-transform:uppercase;">${escapeHtml(stageLabel)}</div>
+        <div style="font-family:${F.body};font-size:10.5px;letter-spacing:0.16em;color:${r.mode === 'daily' ? '#c87bff' : r.mode === 'weekly' ? C.magenta : r.mode === 'hyper' ? C.red : C.cyan};text-transform:uppercase;">${escapeHtml(modeLabel)}</div>
+        <div style="color:${C.amber};">${(r.kills | 0).toLocaleString()}</div>
+        <div style="color:${C.text};">${fmtTime(r.timeSurvived | 0)}</div>
+      `;
+      // Replace the last cell placeholder with the live button.
+      const seedCell = document.createElement('div');
+      seedCell.appendChild(seedBtn);
+      row.appendChild(seedCell);
+      table.appendChild(row);
+    });
+  }
+
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.textContent = 'Close · Esc';
+  close.style.cssText = `margin-top: 22px; padding: 10px 26px; cursor: pointer;
+    background: linear-gradient(180deg, rgba(20,28,22,0.78), rgba(8,14,12,0.86));
+    border: 1px solid ${C.edge}; border-radius: 8px;
+    color: ${C.magenta}; font-family: ${F.display}; font-size: 13px; font-weight: 700;
+    letter-spacing: 0.28em;`;
+  close.onclick = hideHallOfRecords;
+
+  _hallModal.appendChild(title);
+  _hallModal.appendChild(subtitle);
+  _hallModal.appendChild(table);
+  _hallModal.appendChild(close);
+  _root.appendChild(_hallModal);
+
+  // Capture-phase Esc handler — mirrors runHistory + codex patterns so the
+  // global Esc in main.js doesn't toggle the options panel underneath.
+  const winKey = (e) => {
+    if (!_hallModal) { window.removeEventListener('keydown', winKey, true); return; }
+    if (e.code === 'Escape') {
+      e.stopPropagation();
+      e.preventDefault();
+      hideHallOfRecords();
+    }
+  };
+  window.addEventListener('keydown', winKey, true);
 }
 
 // ── Banner ───────────────────────────────────────────────────────────────────

@@ -237,10 +237,12 @@ export function updateGems(dt) {
       const ddz = hz - g.pos.z;
       if (ddx * ddx + ddz * ddz <= PICKUP_DIST_SQ) {
         // Shop growth + Crown passive + Soul Link XP-mul, all multiply on top.
+        // Weekly XP_FAMINE mutator stacks here as a flat 0.7× scalar (iter 9).
         const xpMul = (1 + 0.08 * shopLevel('growth')) *
                       (1 + (state.run.passive_xpMul || 0)) *
                       (1 + (state.run.passive_soulLinkXpMul || 0)) *
-                      (state.run.stageRuleXpMul || 1);
+                      (state.run.stageRuleXpMul || 1) *
+                      (state.run.weeklyXpMul || 1);
         hero.xp += g.value * xpMul;
         state.run.pickedGems++;
         g.active = false;
