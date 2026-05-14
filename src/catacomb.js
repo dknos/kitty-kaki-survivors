@@ -8,9 +8,10 @@
  * Embers are granted. Pressing E on the stairs returns the hero to the
  * stashed overworld position.
  *
- * Primitive scaffolding only (Kenney Modular Dungeon Kit was not bundled
- * — left as a future drop-in replacement). Walls + floor + torches +
- * broken pillars from THREE primitives. Group is parked at y=-200 when
+ * Iter 14: real CC0 Kay Lousberg dungeon kit GLBs replace the primitive
+ * pillars/torches/sarcophagi. Walls + floor stay BoxGeometry + Plane
+ * (textured with brown_mud — same Poly Haven pack the twilight ground
+ * uses, retinted for crypt-stone). Group is parked at y=-200 when
  * inactive so its torch lights don't pollute the overworld (same trick
  * as interior.js).
  */
@@ -21,6 +22,7 @@ import { ENEMY_TIERS } from './config.js';
 import { bindPrompt, setPromptLabel } from './buttonPrompts.js';
 import { BLOOM_LAYER } from './postfx.js';
 import { makeRuneRingTexture } from './enemyTells.js';
+import { cloneCached } from './assets.js';
 
 // Shared rune-ring texture for catacomb glyphs (entrance lip + stair foot).
 // Lazy-cached so we don't re-render the canvas every build.
@@ -62,11 +64,52 @@ function _mat(color, roughness = 0.92, metalness = 0.0) {
   return new THREE.MeshStandardMaterial({ color, roughness, metalness });
 }
 
+// ── Shared PBR ground/wall texture for the catacomb ──
+// Reuses the brown_mud Poly Haven CC0 pack already loaded for twilight in
+// env.js. We re-load here (cheap; image cache hits) so the catacomb is
+// independent of env's loader timing.
+const _texLoader = new THREE.TextureLoader();
+function _prepTiled(tex, repeatU, repeatV, srgb) {
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(repeatU, repeatV);
+  tex.anisotropy = 4;
+  if (srgb) tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+let _stoneMat = null;
+function _getStoneMat() {
+  if (_stoneMat) return _stoneMat;
+  const base  = 'assets/sprites/brown_mud/';
+  const diff   = _prepTiled(_texLoader.load(base + 'diff.jpg'),   8, 1, true);
+  const rough  = _prepTiled(_texLoader.load(base + 'rough.jpg'),  8, 1, false);
+  const normal = _prepTiled(_texLoader.load(base + 'nor_gl.jpg'), 8, 1, false);
+  _stoneMat = new THREE.MeshStandardMaterial({
+    map: diff, roughnessMap: rough, normalMap: normal,
+    color: 0x5a4836, roughness: 0.92, metalness: 0.0,
+    normalScale: new THREE.Vector2(0.7, 0.7),
+  });
+  return _stoneMat;
+}
+let _floorMat = null;
+function _getFloorMat() {
+  if (_floorMat) return _floorMat;
+  const base = 'assets/sprites/brown_mud/';
+  const diff   = _prepTiled(_texLoader.load(base + 'diff.jpg'),   6, 6, true);
+  const rough  = _prepTiled(_texLoader.load(base + 'rough.jpg'),  6, 6, false);
+  const normal = _prepTiled(_texLoader.load(base + 'nor_gl.jpg'), 6, 6, false);
+  _floorMat = new THREE.MeshStandardMaterial({
+    map: diff, roughnessMap: rough, normalMap: normal,
+    color: 0x3a2c20, roughness: 0.95, metalness: 0.0,
+    normalScale: new THREE.Vector2(0.6, 0.6),
+  });
+  return _floorMat;
+}
+
 function _makeFloor() {
   const g = new THREE.Group();
   const base = new THREE.Mesh(
-    new THREE.PlaneGeometry(CHAMBER_W, CHAMBER_D),
-    _mat(0x2a2218, 0.95),
+    new THREE.PlaneGeometry(CHAMBER_W, CHAMBER_D, 1, 1),
+    _getFloorMat(),
   );
   base.rotation.x = -Math.PI / 2;
   base.receiveShadow = true;
@@ -86,71 +129,130 @@ function _makeFloor() {
 }
 
 function _makeWall(w, h, d) {
+  // Iter 14: walls keep their BoxGeometry footprint but pick up the PBR
+  // stone material (brown_mud Poly Haven retinted dark crypt-stone). One
+  // shared material across all four walls so draw-call count stays low.
   const m = new THREE.Mesh(
     new THREE.BoxGeometry(w, h, d),
-    _mat(0x4a4338, 0.98),
+    _getStoneMat(),
   );
   m.castShadow = true; m.receiveShadow = true;
   return m;
 }
 
 function _makeTorch() {
+  // Iter 14: real Quaternius wall-torch GLB carrying a flame emissive cone
+  // and a flickering PointLight. cloneCached returns a fresh GLTF scene per
+  // call so each wall slot owns its own materials (cone scales per torch).
   const g = new THREE.Group();
-  // Bracket post
-  const post = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.06, 0.06, 0.7, 8),
-    _mat(0x2a1f14, 0.9),
-  );
-  post.position.y = 1.6;
-  g.add(post);
-  // Flame cone (emissive)
+  const kit = cloneCached('kit_torch_wall');
+  if (kit) {
+    kit.scale.setScalar(1.8);
+    kit.position.y = 1.4;
+    g.add(kit);
+  }
+  // Always overlay a small ember-orange emissive cone at the bracket head
+  // so the torch reads as lit at distance even if the kit GLB has no
+  // glowing primitive of its own. Bloom layer so it punches through fog.
   const cone = new THREE.Mesh(
-    new THREE.ConeGeometry(0.18, 0.55, 10),
+    new THREE.ConeGeometry(0.15, 0.45, 10),
     new THREE.MeshStandardMaterial({
-      color: 0xff7a3a, emissive: 0xff7a3a, emissiveIntensity: 2.2, roughness: 0.4,
+      color: 0xff7a3a, emissive: 0xff7a3a, emissiveIntensity: 2.4, roughness: 0.4,
     }),
   );
-  cone.position.y = 2.15;
+  cone.position.y = 2.35;
+  cone.layers.enable(BLOOM_LAYER);
   g.add(cone);
-  // Light
-  const pl = new THREE.PointLight(0xff7a3a, 0.8, 8, 2);
-  pl.position.y = 2.0;
+  // PointLight does the room-warm work; the flicker tick lives in tickCatacomb.
+  const pl = new THREE.PointLight(0xff7a3a, 0.9, 9, 2);
+  pl.position.y = 2.2;
   g.add(pl);
-  g.userData = { pl, cone, baseIntensity: 0.8 };
+  g.userData = { pl, cone, baseIntensity: 0.9 };
+  if (!kit) {
+    // Last-resort silhouette so the torch isn't invisible if preload missed.
+    const post = new THREE.Mesh(
+      new THREE.BoxGeometry(0.12, 1.6, 0.12),
+      _mat(0x2a1f14, 0.9),
+    );
+    post.position.y = 1.5;
+    g.add(post);
+  }
   return g;
 }
 
-function _makePillar() {
+function _makePillar(variant = 0) {
+  // Iter 14: real Kay Lousberg pillar GLBs. Three variants per the
+  // chamber spec — full pillar, alt full pillar, broken pillar. Caller
+  // passes `variant` (0/1/2) to pick deterministically per slot.
+  const KIT_KEYS = ['kit_pillar', 'kit_pillar2', 'kit_pillar_broken'];
+  const key = KIT_KEYS[variant % KIT_KEYS.length];
+  const kit = cloneCached(key);
   const g = new THREE.Group();
-  // Broken column — three stacked drums, the top one offset/shorter
-  const h1 = 1.2 + Math.random() * 0.4;
-  const drum1 = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.55, 0.6, h1, 12),
-    _mat(0x5a5048, 0.95),
-  );
-  drum1.position.y = h1 / 2;
-  drum1.castShadow = true; drum1.receiveShadow = true;
-  g.add(drum1);
-  if (Math.random() > 0.3) {
-    const h2 = 0.8 + Math.random() * 0.6;
-    const drum2 = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.5, 0.55, h2, 12),
+  if (kit) {
+    kit.scale.setScalar(2.0);
+    g.add(kit);
+  } else {
+    // Fallback — short dark stone box, same silhouette as before.
+    const fallback = new THREE.Mesh(
+      new THREE.BoxGeometry(0.9, 2.0, 0.9),
       _mat(0x5a5048, 0.95),
     );
-    drum2.position.y = h1 + h2 / 2;
-    drum2.position.x = (Math.random() - 0.5) * 0.12;
-    drum2.castShadow = true;
-    g.add(drum2);
+    fallback.position.y = 1.0;
+    fallback.castShadow = true; fallback.receiveShadow = true;
+    g.add(fallback);
   }
-  // Base slab
-  const slab = new THREE.Mesh(
-    new THREE.BoxGeometry(1.4, 0.18, 1.4),
-    _mat(0x3a3328, 0.95),
-  );
-  slab.position.y = 0.09;
-  slab.receiveShadow = true;
-  g.add(slab);
-  g.rotation.y = Math.random() * Math.PI;
+  g.rotation.y = (Math.PI * 2 * (variant + 1)) / 7;  // deterministic spin
+  g.traverse(o => {
+    if (o.isMesh) {
+      o.castShadow = true;
+      o.receiveShadow = true;
+      o.userData._castSet = true;
+    }
+  });
+  return g;
+}
+
+/**
+ * Spawn a single Lousberg coffin or crypt as set-dress. variant = 'coffin'
+ * or 'crypt'. Returns a Group with shadow flags applied.
+ */
+function _makeSarcophagus(variant) {
+  const key = variant === 'crypt' ? 'kit_crypt' : 'kit_coffin';
+  const g = new THREE.Group();
+  const kit = cloneCached(key);
+  if (kit) {
+    kit.scale.setScalar(1.8);
+    g.add(kit);
+  } else {
+    const fallback = new THREE.Mesh(
+      new THREE.BoxGeometry(1.8, 0.6, 0.9),
+      _mat(0x4a4338, 0.95),
+    );
+    fallback.position.y = 0.3;
+    g.add(fallback);
+  }
+  g.traverse(o => {
+    if (o.isMesh) {
+      o.castShadow = true;
+      o.receiveShadow = true;
+    }
+  });
+  return g;
+}
+
+/**
+ * Spawn a single Lousberg bone GLB for ground-level set-dress.
+ * variant 0/1/2 picks bone1/bone2/bone3.
+ */
+function _makeBonePile(variant) {
+  const keys = ['kit_bone1', 'kit_bone2', 'kit_bone3'];
+  const key = keys[variant % keys.length];
+  const g = new THREE.Group();
+  const kit = cloneCached(key);
+  if (kit) {
+    kit.scale.setScalar(1.4);
+    g.add(kit);
+  }
   return g;
 }
 
@@ -294,18 +396,67 @@ export function buildCatacomb(scene) {
     _torches.push(t);
   }
 
-  // 5 broken pillars — fixed positions for cover
+  // 5 broken pillars — fixed positions for cover.
+  // Iter 14: variants cycle through the 3 Lousberg kit pillars so each
+  // slot reads differently even with deterministic placement.
   const pillarSpots = [
-    { x: -7,  z: -7 },
-    { x:  7,  z: -7 },
-    { x: -7,  z:  4 },
-    { x:  7,  z:  4 },
-    { x:  0,  z: -3 },
+    { x: -7,  z: -7, v: 0 },
+    { x:  7,  z: -7, v: 1 },
+    { x: -7,  z:  4, v: 2 },
+    { x:  7,  z:  4, v: 0 },
+    { x:  0,  z: -3, v: 2 },
   ];
   for (const s of pillarSpots) {
-    const p = _makePillar();
+    const p = _makePillar(s.v);
     p.position.set(s.x, 0, s.z);
     g.add(p);
+  }
+
+  // ── Set dress: sarcophagi + bones (iter 14) ──
+  // 2 coffins along the west wall and 1 crypt at the north end give the
+  // chamber a real ossuary identity. Bones scatter near the corners + the
+  // chamber center to read as ground-debris (the existing floating-bone
+  // pack in arenaDecor.js handles the airborne layer).
+  const coffinSpots = [
+    { x: -CHAMBER_W / 2 + 2.2, z: -4, rot: Math.PI / 2 },
+    { x: -CHAMBER_W / 2 + 2.2, z:  2, rot: Math.PI / 2 },
+  ];
+  for (const s of coffinSpots) {
+    const sarc = _makeSarcophagus('coffin');
+    sarc.position.set(s.x, 0, s.z);
+    sarc.rotation.y = s.rot;
+    g.add(sarc);
+  }
+  const crypt = _makeSarcophagus('crypt');
+  crypt.position.set(0, 0, -CHAMBER_D / 2 + 2.4);
+  crypt.rotation.y = 0;
+  g.add(crypt);
+  // 6 bone clusters scattered (deterministic positions for visual stability).
+  const boneSpots = [
+    { x: -10, z: -10, v: 0 },
+    { x:  10, z: -11, v: 1 },
+    { x: -11, z:   8, v: 2 },
+    { x:  11, z:   9, v: 0 },
+    { x:   2, z:   6, v: 1 },
+    { x:  -3, z:  -8, v: 2 },
+  ];
+  for (const s of boneSpots) {
+    const bone = _makeBonePile(s.v);
+    bone.position.set(s.x, 0, s.z);
+    bone.rotation.y = (s.v + 1) * 0.7;
+    g.add(bone);
+  }
+
+  // Arch over the south stairs — gives the exit weight + frames the rune.
+  const archMesh = cloneCached('kit_arch');
+  if (archMesh) {
+    archMesh.scale.setScalar(2.4);
+    archMesh.position.set(STAIRS_X, 0, STAIRS_Z + 0.3);
+    archMesh.rotation.y = Math.PI;
+    archMesh.traverse(o => {
+      if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; }
+    });
+    g.add(archMesh);
   }
 
   // Exit stairs at south end
