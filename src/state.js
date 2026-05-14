@@ -236,6 +236,17 @@ export function resetState() {
   state.run.equippedRelic = null;
   state.run.heartPotency = 1;
   state.run.cellarLv = 0;
+  // Passive run-flags (iter 2). Defaults are the "no passive" identity values.
+  state.run.passive_xpMul          = 1;
+  state.run.passive_vampLevel      = 0;
+  state.run.passive_vampHpPerKill  = 0;
+  state.run.passive_vampPct        = 0;
+  state.run.passive_echoChance     = 0;
+  state.run.passive_berserkMax     = 0;
+  state.run.passive_knockMul       = 1;
+  state.run.passive_staggerResist  = 0;
+  state.run.passive_greedMul       = 1;
+  state.run.passive_soulLinkXpMul  = 1;
   // Totem-of-Swarm bookkeeping — see src/totems.js
   if (state.totems) {
     for (const t of state.totems.list) { if (t.mesh && t.mesh.parent) t.mesh.parent.remove(t.mesh); }

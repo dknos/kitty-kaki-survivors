@@ -45,10 +45,23 @@ function findNearestEnemy(pos) {
   return best;
 }
 
-function spawnProjectile(origin, dir, level, dmg, speedMul = 1, pierceBonus = 0, owner = 'autoaim') {
+// Glasswind: pale-blue / ice-shard color overrides for the evolved missile.
+const PROJ_CORE_MAT_ICE = new THREE.MeshBasicMaterial({ color: 0xd6ecff });
+const PROJ_GLOW_MAT_ICE = new THREE.MeshBasicMaterial({
+  map: tex('glowCyan'), color: 0xbfe0ff,
+  transparent: true, opacity: 0.65, depthWrite: false, blending: THREE.AdditiveBlending,
+});
+
+function spawnProjectile(origin, dir, level, dmg, speedMul = 1, pierceBonus = 0, owner = 'autoaim', opts = null) {
+  const ice = !!(opts && opts.ice);
+  const scaleMul = (opts && opts.scale) || 1;
   const group = new THREE.Group();
-  const core = new THREE.Mesh(PROJ_CORE_GEO, PROJ_CORE_MAT);
-  const glow = new THREE.Mesh(PROJ_GLOW_GEO, PROJ_GLOW_MAT);
+  const core = new THREE.Mesh(PROJ_CORE_GEO, ice ? PROJ_CORE_MAT_ICE : PROJ_CORE_MAT);
+  const glow = new THREE.Mesh(PROJ_GLOW_GEO, ice ? PROJ_GLOW_MAT_ICE : PROJ_GLOW_MAT);
+  if (scaleMul !== 1) {
+    core.scale.setScalar(scaleMul);
+    glow.scale.setScalar(scaleMul);
+  }
   glow.quaternion.copy(_glowFlat);
   glow.position.y = -0.05;
   glow.layers.enable(BLOOM_LAYER);
@@ -58,7 +71,7 @@ function spawnProjectile(origin, dir, level, dmg, speedMul = 1, pierceBonus = 0,
   group.position.set(origin.x, 0.5, origin.z);
   state.scene.add(group);
   const vel = new THREE.Vector3(dir.x, 0, dir.z).multiplyScalar(level.speed * (state.hero.statMul.projSpeed || 1) * speedMul);
-  state.projectiles.active.push({
+  const proj = {
     mesh: group,
     vel,
     dmg,
@@ -66,7 +79,51 @@ function spawnProjectile(origin, dir, level, dmg, speedMul = 1, pierceBonus = 0,
     pierce: level.pierce + pierceBonus,
     hit: new Set(),
     ownerWeapon: owner,
-  });
+  };
+  if (opts) {
+    if (opts.splitOnHit) proj.splitOnHit = true;
+    if (opts.ttlOverride != null) proj.ttl = opts.ttlOverride;
+    if (opts.pierceOverride != null) proj.pierce = opts.pierceOverride;
+    if (opts.noSplit) proj.noSplit = true;
+  }
+  state.projectiles.active.push(proj);
+  return proj;
+}
+
+// Exported so the central projectile tick can spawn Glasswind shards on hit
+// without re-importing autoAim internals. Spawns 2 perpendicular half-dmg shards.
+export function spawnGlasswindShards(origin, parentVel, parentDmg) {
+  // Perpendicular split: ±35° off the original heading.
+  const baseAngle = Math.atan2(parentVel.z, parentVel.x);
+  const speed = Math.hypot(parentVel.x, parentVel.z) || 1;
+  for (const sign of [-1, 1]) {
+    const a = baseAngle + sign * 0.6;
+    const dir = { x: Math.cos(a), z: Math.sin(a) };
+    const group = new THREE.Group();
+    const core = new THREE.Mesh(PROJ_CORE_GEO, PROJ_CORE_MAT_ICE);
+    const glow = new THREE.Mesh(PROJ_GLOW_GEO, PROJ_GLOW_MAT_ICE);
+    core.scale.setScalar(0.6);
+    glow.scale.setScalar(0.6);
+    glow.quaternion.copy(_glowFlat);
+    glow.position.y = -0.05;
+    glow.layers.enable(BLOOM_LAYER);
+    core.layers.enable(BLOOM_LAYER);
+    group.add(core);
+    group.add(glow);
+    group.position.set(origin.x, 0.5, origin.z);
+    state.scene.add(group);
+    const vel = new THREE.Vector3(dir.x, 0, dir.z).multiplyScalar(speed * 0.9);
+    state.projectiles.active.push({
+      mesh: group,
+      vel,
+      dmg: parentDmg * 0.5,
+      ttl: 0.8,
+      pierce: 1,
+      hit: new Set(),
+      ownerWeapon: 'glasswind',
+      noSplit: true,    // shards don't re-split
+    });
+  }
 }
 
 export default {
@@ -118,16 +175,22 @@ export default {
 
     const dmgMul = state.hero.statMul.dmg || 1;
     const evo = !!inst.evolved;
-    const dmg = level.dmg * dmgMul * (evo ? 1.4 : 1);
-    const n = level.count + (evo ? 2 : 0);
-    const projSpeedMul = evo ? 1.5 : 1;
-    const pierceBonus = evo ? 2 : 0;
+    // Glasswind: +50% projectiles per volley (rounded up, min +1), pale-blue
+    // visual, and each bullet carries `splitOnHit` so the central projectile
+    // tick spawns 2 half-damage ice shards on first hit.
+    const dmg = level.dmg * dmgMul;
+    const baseCount = level.count;
+    const n = evo ? Math.max(baseCount + 1, Math.ceil(baseCount * 1.5)) : baseCount;
+    const projSpeedMul = 1;
+    const pierceBonus = 0;
+    const spawnOpts = evo ? { ice: true, splitOnHit: true } : null;
+    const ownerTag = evo ? 'glasswind' : 'autoaim';
 
     for (let i = 0; i < n; i++) {
       const offset = (i - (n - 1) / 2) * FAN_SPREAD;
       const a = baseAngle + offset;
       const dir = { x: Math.cos(a), z: Math.sin(a) };
-      spawnProjectile(hero, dir, level, dmg, projSpeedMul, pierceBonus, evo ? 'volley' : 'autoaim');
+      spawnProjectile(hero, dir, level, dmg, projSpeedMul, pierceBonus, ownerTag, spawnOpts);
     }
 
     try { sfx.weaponAutoaim(); } catch (_) {}

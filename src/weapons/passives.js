@@ -33,11 +33,11 @@ export const PASSIVES = [
   },
   {
     id: 'armor',    name: 'Armor',       icon: '🛡️', maxLevel: 5,
-    desc: lv => `−${lv * 12}% damage taken (cap 60%)`,
+    desc: lv => `−${lv * 5}% damage taken`,
     apply(level, prev) {
-      // dmgTaken multiplier: lower is better. Cap at 0.40 so 5×12% = 60% reduction.
-      const newMul  = Math.max(0.40, 1 - 0.12 * level);
-      const prevMul = Math.max(0.40, 1 - 0.12 * (prev || 0));
+      // dmgTaken multiplier: lower is better. ×0.95 / 0.90 / 0.85 / 0.80 / 0.75.
+      const newMul  = 1 - 0.05 * level;
+      const prevMul = 1 - 0.05 * (prev || 0);
       state.hero.statMul.dmgTaken *= newMul / prevMul;
     },
   },
@@ -93,6 +93,79 @@ export const PASSIVES = [
       state.hero.regenPerSec = 0.5 * level;   // absolute, replaces prev
     },
   },
+  // ── New passives (iteration 2: combinatorics expansion) ────────────────────
+  // Crown — stacks with shop "growth" via a multiplicative bonus consumed by
+  // xp.js when awarding gem XP. Idempotent: write the absolute mul each pick.
+  {
+    id: 'crown',    name: 'Crown',       icon: '👑', maxLevel: 5,
+    desc: lv => `+${lv * 10}% XP gain`,
+    apply(level/*, prev*/) {
+      // Absolute replacement keeps it idempotent. xp.js reads this flag.
+      state.run.passive_xpMul = 1 + 0.10 * level;
+    },
+  },
+  // Vampirism — on-kill heal in HP. The parent process will read the cap from
+  // state.run.passive_vampHpPerKill when applying lifesteal in enemies.js.
+  {
+    id: 'vampirism',name: 'Vampirism',   icon: '🩸', maxLevel: 5,
+    desc: lv => `On kill: heal ${lv} HP (max)`,
+    apply(level/*, prev*/) {
+      state.run.passive_vampLevel    = level;
+      state.run.passive_vampHpPerKill = level;          // hard cap per kill
+      state.run.passive_vampPct       = 0.01 * level;   // % of dmg-on-kill
+    },
+  },
+  // Echo — chance for spawned projectile to be fired twice. Read at weapon
+  // spawn sites by the parent process: Math.random() < state.run.passive_echoChance.
+  {
+    id: 'echo',     name: 'Echo',        icon: '🌀', maxLevel: 5,
+    desc: lv => `${lv * 5}% chance projectiles fire twice`,
+    apply(level/*, prev*/) {
+      state.run.passive_echoChance = 0.05 * level;
+    },
+  },
+  // Berserk — bonus damage scaling with missing HP. Active multiplier is
+  // computed per-tick by the parent in damage application:
+  //   dmgBonus = passive_berserkMax * (1 - hp / hpMax)
+  // applied only when hp/hpMax <= 0.5 per design ("at 50% HP").
+  {
+    id: 'berserk',  name: 'Berserk',     icon: '😤', maxLevel: 5,
+    desc: lv => `+${lv * 5}% damage at 50% HP (scales w/ missing HP)`,
+    apply(level/*, prev*/) {
+      state.run.passive_berserkMax = 0.05 * level;
+    },
+  },
+  // Steadfast — knockback resistance + bonus knock on hero attacks.
+  // Parent process reads passive_knockMul for outgoing knock, and
+  // passive_staggerResist for incoming knock dampening (1 = full ignore).
+  {
+    id: 'steadfast',name: 'Steadfast',   icon: '⛰️', maxLevel: 5,
+    desc: lv => `+${lv * 20}% knockback & stagger resist`,
+    apply(level/*, prev*/) {
+      state.run.passive_knockMul       = 1 + 0.20 * level;
+      state.run.passive_staggerResist  = 0.20 * level;   // 0..1 dampening
+    },
+  },
+  // Greed — coin/ember drop bonus from chests. Parent reads at chest payout.
+  {
+    id: 'greed',    name: 'Greed',       icon: '💰', maxLevel: 5,
+    desc: lv => `+${lv * 10}% chest coin/ember drops`,
+    apply(level/*, prev*/) {
+      state.run.passive_greedMul = 1 + 0.10 * level;
+    },
+  },
+  // Soul Link — pickup radius (immediate via statMul.magnet) AND
+  // bonus XP-on-pickup (flag for xp.js).
+  {
+    id: 'soullink', name: 'Soul Link',   icon: '🔗', maxLevel: 5,
+    desc: lv => `+${lv * 15}% pickup radius & XP per gem`,
+    apply(level, prev) {
+      const newMul  = 1 + 0.15 * level;
+      const prevMul = 1 + 0.15 * (prev || 0);
+      state.hero.statMul.magnet *= newMul / prevMul;
+      state.run.passive_soulLinkXpMul = newMul;
+    },
+  },
 ];
 
 /** Roll-time helper: returns picks the player can still benefit from. */
@@ -134,4 +207,17 @@ export function applyPassive(choice) {
   if (entry.level >= def.maxLevel) return;
   entry.level += 1;
   def.apply(entry.level, prevLevel);
+  // Persist the high-water-mark level reached for this passive across all runs
+  // (used by the Grimoire codex). Lazy import keeps this file decoupled.
+  try {
+    import('../meta.js').then(({ getMeta, saveMeta }) => {
+      const meta = getMeta();
+      if (!meta.passivesSeen) meta.passivesSeen = {};
+      const cur = meta.passivesSeen[choice.id] || 0;
+      if (entry.level > cur) {
+        meta.passivesSeen[choice.id] = entry.level;
+        saveMeta();
+      }
+    });
+  } catch (_) { /* meta unavailable; ignore */ }
 }

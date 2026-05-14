@@ -180,7 +180,11 @@ export function updateGems(dt) {
       const ddx = hx - g.pos.x;
       const ddz = hz - g.pos.z;
       if (ddx * ddx + ddz * ddz <= PICKUP_DIST_SQ) {
-        hero.xp += g.value * (1 + 0.08 * shopLevel('growth'));
+        // Shop growth + Crown passive + Soul Link XP-mul, all multiply on top.
+        const xpMul = (1 + 0.08 * shopLevel('growth')) *
+                      (1 + (state.run.passive_xpMul || 0)) *
+                      (1 + (state.run.passive_soulLinkXpMul || 0));
+        hero.xp += g.value * xpMul;
         state.run.pickedGems++;
         g.active = false;
         g.magnetized = false;

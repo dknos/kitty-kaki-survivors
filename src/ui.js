@@ -738,6 +738,7 @@ export function showDeathScreen() {
     level: state.hero.level,
     victory: state.victory,
     stageId: state.run.stage ? state.run.stage.id : null,
+    greedMul: state.run.passive_greedMul || 0,
   });
   const meta = getMeta();
   // First-victory unlock banners
@@ -1527,7 +1528,54 @@ export function showGrimoire() {
   const grid = document.createElement('div');
   grid.style.cssText = 'display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; max-width: 1100px; width: 100%;';
 
-  import('./weapons/index.js').then(({ REGISTRY, EVOLUTIONS }) => {
+  // Passives section header + grid (populated below alongside evolutions).
+  const passSubtitle = document.createElement('div');
+  passSubtitle.style.cssText = `font-family: ${F.body}; font-size: 11px; letter-spacing: 0.32em;
+    color: rgba(245,239,225,0.62); text-transform: uppercase; margin: 28px 0 14px;`;
+  passSubtitle.textContent = 'Passives — mastery across runs';
+
+  const passGrid = document.createElement('div');
+  passGrid.style.cssText = 'display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; max-width: 1100px; width: 100%;';
+
+  import('./weapons/index.js').then(({ REGISTRY, EVOLUTIONS, PASSIVES }) => {
+    // Build the passive codex first so it appears right under the evolutions.
+    const meta = getMeta();
+    const seen = (meta && meta.passivesSeen) || {};
+    for (const p of PASSIVES) {
+      const owned = (state.passives || []).find(e => e.id === p.id);
+      const liveLevel = owned ? owned.level : 0;
+      const lifetimeLevel = Math.max(liveLevel, seen[p.id] || 0);
+      const pipColor = lifetimeLevel > 0 ? C.magenta : 'rgba(120,120,120,0.4)';
+      const card = document.createElement('div');
+      card.style.cssText = `
+        background: linear-gradient(180deg, rgba(20,22,28,0.94), rgba(8,10,14,0.96));
+        border: 1px solid ${lifetimeLevel > 0 ? 'rgba(255,122,216,0.45)' : 'rgba(80,80,80,0.4)'};
+        border-radius: 10px;
+        box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 20px rgba(0,0,0,0.5);
+        padding: 12px 14px;
+        display: grid; grid-template-columns: 40px 1fr; gap: 12px; align-items: center;
+      `;
+      // Build pip strip: filled pips = lifetime max level reached.
+      let pips = '';
+      for (let i = 1; i <= p.maxLevel; i++) {
+        const filled = i <= lifetimeLevel;
+        pips += `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:3px;background:${filled ? pipColor : 'transparent'};border:1px solid ${filled ? pipColor : 'rgba(120,120,120,0.4)'};"></span>`;
+      }
+      const descText = p.desc(Math.max(1, lifetimeLevel || 1));
+      card.innerHTML = `
+        <div style="font-size:30px;text-align:center;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));${lifetimeLevel > 0 ? '' : 'opacity:0.45;'}">${p.icon}</div>
+        <div>
+          <div style="font-family:${F.display};font-size:13px;font-weight:700;letter-spacing:0.10em;color:${lifetimeLevel > 0 ? C.magenta : 'rgba(180,180,180,0.7)'};">${escapeHtml(p.name)}</div>
+          <div style="font-size:11px;color:rgba(245,239,225,0.72);line-height:1.45;margin:3px 0 6px;">${escapeHtml(descText)}</div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div>${pips}</div>
+            <div style="font-family:${F.mono};font-size:10px;color:rgba(245,239,225,0.55);letter-spacing:0.08em;">Lv ${lifetimeLevel}/${p.maxLevel}</div>
+          </div>
+        </div>
+      `;
+      passGrid.appendChild(card);
+    }
+
     for (const baseId of Object.keys(EVOLUTIONS)) {
       const evo = EVOLUTIONS[baseId];
       const base = REGISTRY[baseId] || {};
@@ -1579,6 +1627,8 @@ export function showGrimoire() {
   _grimModal.appendChild(title);
   _grimModal.appendChild(subtitle);
   _grimModal.appendChild(grid);
+  _grimModal.appendChild(passSubtitle);
+  _grimModal.appendChild(passGrid);
   _grimModal.appendChild(close);
   _root.appendChild(_grimModal);
 }

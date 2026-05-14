@@ -11,17 +11,21 @@ import { damageEnemy, queryRadius } from '../enemies.js';
 import { unlockZoomLevel, getMaxZoomNotch, getZoomNotchCount } from '../input.js';
 
 import orbitals from './orbitals.js';
-import autoAim from './autoAim.js';
+import autoAim, { spawnGlasswindShards } from './autoAim.js';
 import chain, { tickChainArcs } from './chain.js';
 import web, { tickWebs } from './web.js';
+import frostbloom from './frostbloom.js';
+import sigilbell from './sigilbell.js';
 import { passiveChoices, applyPassive, PASSIVES } from './passives.js';
 export { applyPassive, PASSIVES };
 
 export const REGISTRY = {
-  [orbitals.id]: orbitals,
-  [autoAim.id]:  autoAim,
-  [chain.id]:    chain,
-  [web.id]:      web,
+  [orbitals.id]:   orbitals,
+  [autoAim.id]:    autoAim,
+  [chain.id]:      chain,
+  [web.id]:        web,
+  [frostbloom.id]: frostbloom,
+  [sigilbell.id]:  sigilbell,
 };
 
 const WORLD_BOUND = 200; // projectile cull bound (square half-extent around hero)
@@ -96,11 +100,22 @@ function tickProjectiles(dt) {
     if (!candidates || candidates.length === 0) continue;
 
     let killed = false;
+    let didSplit = false;
     for (const enemy of candidates) {
       if (!enemy || !enemy.alive) continue;
       if (p.hit.has(enemy)) continue;
       damageEnemy(enemy, p.dmg, p.ownerWeapon || 'autoaim');
       p.hit.add(enemy);
+
+      // Glasswind: on the first hit, fork into 2 perpendicular ice shards that
+      // each pierce 1 enemy for 50% damage. Guard with `noSplit` so shards
+      // themselves don't recursively split.
+      if (p.splitOnHit && !p.noSplit && !didSplit) {
+        try { spawnGlasswindShards(p.mesh.position, p.vel, p.dmg); } catch (_) {}
+        didSplit = true;
+        p.splitOnHit = false;
+      }
+
       p.pierce -= 1;
       if (p.pierce <= 0) {
         disposeProjectile(p, scene);
@@ -220,6 +235,10 @@ export function applyFiller(choice) {
   _announceEligibleEvolutions();
 }
 
+/** Public hook: callers like enemies.js (mini-boss kill) can poke evolution
+ *  eligibility re-check. Idempotent — _announcedEvos guards against re-banner. */
+export function checkEvolutionEligibility() { _announceEligibleEvolutions(); }
+
 function _announceEligibleEvolutions() {
   for (const baseId of Object.keys(EVOLUTIONS)) {
     if (_announcedEvos.has(baseId)) continue;
@@ -256,34 +275,75 @@ export const EVOLUTIONS = {
     desc: 'Chain fires every 0.3s with +3 chains and 2× damage',
   },
   autoaim: {
-    id: 'volley',
-    requires: { filler: 'damage', count: 3 },
-    name: 'Volley',
-    icon: '🎯',
-    desc: 'Magic Missile fires +2 projectiles per volley with 1.5× speed and +2 pierce',
+    id: 'glasswind',
+    requires: { passive: 'echo' },
+    name: 'Glasswind',
+    icon: '🪟',
+    desc: 'Volleys fire 50% more projectiles; bullets split into two ice shards on first hit',
   },
   web: {
-    id: 'tangle',
-    requires: { filler: 'speed', count: 3 },
-    name: 'Tangle',
-    icon: '🕷️',
-    desc: 'Sticky Web has 1.5× radius, sharper slow, and longer duration',
+    id: 'sanctum',
+    requires: { passive: 'steadfast' },
+    name: 'Sanctum',
+    icon: '✨',
+    desc: 'Webs burn enemies inside them; you take 30% less damage while standing in any web',
+  },
+  // Dash isn't a REGISTRY weapon — eligibility/application has a dedicated
+  // branch keyed on the literal id 'dash'. Trigger: dashLevel maxed (5) AND
+  // 5 mini-boss kills this run. Kept idempotent via state.hero.dashEvolved.
+  dash: {
+    id: 'mirror_step',
+    requires: { dashLevel: 5, miniBossKills: 5 },
+    name: 'Mirror Step',
+    icon: '👥',
+    desc: 'Dash leaves a magenta ghost twin that fires an orbital burst; dash cooldown −25%',
   },
 };
 
 function _isEvolutionEligible(weaponId) {
   const evo = EVOLUTIONS[weaponId];
   if (!evo) return false;
+  const req = evo.requires || {};
+
+  // Dash evolution: not a REGISTRY weapon — check run-state directly.
+  if (weaponId === 'dash') {
+    const h = state.hero;
+    if (!h.dashUnlocked) return false;
+    if (h.dashEvolved) return false;
+    if ((h.dashLevel || 0) < (req.dashLevel || 0)) return false;
+    const kills = (state.run && state.run.miniBossKills) || 0;
+    if (kills < (req.miniBossKills || 0)) return false;
+    return true;
+  }
+
   const owned = state.weapons.find(w => w.id === weaponId);
   if (!owned) return false;
   const mod = REGISTRY[weaponId];
-  if (owned.level < mod.maxLevel) return false;
+  if (!mod || owned.level < mod.maxLevel) return false;
   if (owned.inst && owned.inst.evolved) return false; // already done
-  const have = (state.hero.fillerCounts && state.hero.fillerCounts[evo.requires.filler]) || 0;
-  return have >= evo.requires.count;
+
+  if (req.filler) {
+    const have = (state.hero.fillerCounts && state.hero.fillerCounts[req.filler]) || 0;
+    if (have < (req.count || 1)) return false;
+  }
+  if (req.passive) {
+    const passives = state.passives || [];
+    const havePassive = passives.find(p => p.id === req.passive);
+    if (!havePassive || havePassive.level < (req.passiveLevel || 1)) return false;
+  }
+  return true;
 }
 
 export function applyEvolution(weaponId) {
+  if (weaponId === 'dash') {
+    const h = state.hero;
+    if (h.dashEvolved) return;
+    h.dashEvolved = true;
+    state.fx.bloomBoost = 1.0;
+    state.fx.shake = Math.max(state.fx.shake || 0, 0.5);
+    import('../ui.js').then(({ tryAchievement }) => tryAchievement('first_evolution'));
+    return;
+  }
   const owned = state.weapons.find(w => w.id === weaponId);
   if (!owned) return;
   if (!owned.inst) owned.inst = {};

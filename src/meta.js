@@ -44,6 +44,9 @@ const DEFAULT = {
   optBossRush: false,
   // Discovered evolutions: { evolutionId: timestamp }
   discoveries: {},
+  // Passive codex: high-water-mark level reached for each passive id, across runs.
+  // Surfaced in the Grimoire so players see their cumulative mastery.
+  passivesSeen: {},
   // Selected character id for the next run
   selectedChar: 'kitty',
   // Selected stage id for the next run
@@ -458,7 +461,9 @@ export function commitRunResults({ timeSurvived, kills, dmgDealt, level, victory
   // 1 coin per kill, +5 per minute survived. Hyper boosts coin gain.
   // Vault stacks on top of Hyper coin bonus.
   const vaultLv = (meta.house && meta.house.vault) || 0;
-  const coinMul = (meta.optHyper ? 1.5 : 1) * (1 + 0.25 * vaultLv);
+  // Greed passive multiplier passed by caller (showDeathScreen) — defaults to 0.
+  const greedMul = (typeof arguments[0] !== 'undefined' && typeof arguments[0].greedMul === 'number') ? arguments[0].greedMul : 0;
+  const coinMul = (meta.optHyper ? 1.5 : 1) * (1 + 0.25 * vaultLv) * (1 + greedMul);
   const coinsEarned = Math.floor((kills + Math.floor(timeSurvived / 12)) * coinMul);
   // Embers — scarce hub currency. ~5 per 5-min run; +1 per 50 kills.
   const embersEarned = Math.max(0, Math.floor(timeSurvived / 60) + Math.floor(kills / 50) + (victory ? 2 : 0));

@@ -18,6 +18,71 @@ import { spawnHeroDamageNumber } from './damageNumbers.js';
 
 const _tmpDir = new THREE.Vector3();
 
+// ── Mirror Step (Dash evolution) ──────────────────────────────────────────
+// Shared geometry/material caches for the ghost-twin orbital burst.
+const _GHOST_CORE_GEO = new THREE.SphereGeometry(0.18, 8, 8);
+const _GHOST_CORE_MAT = new THREE.MeshBasicMaterial({ color: 0xff5cd0 });
+const _GHOST_HALO_GEO = new THREE.SphereGeometry(0.55, 12, 10);
+const _GHOST_HALO_MAT = new THREE.MeshBasicMaterial({
+  color: 0xff5cd0, transparent: true, opacity: 0.35, depthWrite: false,
+});
+// Tracks live ghost-twin visuals so updateHero can fade them.
+const _mirrorGhosts = [];
+
+function spawnMirrorStepGhost(x, z) {
+  // Visual: a magenta halo + core at the dash-start position. Lives ~0.5s
+  // and shrinks/fades. Doesn't collide — purely decorative.
+  const group = new THREE.Group();
+  const core = new THREE.Mesh(_GHOST_CORE_GEO, _GHOST_CORE_MAT);
+  const halo = new THREE.Mesh(_GHOST_HALO_GEO, _GHOST_HALO_MAT.clone());
+  group.add(core);
+  group.add(halo);
+  group.position.set(x, 0.6, z);
+  state.scene.add(group);
+  _mirrorGhosts.push({ group, halo: halo.material, t: 0, life: 0.55 });
+
+  // Orbital burst: 8 magenta projectiles radiating outward. Uses the same
+  // state.projectiles.active list so the central tick handles motion/hits.
+  const COUNT = 8;
+  const SPEED = 18;
+  const DMG = 25;
+  const TTL = 0.7;
+  for (let i = 0; i < COUNT; i++) {
+    const a = (i / COUNT) * Math.PI * 2;
+    const dir = { x: Math.cos(a), z: Math.sin(a) };
+    const m = new THREE.Group();
+    const c = new THREE.Mesh(_GHOST_CORE_GEO, _GHOST_CORE_MAT);
+    m.add(c);
+    m.position.set(x, 0.5, z);
+    state.scene.add(m);
+    state.projectiles.active.push({
+      mesh: m,
+      vel: new THREE.Vector3(dir.x * SPEED, 0, dir.z * SPEED),
+      dmg: DMG * (state.hero.statMul.dmg || 1),
+      ttl: TTL,
+      pierce: 2,
+      hit: new Set(),
+      ownerWeapon: 'mirror_step',
+    });
+  }
+}
+
+function _tickMirrorGhosts(dt) {
+  for (let i = _mirrorGhosts.length - 1; i >= 0; i--) {
+    const g = _mirrorGhosts[i];
+    g.t += dt;
+    const k = g.t / g.life;
+    if (k >= 1) {
+      state.scene.remove(g.group);
+      _mirrorGhosts.splice(i, 1);
+      continue;
+    }
+    const fade = 1 - k;
+    if (g.halo) g.halo.opacity = 0.35 * fade;
+    g.group.scale.setScalar(1 + k * 0.6);
+  }
+}
+
 export function initHero(scene) {
   const group = new THREE.Group();
   group.name = 'heroGroup';
@@ -136,7 +201,13 @@ export function updateHero(dt) {
       const dur = isAirborne ? Math.max(cfg.duration, 0.4) : cfg.duration;
       h.dashUntil = state.time.real + dur;
       h._airDashUntil = isAirborne ? state.time.real + dur : 0;
-      h.dashCD = cfg.cooldown;
+      // Mirror Step (dash evolution): −25% dash cooldown + spawn a ghost twin
+      // at the start position that fires one orbital burst before fading.
+      const cdMul = h.dashEvolved ? 0.75 : 1.0;
+      h.dashCD = cfg.cooldown * cdMul;
+      if (h.dashEvolved) {
+        try { spawnMirrorStepGhost(h.pos.x, h.pos.z); } catch (_) {}
+      }
       if (sfx && sfx.weaponDash) sfx.weaponDash();
       h.iFramesUntil = state.time.game + cfg.iFrames;
       if (isAirborne) {
@@ -164,7 +235,9 @@ export function updateHero(dt) {
     const cfg = DASH.levels[Math.min(h.dashLevel, DASH.levels.length - 1)];
     if (cfg) {
       // Motion trail — one stretched additive plane behind the hero per frame.
-      try { spawnDashStreak(h.pos.x, h.pos.z, h.dashDir.x, h.dashDir.z); } catch (_) {}
+      // Mirror Step recolors the dash trail magenta.
+      const trailColor = h.dashEvolved ? 0xff5cd0 : 0x7fffe4;
+      try { spawnDashStreak(h.pos.x, h.pos.z, h.dashDir.x, h.dashDir.z, trailColor); } catch (_) {}
       speedMul *= cfg.speedMul;
       // Hit enemies within radius around hero this frame
       try {
@@ -281,6 +354,9 @@ export function updateHero(dt) {
     }
   }
 
+  // Mirror Step: tick the ghost-twin visuals (fade/scale out).
+  _tickMirrorGhosts(dt);
+
   // Level-up check (loop to handle multi-level XP gains)
   while (h.xp >= h.xpNext && !state.pendingLevelUp) {
     h.xp -= h.xpNext;
@@ -300,7 +376,10 @@ export function takeDamage(amt) {
   if (state.gameOver) return;
 
   // Armor passive multiplier (lower = less damage taken; capped at 0.40)
-  const dmgMul = (h.statMul && h.statMul.dmgTaken) ? h.statMul.dmgTaken : 1;
+  let dmgMul = (h.statMul && h.statMul.dmgTaken) ? h.statMul.dmgTaken : 1;
+  // Sanctum (Sticky Web evolution): −30% damage while standing in any
+  // burning web. Flag refreshed every web tick — see weapons/web.js.
+  if (h.inSanctum) dmgMul *= 0.7;
   amt = amt * dmgMul;
   h.hp -= amt;
   h.iFramesUntil = state.time.game + HERO.iFramesSec;

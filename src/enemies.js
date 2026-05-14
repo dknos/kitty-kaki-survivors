@@ -509,6 +509,12 @@ export function killEnemy(enemy) {
   state.run.kills++;
   state.run.noDmgKills = (state.run.noDmgKills || 0) + 1;
 
+  // Vampirism passive: heal a small flat amount per kill, capped at level value.
+  const vampHpPerKill = state.run.passive_vampHpPerKill || 0;
+  if (vampHpPerKill > 0 && state.hero.hp < state.hero.hpMax) {
+    state.hero.hp = Math.min(state.hero.hpMax, state.hero.hp + vampHpPerKill);
+  }
+
   // Quest progress hooks — increment hunt/boss counters at the source.
   import('./meta.js').then(({ questEvent }) => {
     questEvent('kill', { tier: enemy.glbKey });
@@ -606,7 +612,13 @@ export function damageEnemy(enemy, dmg, source) {
   // Variance + crit rolls (DoT skips crit by passing dmg with isDoT flag in future)
   const variance = 1 + (Math.random() - 0.5) * 2 * DAMAGE.variance;
   const isCrit = Math.random() < DAMAGE.critChance;
-  const finalDmg = dmg * variance * (isCrit ? DAMAGE.critMul : 1);
+  // Frostbloom freeze (and Sigil Bell stun): frozen enemies take +25% damage.
+  const frozenMul = (enemy._frozenUntil && state.time.game < enemy._frozenUntil) ? 1.25 : 1;
+  // Berserk passive: damage scales with hero's missing HP.
+  const berserkMax = state.run.passive_berserkMax || 0;
+  const hpPct = state.hero.hpMax > 0 ? state.hero.hp / state.hero.hpMax : 1;
+  const berserkMul = berserkMax > 0 ? (1 + berserkMax * Math.max(0, 1 - hpPct)) : 1;
+  const finalDmg = dmg * variance * (isCrit ? DAMAGE.critMul : 1) * frozenMul * berserkMul;
   enemy.hp -= finalDmg;
   state.run.dmgDealt += finalDmg;
   state.run._dpsWin.push([state.time.game, finalDmg]);
@@ -700,6 +712,17 @@ export function updateEnemies(dt) {
       }
     }
     e.slowMul = slow;
+
+    // ── Frost / stun: restore spd when freeze expires (Frostbloom + Sigil Bell) ──
+    if (e._frozenUntil) {
+      if (state.time.game >= e._frozenUntil) {
+        if (e._frozenWasSpd !== undefined) {
+          e.spd = e._frozenWasSpd;
+          e._frozenWasSpd = undefined;
+        }
+        e._frozenUntil = 0;
+      }
+    }
 
     if (distSq > 1e-6) {
       const dist = Math.sqrt(distSq);

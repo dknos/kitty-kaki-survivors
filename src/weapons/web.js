@@ -8,6 +8,7 @@ import * as THREE from 'three';
 import { state } from '../state.js';
 import { tex } from '../particleTextures.js';
 import { sfx } from '../audio.js';
+import { queryRadius } from '../enemies.js';
 
 const WEB_CAP = 24;
 const WEB_Y = 0.05;
@@ -56,12 +57,29 @@ function _hide(i) {
   _inst.setMatrixAt(i, _m4);
 }
 
+// Sanctum (web evolution): cumulative time since last burn-tick. Webs deal
+// 1 dmg per 0.4s to enemies standing inside any *burning* web.
+let _sanctumBurnAcc = 0;
+const SANCTUM_BURN_INTERVAL = 0.4;
+const SANCTUM_BURN_DMG = 1;
+let _sanctumGoldApplied = false;
+
+function _applySanctumGoldTint() {
+  if (_sanctumGoldApplied || !_inst) return;
+  // Clone the shared material so we don't recolor non-evolved webs across runs.
+  _inst.material = _inst.material.clone();
+  _inst.material.color.set(0xffd24a);
+  _sanctumGoldApplied = true;
+}
+
 export function tickWebs(dt) {
   _ensureMesh();
   const list = state.webs.list;
+  let anyBurning = false;
   for (let i = 0; i < list.length; i++) {
     const w = list[i];
     if (w.ttl <= 0) continue;
+    if (w.burn) anyBurning = true;
     w.ttl -= dt;
     if (w.ttl <= 0) {
       _hide(i);
@@ -71,9 +89,49 @@ export function tickWebs(dt) {
     _writeWebMatrix(i, w);
     _dirty = true;
   }
+  if (anyBurning) _applySanctumGoldTint();
   // Compact dead entries off the front so list doesn't grow unbounded
   while (list.length > 0 && list[0].ttl <= 0) list.shift();
   if (_dirty) { _inst.instanceMatrix.needsUpdate = true; _dirty = false; }
+
+  // ── Sanctum: burn enemies inside burning webs + flag hero defense ──
+  _sanctumBurnAcc += dt;
+  const doBurnTick = _sanctumBurnAcc >= SANCTUM_BURN_INTERVAL;
+  if (doBurnTick) _sanctumBurnAcc -= SANCTUM_BURN_INTERVAL;
+
+  let heroInsideBurn = false;
+  const heroPos = state.hero.pos;
+  for (let i = 0; i < list.length; i++) {
+    const w = list[i];
+    if (w.ttl <= 0 || !w.burn) continue;
+    // Hero defense check
+    if (!heroInsideBurn) {
+      const hdx = heroPos.x - w.x, hdz = heroPos.z - w.z;
+      if (hdx * hdx + hdz * hdz <= w.radius * w.radius) heroInsideBurn = true;
+    }
+    if (!doBurnTick) continue;
+    // Stamp a short DoT on enemies inside this web — re-uses the existing
+    // _dotDps/_dotUntil channel handled by enemies.js.
+    let cands = null;
+    try { cands = queryRadius({ x: w.x, z: w.z }, w.radius); } catch (_) { cands = null; }
+    if (!cands) continue;
+    const r2 = w.radius * w.radius;
+    for (const e of cands) {
+      if (!e || !e.alive || !e.mesh) continue;
+      const dx = e.mesh.position.x - w.x;
+      const dz = e.mesh.position.z - w.z;
+      if (dx * dx + dz * dz > r2) continue;
+      // Refresh a short DoT (slightly longer than the tick so it stays active
+      // while inside). dps tuned so ~1 dmg lands every 0.4s = 2.5 dps.
+      const dps = SANCTUM_BURN_DMG / SANCTUM_BURN_INTERVAL;
+      e._dotDps = Math.max(e._dotDps || 0, dps);
+      e._dotUntil = Math.max(e._dotUntil || 0, state.time.game + SANCTUM_BURN_INTERVAL * 1.25);
+      e._dotSource = 'sanctum';
+    }
+  }
+  // Hero defense flag: read by enemies.js / hero damage path. Idempotent —
+  // we reset each frame so the bonus disappears the moment hero exits.
+  state.hero.inSanctum = heroInsideBurn;
 }
 
 function _spawnWeb(x, z, level, evolved) {
@@ -81,15 +139,15 @@ function _spawnWeb(x, z, level, evolved) {
   const list = state.webs.list;
   // Cap; oldest auto-falls off via shift in tickWebs, but also keep <= WEB_CAP
   if (list.length >= WEB_CAP) list.shift();
-  const radiusMul = evolved ? 1.5 : 1;
-  const durationMul = evolved ? 1.5 : 1;
-  const slowMul = evolved ? level.slowMul * 0.7 : level.slowMul;   // sharper slow
+  // Sanctum evolution: keep the base radius/slow/duration profile; the upgrade
+  // is the burn DoT + hero defense + gold-thread visual (handled in tickWebs).
   list.push({
     x, z,
-    radius: level.radius * (state.hero.statMul.area || 1) * radiusMul,
-    ttl: level.duration * (state.hero.statMul.duration || 1) * durationMul,
-    life: level.duration * (state.hero.statMul.duration || 1) * durationMul,
-    slowMul,
+    radius: level.radius * (state.hero.statMul.area || 1),
+    ttl: level.duration * (state.hero.statMul.duration || 1),
+    life: level.duration * (state.hero.statMul.duration || 1),
+    slowMul: level.slowMul,
+    burn: !!evolved,
   });
 }
 
@@ -119,7 +177,7 @@ export default {
     const h = state.hero.pos;
     _spawnWeb(h.x, h.z, level, !!inst.evolved);
     try { sfx.weaponWeb(); } catch (_) {}
-    inst.cd = level.cooldown * (state.hero.statMul.cooldown || 1) * (inst.evolved ? 0.7 : 1);
+    inst.cd = level.cooldown * (state.hero.statMul.cooldown || 1);
   },
 
   refresh(state, level, inst) {
