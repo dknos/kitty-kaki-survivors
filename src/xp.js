@@ -15,8 +15,9 @@ import { tex } from './particleTextures.js';
 import { BLOOM_LAYER } from './postfx.js';
 
 const GEM_CAPACITY = 500;
-const PICKUP_DIST = 0.5;
+const PICKUP_DIST = 0.8;
 const PICKUP_DIST_SQ = PICKUP_DIST * PICKUP_DIST;
+const _up = new THREE.Vector3(0, 1, 0);
 
 // Reusable temporaries (avoid per-frame allocations).
 const _mat = new THREE.Matrix4();
@@ -45,10 +46,11 @@ function _hideInstance(i) {
 }
 
 /** Write a visible matrix at slot i for given world pos + value-based scale. */
-function _placeInstance(i, pos, value = 1) {
+function _placeInstance(i, pos, value = 1, yaw = 0) {
   const tier = _gemTier(value);
   const s = tier.scale;
-  _mat.compose(pos, _quat.identity(), new THREE.Vector3(s, s, s));
+  _quat.setFromAxisAngle(_up, yaw);
+  _mat.compose(pos, _quat, new THREE.Vector3(s, s, s));
   state.gems.instMesh.setMatrixAt(i, _mat);
   _matrixDirty = true;
   // Sparkle layer rides slightly above the gem and pulses on a sine wave.
@@ -64,17 +66,24 @@ function _placeInstance(i, pos, value = 1) {
   }
 }
 
-// Per-value color + scale tier. value 1 = normal cyan, 5 = magenta elite, 25 = gold boss.
+// Per-value color + scale tier. Cheese palette — cheddar / sharp / parmesan.
 const _gemColor = new THREE.Color();
 function _gemTier(value) {
-  if (value >= 20) return { color: 0xffe14a, scale: 2.4 };  // boss/jackpot
-  if (value >= 5)  return { color: 0xff66ee, scale: 1.5 };  // elite magenta
-  return { color: 0x44ffcc, scale: 1.0 };                    // normal cyan
+  if (value >= 20) return { color: 0xfff0a0, scale: 2.4 };  // parmesan jackpot
+  if (value >= 5)  return { color: 0xff8833, scale: 1.5 };  // sharp orange-cheddar elite
+  return { color: 0xffcc33, scale: 1.0 };                    // cheddar wedge
 }
 
 export function initXP(scene) {
-  // Slightly chunkier octahedron + emissive feel via additive blend
-  const geo = new THREE.OctahedronGeometry(XP.gemSize);
+  // Triangular prism = cheese wedge. CylinderGeometry with 3 radial segments
+  // gives a 3-sided prism. Top-down it reads as a triangle; from the side a
+  // chunky slice. Replaces the cyan octahedron gem from earlier iters.
+  const geo = new THREE.CylinderGeometry(
+    XP.gemSize * 1.15,         // bottom radius (wedge width)
+    XP.gemSize * 1.15,         // top radius
+    XP.gemSize * 0.55,         // thickness (Y)
+    3                          // triangular profile
+  );
   const mat = new THREE.MeshBasicMaterial({
     color: 0xffffff,         // white base — per-instance color tints it
     transparent: true,
@@ -152,8 +161,7 @@ export function dropGem(pos, value = 1) {
       active: true,
       magnetized: false,
       instanceIndex: slot,
-      _vx: 0,
-      _vz: 0,
+      yaw: Math.random() * Math.PI * 2,
     });
   } else {
     const g = list[slot];
@@ -162,8 +170,7 @@ export function dropGem(pos, value = 1) {
     g.active = true;
     g.magnetized = false;
     g.instanceIndex = slot;
-    g._vx = 0;
-    g._vz = 0;
+    g.yaw = Math.random() * Math.PI * 2;
   }
 
   const inst = state.gems.instMesh;
@@ -176,7 +183,7 @@ export function dropGem(pos, value = 1) {
     _sparkleInst.setColorAt(slot, _sparkleColor.setHex(tier.color));
     _sparkleInst.instanceColor.needsUpdate = true;
   }
-  _placeInstance(slot, list[slot].pos, list[slot].value);
+  _placeInstance(slot, list[slot].pos, list[slot].value, list[slot].yaw);
 }
 
 function _triggerLevelUp() {
@@ -198,7 +205,6 @@ export function updateGems(dt) {
   const pickupR = HERO.pickupRadius * hero.statMul.magnet;
   const pickupR2 = pickupR * pickupR;
   const maxSpd = XP.gemMagnetMaxSpeed;
-  const accel = XP.gemMagnetAccel;
 
   let anyPickup = false;
 
@@ -218,18 +224,14 @@ export function updateGems(dt) {
     let moved = false;
 
     if (g.magnetized) {
+      // Direct-seek magnet — velocity always points exactly at hero, capped at
+      // maxSpd. No tangential drift, no orbital decay, no spiral. Step clamped
+      // to current distance so we never overshoot and miss the pickup window.
       const d = Math.sqrt(d2) || 1e-6;
       const nx = dx / d, nz = dz / d;
-      g._vx += nx * accel * dt;
-      g._vz += nz * accel * dt;
-      const sp2 = g._vx * g._vx + g._vz * g._vz;
-      if (sp2 > maxSpd * maxSpd) {
-        const s = maxSpd / Math.sqrt(sp2);
-        g._vx *= s;
-        g._vz *= s;
-      }
-      g.pos.x += g._vx * dt;
-      g.pos.z += g._vz * dt;
+      const step = Math.min(maxSpd * dt, d);
+      g.pos.x += nx * step;
+      g.pos.z += nz * step;
       moved = true;
 
       // Pickup check (re-evaluate distance after move).
@@ -257,7 +259,7 @@ export function updateGems(dt) {
     }
 
     if (moved) {
-      _placeInstance(i, g.pos, g.value);
+      _placeInstance(i, g.pos, g.value, g.yaw);
     } else if (_sparkleInst) {
       // Idle gem: still repaint sparkle each frame so the twinkle pulses.
       // Cheaper than rewriting the gem matrix because we only touch the

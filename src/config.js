@@ -18,7 +18,7 @@ export const HERO = {
   speed: 8.0,               // units/sec
   hpMax: 100,
   iFramesSec: 0.6,
-  pickupRadius: 7.0,        // gem magnet radius (modified by magnet stat)
+  pickupRadius: 11.0,       // gem magnet radius (modified by magnet stat)
   contactPushback: 0.5,     // hero gets nudged on enemy contact
   yOffset: 0,
 };
@@ -54,8 +54,8 @@ export const XP = {
   growth: 1.18,             // xpNext = base * growth^(level-1)
   gemValue: 1,              // default
   gemSize: 0.35,
-  gemMagnetMaxSpeed: 30,
-  gemMagnetAccel: 60,
+  gemMagnetMaxSpeed: 42,
+  gemMagnetAccel: 60,         // unused after iter 33a (direct-seek magnet)
 };
 
 export const SPAWN = {
