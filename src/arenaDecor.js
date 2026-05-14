@@ -21,6 +21,7 @@
  */
 import * as THREE from 'three';
 import { BLOOM_LAYER } from './postfx.js';
+import { cloneCached } from './assets.js';
 
 // Active decor group + cleanup hooks, tracked module-side so clearArenaDecor
 // can be called without a handle. One group per scene is enough in this game.
@@ -106,7 +107,45 @@ function _buildForestDecor(group) {
   return { trees: TREES, tufts: TUFTS };
 }
 
+// ── Iter 14: real CC0 GLB scatter helper ────────────────────────────────────
+// Drops N clones of the given asset key around the play ring as authored
+// (un-instanced) meshes. cloneCached gives each a fresh material instance,
+// but Lousberg gravestone/bone kits are tiny (24-30 KB) so the draw-call
+// cost stays small. Returns the array of placed clones (caller adds them
+// to `group` itself isn't required since we add inline).
+function _scatterGLB(group, key, count, rMin, rMax, scaleRange, biasPow = 1.6) {
+  let placed = 0;
+  for (let i = 0; i < count; i++) {
+    const clone = cloneCached(key);
+    if (!clone) continue;
+    const { x, z } = _scatterRing(rMin, rMax, biasPow);
+    const s = scaleRange[0] + Math.random() * (scaleRange[1] - scaleRange[0]);
+    clone.scale.setScalar(s);
+    clone.position.set(x, 0, z);
+    clone.rotation.y = Math.random() * Math.PI * 2;
+    clone.traverse(o => {
+      if (o.isMesh) {
+        o.castShadow = false;          // decor — skip shadow casting for perf
+        o.receiveShadow = true;
+      }
+    });
+    group.add(clone);
+    placed++;
+  }
+  return placed;
+}
+
 function _buildTwilightDecor(group) {
+  // 0) Real gravestones (iter 14) — 18 Lousberg CC0 gravestones scattered
+  // around the outer ring. Cycle through 3 variants for silhouette variety.
+  // Authored meshes (~30 KB each, 4-8 mats each) but with only 18 instances
+  // the draw-call cost stays well inside budget. Reading these as "this is
+  // a graveyard" is the entire point of the twilight stage.
+  let graves = 0;
+  graves += _scatterGLB(group, 'kit_gravestone',  6, 22, 56, [1.5, 2.5]);
+  graves += _scatterGLB(group, 'kit_gravestone2', 6, 22, 56, [1.5, 2.5]);
+  graves += _scatterGLB(group, 'kit_grave',       6, 22, 56, [1.5, 2.5]);
+
   // 1) Floating crystal clusters — octahedrons that bob slowly. Emissive
   // purple-pink on BLOOM_LAYER so they read as magic in the bloom pass.
   const CRYSTALS = 26;
@@ -162,7 +201,7 @@ function _buildTwilightDecor(group) {
   group.add(runeInst);
   _track(runeGeo); _track(runeMat);
 
-  return { crystals: CRYSTALS, runes: RUNES };
+  return { crystals: CRYSTALS, runes: RUNES, graves };
 }
 
 function _buildCinderDecor(group) {
@@ -179,9 +218,13 @@ function _buildCinderDecor(group) {
     pos.setZ(i, pos.getZ(i) + (Math.random() - 0.5) * 0.25);
   }
   rockGeo.computeVertexNormals();
+  // Iter 14: darken cinder rocks to basalt-black with hotter emissive cracks.
+  // The old 0x4a1814 / 0x2a0604 hue read as terracotta clay; the user
+  // feedback was that the cinder stage felt "samey" — pushing the material
+  // toward 0x1a0e0c lets the lava cracks (additive bloom planes) pop.
   const rockMat = new THREE.MeshStandardMaterial({
-    color: 0x4a1814, roughness: 1.0, metalness: 0,
-    emissive: 0x2a0604, emissiveIntensity: 0.4,
+    color: 0x1a0e0c, roughness: 1.0, metalness: 0,
+    emissive: 0x661a08, emissiveIntensity: 0.55,
   });
   const rockInst = new THREE.InstancedMesh(rockGeo, rockMat, ROCKS);
   const dummy = new THREE.Object3D();
@@ -229,7 +272,50 @@ function _buildCinderDecor(group) {
   group.add(crackInst);
   _track(crackGeo); _track(crackMat);
 
-  return { rocks: ROCKS, cracks: CRACKS };
+  // Iter 14: charred-stump set dress (8 broken Lousberg pillars laid low,
+  // scaled tiny + dark-tinted) reads as "scorched ground debris" — fills
+  // the gap that made cinder feel sparser than the other stages.
+  let stumps = 0;
+  for (let i = 0; i < 10; i++) {
+    const clone = cloneCached('kit_pillar_broken');
+    if (!clone) break;
+    const { x, z } = _scatterRing(20, 58, 1.5);
+    clone.scale.setScalar(0.9 + Math.random() * 0.8);
+    clone.position.set(x, 0, z);
+    clone.rotation.set(
+      (Math.random() - 0.5) * 0.4,
+      Math.random() * Math.PI * 2,
+      (Math.random() - 0.5) * 0.4,
+    );
+    // Tint dark grey-black to read as char/basalt.
+    clone.traverse(o => {
+      if (o.isMesh && o.material) {
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        for (const m of mats) {
+          if (m.color) {
+            // Clone the material so we don't mutate the shared GLTF mat.
+            const newMat = m.clone();
+            newMat.color.setHex(0x1a0c08);
+            newMat.roughness = 1.0;
+            if (newMat.emissive) newMat.emissive.setHex(0x3a0a04);
+            newMat.emissiveIntensity = 0.25;
+            if (Array.isArray(o.material)) {
+              const idx = o.material.indexOf(m);
+              o.material[idx] = newMat;
+            } else {
+              o.material = newMat;
+            }
+          }
+        }
+        o.castShadow = false;
+        o.receiveShadow = true;
+      }
+    });
+    group.add(clone);
+    stumps++;
+  }
+
+  return { rocks: ROCKS, cracks: CRACKS, stumps };
 }
 
 function _buildCatacombDecor(group) {
@@ -285,27 +371,34 @@ function _buildCatacombDecor(group) {
   };
   _track(coneGeo); _track(boxGeo); _track(boneMat);
 
-  // 2) Cardinal pillars — 6u tall cylinders at N/E/S/W marking the arena
-  // boundary at radius 22 (just outside the comfortable play circle).
-  const pillarGeo = new THREE.CylinderGeometry(0.9, 1.1, 6, 10);
-  const pillarMat = new THREE.MeshStandardMaterial({
-    color: 0x4a4456, roughness: 0.85, metalness: 0.05,
-  });
-  const pillarInst = new THREE.InstancedMesh(pillarGeo, pillarMat, 4);
+  // 2) Cardinal pillars — Lousberg CC0 pillar GLBs at N/E/S/W marking the
+  // arena boundary at radius 22 (just outside the comfortable play circle).
+  // Iter 14: real GLB clones replace the InstancedMesh cylinder placeholders.
+  let pillarCount = 0;
   const PR = 22;
   const dirs = [[PR, 0], [0, PR], [-PR, 0], [0, -PR]];
+  const PILLAR_KEYS = ['kit_pillar', 'kit_pillar2', 'kit_pillar_broken', 'kit_pillar'];
   for (let i = 0; i < 4; i++) {
-    dummy.position.set(dirs[i][0], 3.0, dirs[i][1]);
-    dummy.scale.setScalar(1);
-    dummy.rotation.set(0, 0, 0);
-    dummy.updateMatrix();
-    pillarInst.setMatrixAt(i, dummy.matrix);
+    const clone = cloneCached(PILLAR_KEYS[i]);
+    if (!clone) continue;
+    clone.scale.setScalar(2.6);
+    clone.position.set(dirs[i][0], 0, dirs[i][1]);
+    clone.rotation.y = i * Math.PI / 2;
+    clone.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    group.add(clone);
+    pillarCount++;
   }
-  pillarInst.instanceMatrix.needsUpdate = true;
-  group.add(pillarInst);
-  _track(pillarGeo); _track(pillarMat);
 
-  return { bones: TOTAL, pillars: 4 };
+  // 3) Grounded ossuary bones (iter 14) — 14 Lousberg bone clusters around
+  // the play ring. The existing TOTAL=64 cone+box bones float ambiently in
+  // the air; this set sits on the floor so the chamber reads as a real
+  // ossuary instead of just a foggy room.
+  let groundBones = 0;
+  groundBones += _scatterGLB(group, 'kit_bone1', 6, 14, 50, [1.3, 2.0], 1.4);
+  groundBones += _scatterGLB(group, 'kit_bone2', 4, 14, 50, [1.3, 2.0], 1.4);
+  groundBones += _scatterGLB(group, 'kit_bone3', 4, 14, 50, [1.3, 2.0], 1.4);
+
+  return { bones: TOTAL, pillars: pillarCount, groundBones };
 }
 
 // ── skybox tint ───────────────────────────────────────────────────────────────
