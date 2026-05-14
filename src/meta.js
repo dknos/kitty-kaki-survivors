@@ -61,6 +61,9 @@ const DEFAULT = {
   // Twilight Hollow (hardest combination currently in-game). Flipped in
   // commitRunResults; read by isCharacterUnlocked() for the 'flag:...' form.
   unlockedClockwork: false,
+  // Sote — 2nd canonical character w/ his own GLB. Unlock condition TBD;
+  // until then flip via console (kkUnlockAll/kkUnlockSote) or save-edit.
+  unlockedSote: false,
   // Iter 22B — Catacomb Void clear flag. Gates the Seedy Tent (casino) in
   // town.js. Set in commitRunResults on first victory with stageId==='void'.
   unlockedVoid: false,

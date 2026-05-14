@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
-import { HERO } from './config.js';
+import { HERO, CHARACTERS } from './config.js';
 
 export const BASE = 'assets/breakroom/';
 
@@ -247,8 +247,15 @@ export function upgradeMaterials(root, envMapIntensity = 0.55, roughness = null)
  * and HERO.glb. If a key is missing here, the corresponding system silently skips.
  */
 export function preloadAll() {
+  // Per-character GLB overrides — preload only those characters that ship
+  // a dedicated mesh (`char.glb` set). The base 'hero' key remains the
+  // canonical donor model for any character without an override.
+  const charOverrides = (CHARACTERS || [])
+    .filter(c => c && c.glb)
+    .map(c => [`hero_${c.id}`, BASE + c.glb]);
   const list = [
     ['hero',     BASE + HERO.glb],
+    ...charOverrides,
     // Animated Quaternius "Ultimate Monsters" (CC0). Keep `slime` low-poly for variety.
     ['zombie',   BASE + 'Mushnub.glb'],          // small basic enemy
     ['goblin',   BASE + 'Cactoro.glb'],          // cactus goblin

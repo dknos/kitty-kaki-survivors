@@ -159,6 +159,7 @@ export const CHARACTERS = [
     statMul: { dmg: 1.0, moveSpeed: 1.0, magnet: 1.0 },
     hpMax: 100,
     unlock: null,
+    // glb: default HERO.glb (tower-castle-plain). Only override when char has its own mesh.
     tint: 0xffffff, scaleMul: 1.00,    // canonical model — no tint
     signatureName: 'Nine Lives',
     signatureDesc: 'First lethal hit per run becomes 1 HP + 1.5s i-frame.',
@@ -248,6 +249,25 @@ export const CHARACTERS = [
       // ratePerSec * t, capped. 0.00375/s = +3% / 8s. 0.60 cap reached at 160s.
       runState.signature_tempo = { ratePerSec: 0.00375, cap: 0.60 };
       runState.signature_tempoBonus = 0;
+    },
+  },
+  {
+    // Sote — second canonical character w/ his own GLB (Rodin-baked, 12.8 MB).
+    // Identity: heavy-hitter tank. Slow, durable, hits hard. Counterpoint to
+    // Phoenix's glass-cannon and Clockwork's slow-burn arcs.
+    id: 'sote',   name: 'Sote',       icon: '🐺',
+    desc: 'Heavy hitter. +25% damage, +20% HP, -15% speed.',
+    starter: 'orbitals',
+    statMul: { dmg: 1.25, moveSpeed: 0.85, magnet: 1.0 },
+    hpMax: 120,
+    unlock: 'flag:unlockedSote',
+    glb: 'sote.glb',                    // per-char GLB override
+    tint: 0xffffff, scaleMul: 1.00,    // no tint — has own mesh
+    signatureName: 'Heavy Tread',
+    signatureDesc: 'Every 4th basic attack stuns nearby enemies for 0.5s.',
+    signature: (runState) => {
+      runState.signature_heavyTread = true;
+      runState.signature_heavyTreadCounter = 0;
     },
   },
 ];

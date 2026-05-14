@@ -91,7 +91,11 @@ export function initHero(scene) {
   // GLB-load fallback marker lives in the `else` branch below (cone @ y=1.1).
   // No unconditional ground disc — that was reading as a green ring/shadow
   // on top of the loaded GLB.
-  const mesh = cloneCached('hero');
+  // Per-char GLB override: prefer hero_<id> (e.g., Sote ships his own mesh),
+  // fall back to shared 'hero' donor model for tinted placeholders.
+  const _charPreview = selectedCharacter(CHARACTERS);
+  const _charKey = _charPreview && _charPreview.glb ? `hero_${_charPreview.id}` : 'hero';
+  const mesh = cloneCached(_charKey) || cloneCached('hero');
   if (mesh) {
     // Hero is plush fabric — high roughness, no metalness sheen.
     upgradeMaterials(mesh, 0.55, 0.92);

@@ -58,7 +58,7 @@ const F = {
 // ── Build version ────────────────────────────────────────────────────────────
 // Flipped to '1.0.0' on the iter-11 ship commit (Shop Tree Live Wires —
 // the broken-tier-1-3-consumers gap was the last v1.0 blocker).
-export const KK_VERSION = '1.4.0';
+export const KK_VERSION = '1.4.1';
 
 // ── Module-local DOM refs ────────────────────────────────────────────────────
 let _root = null;
@@ -1618,6 +1618,7 @@ export function showStartScreen(text) {
     if (unlock.startsWith('flag:')) {
       const flag = unlock.slice(5);
       if (flag === 'unlockedClockwork') return 'Clear Boss Rush on Twilight Hollow to unlock.';
+      if (flag === 'unlockedSote') return 'Hidden character — unlock condition TBD.';
       return `Unlock: ${flag}`;
     }
     return `Unlock: ${unlock}`;
