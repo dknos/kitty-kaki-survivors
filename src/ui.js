@@ -58,7 +58,7 @@ const F = {
 // ── Build version ────────────────────────────────────────────────────────────
 // Flipped to '1.0.0' on the iter-11 ship commit (Shop Tree Live Wires —
 // the broken-tier-1-3-consumers gap was the last v1.0 blocker).
-export const KK_VERSION = '1.3.9';
+export const KK_VERSION = '1.4.0';
 
 // ── Module-local DOM refs ────────────────────────────────────────────────────
 let _root = null;
@@ -577,6 +577,35 @@ function injectCSS() {
     }
     /* Generic global override — make every button feel snappier */
     #ui-root button:active { transform: translateY(0); transition-duration: 0.05s; }
+
+    /* ─────────────────────────────────────────────────────────────────
+       Iter 29c — ornamental corner frames.
+       Every .kk-panel auto-receives four gold corner pieces (procedural
+       SVG data-URIs, ~150 bytes each). On top of the existing panel
+       gradient — no JS change, pure CSS layering. Adds the "real game
+       UI / Hades-style ward" feel without external assets. */
+    .kk-panel {
+      background-image:
+        url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cg fill='none' stroke='%23ffd27f' stroke-width='1.3' stroke-linecap='round' opacity='0.85'%3E%3Cpath d='M 4 4 L 18 4 M 4 4 L 4 18'/%3E%3Ccircle cx='4' cy='4' r='1.6' fill='%23ffd27f' stroke='none'/%3E%3Cpath d='M 18 4 Q 24 5, 22 11'/%3E%3Cpath d='M 4 18 Q 5 24, 11 22'/%3E%3C/g%3E%3C/svg%3E"),
+        url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cg fill='none' stroke='%23ffd27f' stroke-width='1.3' stroke-linecap='round' opacity='0.85'%3E%3Cpath d='M 36 4 L 22 4 M 36 4 L 36 18'/%3E%3Ccircle cx='36' cy='4' r='1.6' fill='%23ffd27f' stroke='none'/%3E%3Cpath d='M 22 4 Q 16 5, 18 11'/%3E%3Cpath d='M 36 18 Q 35 24, 29 22'/%3E%3C/g%3E%3C/svg%3E"),
+        url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cg fill='none' stroke='%23ffd27f' stroke-width='1.3' stroke-linecap='round' opacity='0.85'%3E%3Cpath d='M 4 36 L 18 36 M 4 36 L 4 22'/%3E%3Ccircle cx='4' cy='36' r='1.6' fill='%23ffd27f' stroke='none'/%3E%3Cpath d='M 18 36 Q 24 35, 22 29'/%3E%3Cpath d='M 4 22 Q 5 16, 11 18'/%3E%3C/g%3E%3C/svg%3E"),
+        url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Cg fill='none' stroke='%23ffd27f' stroke-width='1.3' stroke-linecap='round' opacity='0.85'%3E%3Cpath d='M 36 36 L 22 36 M 36 36 L 36 22'/%3E%3Ccircle cx='36' cy='36' r='1.6' fill='%23ffd27f' stroke='none'/%3E%3Cpath d='M 22 36 Q 16 35, 18 29'/%3E%3Cpath d='M 36 22 Q 35 16, 29 18'/%3E%3C/g%3E%3C/svg%3E"),
+        linear-gradient(180deg, rgba(22,32,26,0.92), rgba(8,14,12,0.96)) !important;
+      background-position: top left, top right, bottom left, bottom right, 0 0 !important;
+      background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, no-repeat !important;
+      background-size: 40px 40px, 40px 40px, 40px 40px, 40px 40px, cover !important;
+    }
+
+    /* Cards get a subtler treatment — single top-edge flourish only,
+       since 4 corners are visually heavy on a 232px-wide card. */
+    .kk-card {
+      background-image:
+        url("data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 12'%3E%3Cg fill='none' stroke='%23ffd27f' stroke-width='1' stroke-linecap='round' opacity='0.7'%3E%3Cline x1='12' y1='6' x2='48' y2='6'/%3E%3Cline x1='72' y1='6' x2='108' y2='6'/%3E%3Ccircle cx='60' cy='6' r='1.8' fill='%23ffd27f' stroke='none'/%3E%3Ccircle cx='12' cy='6' r='1.0' fill='%23ffd27f' stroke='none'/%3E%3Ccircle cx='108' cy='6' r='1.0' fill='%23ffd27f' stroke='none'/%3E%3C/g%3E%3C/svg%3E"),
+        linear-gradient(180deg, rgba(20,28,22,0.92), rgba(8,14,12,0.94)) !important;
+      background-position: center 8px, 0 0 !important;
+      background-repeat: no-repeat, no-repeat !important;
+      background-size: 80% 12px, cover !important;
+    }
 
     /* Iter 29 — small-screen modal fits.
        Modals are full-viewport flex containers; cards/grids inside use
