@@ -100,7 +100,7 @@ function _makeSmoke(color = '#cfd4dc') {
   return _toTex(ctx);
 }
 
-/** Ring — a thin glowing torus seen face-on. */
+/** Ring — a thin glowing torus seen face-on (legacy basic). */
 function _makeRing(color = '#ffe14a') {
   const ctx = _ctx();
   const cx = SIZE / 2, cy = SIZE / 2;
@@ -113,6 +113,149 @@ function _makeRing(color = '#ffe14a') {
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, SIZE, SIZE);
   return _toTex(ctx);
+}
+
+/**
+ * High-density lightning ring — 512², hot core + forked branches + crackle
+ * veins around the rim + outer arc spokes. Replaces the flat radial-gradient
+ * ringGold consumers (kill ring, volatile pre-detonation pulse, etc.) with a
+ * real electric-spell read.
+ */
+function _makeLightningRing(color = '#ffe14a') {
+  const S = 512;
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0, 0, S, S);
+  const cx = S / 2, cy = S / 2;
+
+  // ── Layer 1: alpha-envelope ring (hot rim band) ──────────────────────────
+  const env = ctx.createRadialGradient(cx, cy, S * 0.22, cx, cy, S * 0.50);
+  env.addColorStop(0.00, color + '00');
+  env.addColorStop(0.40, color + '00');
+  env.addColorStop(0.55, color + '88');
+  env.addColorStop(0.68, color + 'ff');
+  env.addColorStop(0.78, color + 'cc');
+  env.addColorStop(0.90, color + '44');
+  env.addColorStop(1.00, color + '00');
+  ctx.fillStyle = env;
+  ctx.fillRect(0, 0, S, S);
+
+  // ── Layer 2: hot-white inner core stripe atop the rim ────────────────────
+  ctx.globalCompositeOperation = 'lighter';
+  const core = ctx.createRadialGradient(cx, cy, S * 0.32, cx, cy, S * 0.38);
+  core.addColorStop(0.00, '#ffffff00');
+  core.addColorStop(0.40, '#ffffffcc');
+  core.addColorStop(0.55, '#ffffffff');
+  core.addColorStop(0.75, '#ffffff88');
+  core.addColorStop(1.00, '#ffffff00');
+  ctx.fillStyle = core;
+  ctx.fillRect(0, 0, S, S);
+
+  // ── Layer 3: forked branches radiating outward (12 forks @ 30°) ──────────
+  ctx.translate(cx, cy);
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  const FORKS = 12;
+  for (let i = 0; i < FORKS; i++) {
+    const baseAng = (i / FORKS) * Math.PI * 2;
+    // Jagged main bolt: walks outward in segments with per-step angle jitter
+    const segs = 5 + Math.floor(Math.random() * 3);
+    let rNow = S * 0.34;
+    let angNow = baseAng + (Math.random() - 0.5) * 0.18;
+    let px = Math.cos(angNow) * rNow;
+    let py = Math.sin(angNow) * rNow;
+    ctx.lineWidth = 3.2;
+    ctx.beginPath();
+    ctx.moveTo(px, py);
+    for (let s = 0; s < segs; s++) {
+      const dR = S * (0.025 + Math.random() * 0.025);
+      rNow += dR;
+      angNow = baseAng + (Math.random() - 0.5) * 0.28;
+      px = Math.cos(angNow) * rNow;
+      py = Math.sin(angNow) * rNow;
+      ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+    // Tighter bright inner trace
+    ctx.lineWidth = 1.4;
+    ctx.strokeStyle = '#ffffffee';
+    ctx.stroke();
+    // ~50% spawn a side-branch ~halfway out
+    if (Math.random() < 0.5) {
+      const halfR = S * (0.42 + Math.random() * 0.04);
+      const halfA = baseAng + (Math.random() - 0.5) * 0.20;
+      const startX = Math.cos(halfA) * halfR;
+      const startY = Math.sin(halfA) * halfR;
+      const branchA = halfA + (Math.random() < 0.5 ? -1 : 1) * (0.25 + Math.random() * 0.25);
+      const branchR = halfR + S * (0.04 + Math.random() * 0.06);
+      ctx.lineWidth = 2.0;
+      ctx.strokeStyle = '#ffffffcc';
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      const midR = (halfR + branchR) * 0.5;
+      const midA = (halfA + branchA) * 0.5 + (Math.random() - 0.5) * 0.18;
+      ctx.lineTo(Math.cos(midA) * midR, Math.sin(midA) * midR);
+      ctx.lineTo(Math.cos(branchA) * branchR, Math.sin(branchA) * branchR);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = '#ffffff';
+  }
+
+  // ── Layer 4: crackle veins inside the band (24 short arcs, low-alpha) ────
+  ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+  ctx.lineWidth = 1.2;
+  for (let i = 0; i < 24; i++) {
+    const a = (i / 24) * Math.PI * 2 + Math.random() * 0.1;
+    const r0 = S * (0.40 + Math.random() * 0.04);
+    const r1 = r0 + S * (0.02 + Math.random() * 0.025);
+    const ax = Math.cos(a) * r0;
+    const ay = Math.sin(a) * r0;
+    const bx = Math.cos(a + (Math.random() - 0.5) * 0.10) * r1;
+    const by = Math.sin(a + (Math.random() - 0.5) * 0.10) * r1;
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(bx, by);
+    ctx.stroke();
+  }
+
+  // ── Layer 5: outer halo stipple (gives bloom something to feather on) ───
+  ctx.strokeStyle = 'rgba(255,255,255,0.38)';
+  ctx.lineWidth = 1.0;
+  for (let i = 0; i < 64; i++) {
+    const a = (i / 64) * Math.PI * 2;
+    const r0 = S * 0.495;
+    const r1 = r0 + S * (0.006 + (i % 4 === 0 ? 0.012 : 0.004));
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a) * r0, Math.sin(a) * r0);
+    ctx.lineTo(Math.cos(a) * r1, Math.sin(a) * r1);
+    ctx.stroke();
+  }
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalCompositeOperation = 'source-over';
+
+  // ── Layer 6: paper-grain noise modulation in the alpha band ──────────────
+  const img = ctx.getImageData(0, 0, S, S);
+  const data = img.data;
+  for (let y = 0; y < S; y += 1) {
+    for (let x = 0; x < S; x += 1) {
+      const idx = (y * S + x) * 4 + 3;
+      if (data[idx] === 0) continue;
+      const n = (Math.sin(x * 0.31 + y * 0.43) * 0.5 + Math.cos((x - y) * 0.21) * 0.5);
+      data[idx] = Math.max(0, Math.min(255, Math.floor(data[idx] * (1 + n * 0.08))));
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 8;
+  t.generateMipmaps = true;
+  t.minFilter = THREE.LinearMipmapLinearFilter;
+  t.magFilter = THREE.LinearFilter;
+  t.needsUpdate = true;
+  return t;
 }
 
 /** Shockwave — thick double-edge ring for explosions. */
@@ -758,7 +901,7 @@ export function initParticleTextures() {
   _cache.sparkCyan  = _makeSpark('#7fffe4');
   _cache.smokeGray  = _makeSmoke('#b8c0ca');
   _cache.smokeDark  = _makeSmoke('#3a3a44');
-  _cache.ringGold   = _makeRing('#ffe14a');
+  _cache.ringGold   = _makeLightningRing('#ffe14a');
   _cache.ringCyan   = _makeRing('#7fffd4');
   _cache.shockwave  = _makeShockwave('#ffd078');
   _cache.flashStar  = _makeFlashStar('#fff4c8');

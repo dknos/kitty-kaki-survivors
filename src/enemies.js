@@ -16,7 +16,7 @@ import { takeDamage as heroTakeDamage } from './hero.js';
 import { dropGem } from './xp.js';
 import { spawnDamageNumber } from './damageNumbers.js';
 import { spawnKillRing } from './fx.js';
-import { spawnImpactBurst } from './vfxBurst.js';
+import { spawnImpactBurst, burstExplosion } from './vfxBurst.js';
 import { spawnEnemyProjectile } from './enemyProjectiles.js';
 import { spawnChest } from './chest.js';
 import { spawnHeart, spawnStar, spawnBomb, spawnFreeze, spawnChicken } from './pickups.js';
@@ -920,9 +920,13 @@ export function updateEnemies(dt) {
       if (dxh * dxh + dzh * dzh <= 16) {
         try { heroTakeDamage(35); } catch (_) {}
       }
+      // Visual: full bomb-style explosion (smoke + embers + flashstar +
+      // shockwave layered, ~0.5s total). Hellfire amber tint so it reads
+      // as "volatile detonation" distinct from the cool kill-ring pulse.
+      try { burstExplosion(v.x, v.z, 4.0, 0xff7a28); } catch (_) {}
       // Audio + camera punch — light feedback so the explosion reads.
       if (sfx && sfx.eliteDeath) sfx.eliteDeath();
-      state.fx.shake = Math.max(state.fx.shake || 0, 0.25);
+      state.fx.shake = Math.max(state.fx.shake || 0, 0.35);
       // swap-pop
       const last = pv.length - 1;
       if (pi !== last) pv[pi] = pv[last];
