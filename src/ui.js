@@ -58,7 +58,7 @@ const F = {
 // ── Build version ────────────────────────────────────────────────────────────
 // Flipped to '1.0.0' on the iter-11 ship commit (Shop Tree Live Wires —
 // the broken-tier-1-3-consumers gap was the last v1.0 blocker).
-export const KK_VERSION = '1.3.7';
+export const KK_VERSION = '1.3.8';
 
 // ── Module-local DOM refs ────────────────────────────────────────────────────
 let _root = null;
@@ -401,6 +401,29 @@ function injectCSS() {
       .kk-modal-title { margin-bottom: 18px; }
       .kk-hp-bar { width: 150px; }
     }
+    /* Iter 29 — small-screen modal fits.
+       Modals are full-viewport flex containers; cards/grids inside use
+       minmax(280-320px, 1fr) which doesn't shrink past their min and
+       overflows narrow viewports. Force responsive overrides below 720px
+       so every modal stays inside the viewport without horizontal scroll. */
+    @media (max-width: 720px) {
+      .kk-fs-xl { font-size: calc(var(--kk-font-scale, 1) * 22px) !important; }
+      .kk-fs-lg { font-size: calc(var(--kk-font-scale, 1) * 17px) !important; }
+      .kk-fs-md { font-size: calc(var(--kk-font-scale, 1) * 14px) !important; }
+      .kk-fs-sm { font-size: calc(var(--kk-font-scale, 1) * 12px) !important; }
+    }
+    @media (max-width: 480px) {
+      /* Force every grid-template-columns: repeat(auto-fill, minmax(NNNpx, 1fr))
+         pattern to single-column. Catches Shop / House / Grimoire / Quest /
+         Codex / Hall of Records / Casino card grids without per-modal CSS. */
+      [style*="grid-template-columns: repeat(auto-fill"] { grid-template-columns: 1fr !important; }
+      /* Cards/inputs hard-floor */
+      button, input, select, textarea { max-width: 100%; }
+      /* Modal containers — clamp padding so headers don't bleed off-screen. */
+      .kk-death, .kk-start { padding: 18px 10px !important; }
+    }
+    /* Catch-all — never let any modal overflow horizontally. */
+    body { overflow-x: hidden; }
   `;
   const style = document.createElement('style');
   style.id = 'kk-ui-style';
@@ -1090,9 +1113,24 @@ export function showDeathScreen() {
     box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 12px 28px rgba(0,0,0,0.5);`;
   btnRow.appendChild(townBtn);
 
+  // Return-to-Main-Menu button — full exit from the run+town cycle, drops
+  // to the start screen so the player can rebind character/stage/options.
+  const menuBtn = document.createElement('button');
+  menuBtn.type = 'button';
+  menuBtn.textContent = '↩ Main Menu';
+  menuBtn.style.cssText = `padding: 14px 24px; cursor: pointer;
+    background: linear-gradient(180deg, rgba(20,16,28,0.95), rgba(10,8,14,0.95));
+    border: 1px solid ${C.magenta};
+    border-radius: 8px;
+    color: ${C.magenta};
+    font-family: ${F.display}; font-size: calc(var(--kk-font-scale, 1) * 16px); font-weight: 700;
+    letter-spacing: 0.24em;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 12px 28px rgba(0,0,0,0.5);`;
+  btnRow.appendChild(menuBtn);
+
   const hint = document.createElement('div');
   hint.className = 'kk-death-hint';
-  hint.textContent = 'R · Retry    T or Esc · Town';
+  hint.textContent = 'R · Retry    T · Town    M or Esc · Main Menu';
 
   // Per-source damage breakdown — drives "one more run" by exposing which
   // weapon was actually carrying the run.
@@ -1254,7 +1292,7 @@ export function showDeathScreen() {
   _deathScreen.appendChild(btnRow);
   _deathScreen.appendChild(hint);
   _root.appendChild(_deathScreen);
-  _deathFocusScope = pushFocusScope([retryBtn, shareBtn, townBtn], { layout: 'list' });
+  _deathFocusScope = pushFocusScope([retryBtn, shareBtn, townBtn, menuBtn], { layout: 'list' });
 
   const restart = () => {
     // Tear down listeners + the modal first, then trigger the in-place reset
@@ -1280,12 +1318,24 @@ export function showDeathScreen() {
   };
   townBtn.addEventListener('click', (e) => { e.stopPropagation(); goTown(); });
 
+  const goMenu = () => {
+    if (_deathKeyHandler) window.removeEventListener('keydown', _deathKeyHandler);
+    _deathKeyHandler = null;
+    if (_deathFocusScope) { popFocusScope(_deathFocusScope); _deathFocusScope = null; }
+    if (_deathScreen && _deathScreen.parentNode) _deathScreen.parentNode.removeChild(_deathScreen);
+    _deathScreen = null;
+    if (typeof window.kkReturnToMenu === 'function') window.kkReturnToMenu();
+    else location.reload();
+  };
+  menuBtn.addEventListener('click', (e) => { e.stopPropagation(); goMenu(); });
+
   _deathKeyHandler = (e) => {
     if (e.code === 'KeyR' || e.key === 'r' || e.key === 'R' || e.code === 'Enter' || e.code === 'Space') restart();
     else if (e.code === 'KeyT' || e.key === 't' || e.key === 'T') goTown();
-    // Escape: default to "return to town" — most players hit Esc first to bail
-    // out of a modal, and town is the safer cleanup path than a fresh retry.
-    else if (e.code === 'Escape' || e.key === 'Escape') goTown();
+    else if (e.code === 'KeyM' || e.key === 'm' || e.key === 'M') goMenu();
+    // Escape: defaults to Main Menu — full reset is the safest catch-all from
+    // a death modal, town is one button-press away from there.
+    else if (e.code === 'Escape' || e.key === 'Escape') goMenu();
   };
   window.addEventListener('keydown', _deathKeyHandler);
 }
@@ -4316,12 +4366,18 @@ export function showOptions() {
   wrap.appendChild(sMode);
   wrap.appendChild(sData);
 
-  // Close button
+  // Footer button row — Close + Return-to-Main-Menu side by side.
+  // Menu button only renders if we're mid-run or in a sub-mode (town /
+  // catacomb / interior); on the start screen itself there's nothing to
+  // return from, so only Close shows.
+  const footer = document.createElement('div');
+  footer.style.cssText = `display:flex; gap:14px; margin-top:20px; flex-wrap:wrap; justify-content:center;`;
+
   const close = document.createElement('button');
   close.type = 'button';
   close.className = 'kk-fs-sm';
   close.textContent = 'Close · Esc';
-  close.style.cssText = `margin-top: 20px; padding: 10px 26px; cursor: pointer;
+  close.style.cssText = `padding: 10px 26px; cursor: pointer;
     background: linear-gradient(180deg, rgba(20,28,22,0.78), rgba(8,14,12,0.86));
     border: 1px solid ${C.edge}; border-radius: 8px;
     color: ${C.magenta}; font-family: ${F.display}; font-weight: 700;
@@ -4329,10 +4385,30 @@ export function showOptions() {
     box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 20px rgba(0,0,0,0.5);`;
   close.setAttribute('aria-label', 'Close options');
   close.addEventListener('click', hideOptions);
+  footer.appendChild(close);
+
+  if (state.mode !== 'menu') {
+    const menuBtn = document.createElement('button');
+    menuBtn.type = 'button';
+    menuBtn.className = 'kk-fs-sm';
+    menuBtn.textContent = '↩ Main Menu';
+    menuBtn.style.cssText = `padding: 10px 26px; cursor: pointer;
+      background: linear-gradient(180deg, rgba(20,16,28,0.85), rgba(10,8,14,0.92));
+      border: 1px solid ${C.magenta}; border-radius: 8px;
+      color: ${C.magenta}; font-family: ${F.display}; font-weight: 700;
+      letter-spacing: 0.28em;
+      box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 20px rgba(0,0,0,0.5);`;
+    menuBtn.setAttribute('aria-label', 'Return to main menu');
+    menuBtn.addEventListener('click', () => {
+      if (typeof window.kkReturnToMenu === 'function') window.kkReturnToMenu();
+      else location.reload();
+    });
+    footer.appendChild(menuBtn);
+  }
 
   _optionsPanel.appendChild(title);
   _optionsPanel.appendChild(wrap);
-  _optionsPanel.appendChild(close);
+  _optionsPanel.appendChild(footer);
   _root.appendChild(_optionsPanel);
 
   state.time.paused = true;

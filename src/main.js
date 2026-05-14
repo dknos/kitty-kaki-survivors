@@ -403,6 +403,25 @@ async function boot() {
     // Show an arrival toast surfacing what the run earned.
     if (window._kkLastRunSummary) _showTownArrivalToast(window._kkLastRunSummary);
   };
+  // Return-to-main-menu — pauses any run, leaves town/interior/catacomb if
+  // we're in one, drops back to the start screen so the player can rebind
+  // character/stage/options before re-entering. Used by the death-screen and
+  // pause-menu Return-to-Menu buttons (iter 29).
+  window.kkReturnToMenu = () => {
+    try { _teardownActiveRun(); } catch (_) {}
+    // Exit any sub-mode so the start screen renders cleanly.
+    try {
+      if (state.mode === 'town')     exitTown();
+      if (state.mode === 'interior') exitInterior();
+      if (state.mode === 'catacomb') exitCatacomb();
+    } catch (_) {}
+    state.mode = 'menu';
+    state.started = false;
+    state._deathShown = false;
+    state.time.paused = false;
+    try { hideOptions(); } catch (_) {}
+    showStartScreen('Click or press SPACE to start');
+  };
   window.__kkNextMiniBoss = secondsUntilNextMiniBoss;
   // Iter 17 — Helltide debug hook. Lets the player (and QA) force-trigger the
   // overlay event from DevTools. Returns true if it fired, false if a helltide
