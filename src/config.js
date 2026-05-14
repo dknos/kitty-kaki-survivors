@@ -153,14 +153,15 @@ export const WEAPONS = {
 // Tuning constants are locked in ITER_789_BRIEFS.md (iter 7 — Tuning targets).
 export const CHARACTERS = [
   {
-    id: 'kitty',  name: 'Kitty Kaki', icon: '🐱',
-    desc: 'Balanced. Starts with Cheesy Burgers.',
+    // Iter 32: archetype id kept as 'kitty' for save-compat, but display
+    // name is "Balanced" — the avatar named "Kitty Kaki" is a separate concept.
+    id: 'kitty',  name: 'Balanced',   icon: '🍔',
+    desc: 'Default kit. Starts with Cheesy Burgers.',
     starter: 'orbitals',
     statMul: { dmg: 1.0, moveSpeed: 1.0, magnet: 1.0 },
     hpMax: 100,
     unlock: null,
-    // glb: default HERO.glb (tower-castle-plain). Only override when char has its own mesh.
-    tint: 0xffffff, scaleMul: 1.00,    // canonical model — no tint
+    tint: 0xffffff, scaleMul: 1.00,
     signatureName: 'Nine Lives',
     signatureDesc: 'First lethal hit per run becomes 1 HP + 1.5s i-frame.',
     // Use `if (!passive_revives)` (NOT +=) so we don't stack with SHOP_TREE

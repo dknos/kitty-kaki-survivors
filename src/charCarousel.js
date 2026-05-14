@@ -96,6 +96,7 @@ export function createCharCarousel(host, opts) {
       cursor: pointer; user-select: none;
       box-shadow: 0 6px 14px rgba(0,0,0,0.55);
       pointer-events: auto;
+      z-index: 3;
     `;
     b.addEventListener('click', (e) => { e.stopPropagation(); advance(dir); });
     return b;
@@ -110,6 +111,7 @@ export function createCharCarousel(host, opts) {
   pipRow.style.cssText = `
     position: absolute; bottom: 10px; left: 0; right: 0;
     display: flex; gap: 8px; justify-content: center; pointer-events: none;
+    z-index: 3;
   `;
   stage.appendChild(pipRow);
 
@@ -134,6 +136,7 @@ export function createCharCarousel(host, opts) {
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.domElement.style.cssText = `
     position: absolute; inset: 0; width: 100%; height: 100%; display: block;
+    z-index: 1;
   `;
   stage.appendChild(renderer.domElement);
 
