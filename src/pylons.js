@@ -13,6 +13,11 @@ import * as THREE from 'three';
 import { state } from './state.js';
 import { grantEmbers } from './meta.js';
 import { takeDamage as heroTakeDamage } from './hero.js';
+import { makeRuneRingTexture } from './enemyTells.js';
+import { tex } from './particleTextures.js';
+
+let _pylonRuneTex = null;
+function _getPylonRuneTex() { return _pylonRuneTex || (_pylonRuneTex = makeRuneRingTexture()); }
 
 const PYLON_HP = 300;
 const PULSE_RADIUS = 6.0;
@@ -94,30 +99,47 @@ function _makePylonMesh() {
   orb.position.y = 2.7;
   g.add(orb);
   g.userData._orb = orb;
-  // Telegraph ring (flat on ground, grows during charge phase)
+  // Telegraph ring — textured rune disc (canonical magic-AoE art), grows
+  // during charge phase. Reads as inscribing spell circle vs a flat donut.
   const tellRing = new THREE.Mesh(
-    new THREE.RingGeometry(0.95, 1.0, 48),
+    new THREE.PlaneGeometry(2.0, 2.0),
     new THREE.MeshBasicMaterial({
+      map: _getPylonRuneTex(),
       color: 0x4fd0ff, transparent: true, opacity: 0.55,
       depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
     }),
   );
+  tellRing.rotation.order = 'YXZ';   // yaw first so spin (rotation.y) reads in world space
   tellRing.rotation.x = -Math.PI / 2;
   tellRing.position.y = 0.05;
   tellRing.scale.setScalar(0.001);
+  tellRing.userData.spinPhase = Math.random() * Math.PI * 2;
   g.add(tellRing);
   g.userData._tellRing = tellRing;
-  // Glow halo (around orb)
+  // Glow halo (around orb) — textured radial glow with a sparkle overlay.
   const halo = new THREE.Mesh(
     new THREE.PlaneGeometry(2.4, 2.4),
     new THREE.MeshBasicMaterial({
-      color: 0x4fd0ff, transparent: true, opacity: 0.45,
+      map: tex('glowCyan'),
+      color: 0x4fd0ff, transparent: true, opacity: 0.55,
       depthWrite: false, blending: THREE.AdditiveBlending,
     }),
   );
   halo.position.y = 2.7;
   g.add(halo);
   g.userData._halo = halo;
+  // Capacitor sparkle — small twinkle that flicks as the pylon charges.
+  const sparkle = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.0, 1.0),
+    new THREE.MeshBasicMaterial({
+      map: tex('twinkle'),
+      color: 0xeaf6ff, transparent: true, opacity: 0.0,
+      depthWrite: false, blending: THREE.AdditiveBlending,
+    }),
+  );
+  sparkle.position.y = 2.7;
+  g.add(sparkle);
+  g.userData._sparkle = sparkle;
   // Cyan accent light
   const pl = new THREE.PointLight(0x4fd0ff, 1.4, 9, 2);
   pl.position.y = 2.7;
@@ -206,6 +228,18 @@ export function tickPylons(dt) {
     if (p.mesh.userData._orb) {
       p.mesh.userData._orb.material.emissiveIntensity = 1.0 + 0.4 * Math.sin(t * 5 + p.mesh.position.x);
     }
+    // Rune ring slowly spins during charge so the ticks visibly inscribe
+    // the spell circle. Euler order is YXZ on the ring — rotation.y is the
+    // world-up yaw because it composes BEFORE the -π/2 X-flip.
+    const tell = p.mesh.userData._tellRing;
+    if (tell) tell.rotation.y = (tell.userData.spinPhase || 0) + t * 0.6;
+    // Sparkle flick — random small flash, brighter when phase is 'charge'.
+    const sp = p.mesh.userData._sparkle;
+    if (sp) {
+      const base = (p.phase === 'charge') ? 0.5 : 0.15;
+      sp.material.opacity = base + Math.abs(Math.sin(t * 18 + p.mesh.position.x)) * 0.45;
+      sp.rotation.z += dt * 1.7;
+    }
     if (p.phase === 'rest') {
       // Hide tell ring
       const r = p.mesh.userData._tellRing; if (r) r.scale.setScalar(0.001);
@@ -215,12 +249,13 @@ export function tickPylons(dt) {
       const k = Math.min(1, p.phaseT / PHASE_CHARGE);
       const ring = p.mesh.userData._tellRing;
       if (ring) {
+        // Plane is unit-sized (2u edge) — scale to half-radius equivalent.
         const s = Math.max(0.001, PULSE_RADIUS * k);
         ring.scale.set(s, s, s);
-        ring.material.opacity = 0.35 + 0.30 * k;
+        ring.material.opacity = 0.45 + 0.40 * k;
       }
       // Halo brightens as it charges
-      if (p.mesh.userData._halo) p.mesh.userData._halo.material.opacity = 0.45 + 0.45 * k;
+      if (p.mesh.userData._halo) p.mesh.userData._halo.material.opacity = 0.55 + 0.40 * k;
       if (p.mesh.userData._light) p.mesh.userData._light.intensity = 1.4 + 2.0 * k;
       if (p.phaseT >= PHASE_CHARGE) {
         // Snap!
@@ -234,7 +269,7 @@ export function tickPylons(dt) {
       if (ring) {
         const s = PULSE_RADIUS * (1 + p.phaseT * 0.4);
         ring.scale.set(s, s, s);
-        ring.material.opacity = 0.85 * (1 - p.phaseT / PHASE_SNAP);
+        ring.material.opacity = 0.95 * (1 - p.phaseT / PHASE_SNAP);
       }
       if (p.phaseT >= PHASE_SNAP) { p.phase = 'rest'; p.phaseT = 0; }
     }

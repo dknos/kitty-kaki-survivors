@@ -12,6 +12,10 @@
 import * as THREE from 'three';
 import { state } from './state.js';
 import { grantEmbers } from './meta.js';
+import { makeRuneRingTexture } from './enemyTells.js';
+
+let _bellRuneTex = null;
+function _getBellRuneTex() { return _bellRuneTex || (_bellRuneTex = makeRuneRingTexture()); }
 
 const BELL_HP = 250;
 const CYCLE = 4.0;             // sec between rings
@@ -116,17 +120,21 @@ function _makeBellMesh() {
   g.add(bellGroup);
   g.userData._bell = bellGroup;
   g.userData._sigil = sigil;
-  // Wind-up ground ring (telegraph for the impending enrage pulse)
+  // Wind-up ground ring — textured rune disc so the enrage telegraph reads
+  // as a crimson summoning circle inscribing on the floor.
   const tellRing = new THREE.Mesh(
-    new THREE.RingGeometry(0.95, 1.0, 48),
+    new THREE.PlaneGeometry(2.0, 2.0),
     new THREE.MeshBasicMaterial({
+      map: _getBellRuneTex(),
       color: 0xc23a3a, transparent: true, opacity: 0.5,
       depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
     }),
   );
+  tellRing.rotation.order = 'YXZ';
   tellRing.rotation.x = -Math.PI / 2;
   tellRing.position.y = 0.05;
   tellRing.scale.setScalar(0.001);
+  tellRing.userData.spinPhase = Math.random() * Math.PI * 2;
   g.add(tellRing);
   g.userData._tellRing = tellRing;
   // Crimson light
@@ -217,6 +225,9 @@ export function tickBells(dt) {
     if (b.mesh.userData._sigil) {
       b.mesh.userData._sigil.material.emissiveIntensity = 0.7 + 0.5 * Math.sin(t * 3.2);
     }
+    // Rune ring slowly spins so its glyphs inscribe over time.
+    const tell = b.mesh.userData._tellRing;
+    if (tell) tell.rotation.y = (tell.userData.spinPhase || 0) + t * 0.4;
     if (b.phase === 'idle') {
       const r = b.mesh.userData._tellRing; if (r) r.scale.setScalar(0.001);
       if (b.phaseT >= CYCLE - WINDUP) { b.phase = 'windup'; b.phaseT = 0; }
@@ -227,7 +238,7 @@ export function tickBells(dt) {
       if (ring) {
         const s = Math.max(0.001, ENRAGE_RADIUS * k);
         ring.scale.set(s, s, s);
-        ring.material.opacity = 0.30 + 0.40 * k;
+        ring.material.opacity = 0.40 + 0.45 * k;
       }
       // Bell swings harder
       if (b.mesh.userData._bell) {

@@ -22,6 +22,7 @@ import * as THREE from 'three';
 import { state } from './state.js';
 import { takeDamage as heroTakeDamage } from './hero.js';
 import { BLOOM_LAYER } from './postfx.js';
+import { tex } from './particleTextures.js';
 
 const POLLEN_CAP = 32;
 const LAVA_CAP = 18;
@@ -62,18 +63,22 @@ function _mkInst(geo, mat, cap, blend = THREE.AdditiveBlending) {
 export function initStageHazards(scene) {
   if (_pollenInst) return;
   _scene = scene;
-  // Pollen — small additive cyan disc
-  const pollenGeo = new THREE.CircleGeometry(1.2, 18);
+  // Pollen — textured cyan-cream fluff (multi-octave noise sprite). Reads
+  // as dandelion spore drift, not a solid cyan disc.
+  const pollenGeo = new THREE.PlaneGeometry(2.4, 2.4);
   const pollenMat = new THREE.MeshBasicMaterial({
-    color: 0xb0e0ff, transparent: true, opacity: 0.45,
+    map: tex('pollen'),
+    color: 0xcfeaff, transparent: true, opacity: 0.85,
     depthWrite: false, blending: THREE.AdditiveBlending,
   });
   _pollenInst = _mkInst(pollenGeo, pollenMat, POLLEN_CAP);
   scene.add(_pollenInst);
-  // Lava — emissive red disc, larger
-  const lavaGeo = new THREE.CircleGeometry(1.5, 24);
+  // Lava — textured molten puddle (dark crust ring + bright veins). Reads
+  // as a real basalt pit, not a flat red blob.
+  const lavaGeo = new THREE.PlaneGeometry(3.0, 3.0);
   const lavaMat = new THREE.MeshBasicMaterial({
-    color: 0xff5522, transparent: true, opacity: 0.85,
+    map: tex('lavaPuddle'),
+    color: 0xffffff, transparent: true, opacity: 0.95,
     depthWrite: false, blending: THREE.AdditiveBlending,
   });
   _lavaInst = _mkInst(lavaGeo, lavaMat, LAVA_CAP);

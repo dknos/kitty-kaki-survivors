@@ -12,21 +12,52 @@ import { tex } from '../particleTextures.js';
 import { BLOOM_LAYER } from '../postfx.js';
 import { cloneCached } from '../assets.js';
 import { sfx } from '../audio.js';
+import { makeRuneRingTexture } from '../enemyTells.js';
+
+// Shared rune texture for the burger orbital ground halo. Lazy so we never
+// build the canvas during module-init (browser tab may not yet have a doc).
+let _orbRuneTex = null;
+function _getOrbRuneTex() { return _orbRuneTex || (_orbRuneTex = makeRuneRingTexture()); }
 
 // ── Shared geometries + materials (cached across all orbs for batching) ──
+// Burger primitive now uses textured caps (sesame bun decal on top, cheese
+// slice on patty) so the silhouette reads as food instead of stacked cylinders.
 const BUN_GEO    = new THREE.CylinderGeometry(0.30, 0.34, 0.16, 18);
 const TOP_BUN_GEO = new THREE.SphereGeometry(0.32, 18, 12, 0, Math.PI * 2, 0, Math.PI / 2); // dome
 const PATTY_GEO  = new THREE.CylinderGeometry(0.32, 0.32, 0.09, 18);
-// Cheese now sits INSIDE the bun outline (slightly smaller than patty) so
-// the burger silhouette stays round. No emissive — bloom was making the
-// flat square dominate and pulse blue-white. Keeps a faint yellow tint only.
-const CHEESE_GEO = new THREE.BoxGeometry(0.58, 0.04, 0.58);
+// Cheese slice is now a flat decal plane (was a 0.58 box that bloomed weirdly).
+// Painted with cheeseSlice texture so we see the drips + outline, not a square.
+const CHEESE_PLANE = new THREE.PlaneGeometry(0.72, 0.72);
+const BUN_CAP_PLANE = new THREE.PlaneGeometry(0.66, 0.66);   // sesame decal on dome
+const PATTY_CAP_PLANE = new THREE.PlaneGeometry(0.66, 0.66); // grill-mark decal on patty
+const SHIMMER_PLANE = new THREE.PlaneGeometry(1.2, 1.2);     // heat shimmer behind burger
 const SEED_GEO   = new THREE.SphereGeometry(0.035, 6, 5);
 
 const BUN_MAT    = new THREE.MeshStandardMaterial({ color: 0xd99b54, roughness: 0.78, metalness: 0.0 });
 const PATTY_MAT  = new THREE.MeshStandardMaterial({ color: 0x3e1f0e, roughness: 0.85, metalness: 0.0 });
-const CHEESE_MAT = new THREE.MeshStandardMaterial({ color: 0xffc23a, roughness: 0.7, metalness: 0.0 });
 const SEED_MAT   = new THREE.MeshStandardMaterial({ color: 0xf2e3b6, roughness: 0.7 });
+
+// Lazy texture lookup: tex() requires initParticleTextures to have run, which
+// happens at scene bootstrap. The orbitals module loads earlier in some import
+// orders, so we resolve the textures inside _makeBurgerPrimitive.
+function _bunCapMat() {
+  return new THREE.MeshBasicMaterial({
+    map: tex('bunCap'),
+    transparent: true, depthWrite: false, side: THREE.DoubleSide, alphaTest: 0.05,
+  });
+}
+function _cheeseMat(evolved) {
+  return new THREE.MeshBasicMaterial({
+    map: tex(evolved ? 'cheeseToxic' : 'cheeseSlice'),
+    transparent: true, depthWrite: false, side: THREE.DoubleSide, alphaTest: 0.05,
+  });
+}
+function _pattyCapMat() {
+  return new THREE.MeshBasicMaterial({
+    map: tex('pattyTop'),
+    transparent: true, depthWrite: false, side: THREE.DoubleSide, alphaTest: 0.05,
+  });
+}
 
 const GLOW_GEO = new THREE.PlaneGeometry(0.95, 0.95);
 const GLOW_MAT = new THREE.MeshBasicMaterial({
@@ -36,29 +67,52 @@ const GLOW_MAT = new THREE.MeshBasicMaterial({
 
 const HIT_RADIUS = 0.55;
 const _glowFlat = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
+const _topDownFlat = new THREE.Euler(-Math.PI / 2, 0, 0);
 
 // Build a fallback burger from primitives if no GLB is provided.
-function _makeBurgerPrimitive() {
+// Layered: bottom bun + grilled patty (with grill-mark decal on top face) +
+// cheese slice decal (with drips + outline) + dome bun + sesame-cap decal.
+// The painted decals carry the "hand-drawn food" silhouette so the burger
+// reads as an oekaki-style sticker rather than primitive geometry.
+function _makeBurgerPrimitive(evolved = false) {
   const g = new THREE.Group();
+  // Bottom bun
   const bot = new THREE.Mesh(BUN_GEO, BUN_MAT);
   bot.position.y = 0.08;
   bot.castShadow = true;
   g.add(bot);
+  // Patty
   const patty = new THREE.Mesh(PATTY_GEO, PATTY_MAT);
   patty.position.y = 0.20;
   g.add(patty);
-  const cheese = new THREE.Mesh(CHEESE_GEO, CHEESE_MAT);
-  cheese.position.y = 0.255;
-  cheese.rotation.y = Math.PI / 6;
+  // Grill-mark decal on top of patty (faces up, alpha-tested)
+  const pattyDecal = new THREE.Mesh(PATTY_CAP_PLANE, _pattyCapMat());
+  pattyDecal.rotation.copy(_topDownFlat);
+  pattyDecal.position.y = 0.248;
+  g.add(pattyDecal);
+  // Cheese slice decal (drips + outline)
+  const cheese = new THREE.Mesh(CHEESE_PLANE, _cheeseMat(evolved));
+  cheese.rotation.copy(_topDownFlat);
+  cheese.rotation.z = Math.PI / 6;
+  cheese.position.y = 0.27;
   g.add(cheese);
+  // Dome bun
   const top = new THREE.Mesh(TOP_BUN_GEO, BUN_MAT);
   top.scale.set(1.0, 0.85, 1.0);
   top.position.y = 0.28;
   top.castShadow = true;
   g.add(top);
+  // Sesame cap decal — top-down sticker on the dome (where seeds would be)
+  const bunDecal = new THREE.Mesh(BUN_CAP_PLANE, _bunCapMat());
+  bunDecal.rotation.copy(_topDownFlat);
+  bunDecal.position.y = 0.555;
+  g.add(bunDecal);
+  // Three 3D sesame seeds for parallax richness — kept small so the decal
+  // does the heavy lifting and these add depth at iso angle.
   const seedPositions = [
-    [0.00, 0.50, 0.00], [0.16, 0.46, 0.04], [-0.14, 0.46, -0.06],
-    [0.08, 0.47, -0.16], [-0.10, 0.47, 0.14],
+    [-0.10, 0.55, -0.06],
+    [ 0.12, 0.55,  0.04],
+    [ 0.00, 0.55,  0.13],
   ];
   for (const [x, y, z] of seedPositions) {
     const s = new THREE.Mesh(SEED_GEO, SEED_MAT);
@@ -92,34 +146,96 @@ function _normalizeBurgerGlb(root) {
 
 // Try the GLB first; fall back to primitives if missing.
 // `evolved` swaps to the Double Cheeseburger model (Toxic Halo evolution).
+// Even when the GLB is used we layer a sesame decal + cheese drip on top
+// so the orbital reads as deliberate art at all camera angles. The decal
+// planes use alpha-tested cutouts so they don't blow out under bloom.
 function _makeBurger(evolved = false) {
   const key = evolved ? 'burger_evo' : 'burger';
   const glb = cloneCached(key) || cloneCached('burger');  // graceful evo fallback
   if (glb) {
     const wrap = new THREE.Group();
-    wrap.add(_normalizeBurgerGlb(glb));
+    const norm = _normalizeBurgerGlb(glb);
+    wrap.add(norm);
+    // Layer a top-down sesame decal floating just above the GLB so even
+    // donated models read as "kitty kaki burger" silhouette from iso camera.
+    // Important: GLB body geometry would z-occlude a decal placed inside its
+    // bounding box, so we (a) lift the decal slightly ABOVE the GLB top and
+    // (b) disable depth test + bump render order so it always reads on top.
+    const bunDecal = new THREE.Mesh(BUN_CAP_PLANE, _bunCapMat());
+    bunDecal.material.depthTest = false;
+    bunDecal.rotation.copy(_topDownFlat);
+    bunDecal.position.y = TARGET_HEIGHT + 0.04;
+    bunDecal.scale.setScalar(0.85);
+    bunDecal.renderOrder = 3;
+    wrap.add(bunDecal);
+    // If evolved, layer a second toxic-green cheese drip ABOVE the GLB so
+    // the player can tell at-a-glance that Toxic Halo is active. Same
+    // depth-test override so the GLB never hides the toxic tell.
+    if (evolved) {
+      const toxicDecal = new THREE.Mesh(CHEESE_PLANE, _cheeseMat(true));
+      toxicDecal.material.depthTest = false;
+      toxicDecal.rotation.copy(_topDownFlat);
+      toxicDecal.position.y = TARGET_HEIGHT + 0.02;
+      toxicDecal.scale.setScalar(1.05);
+      toxicDecal.renderOrder = 2;
+      wrap.add(toxicDecal);
+    }
     return wrap;
   }
-  return _makeBurgerPrimitive();
+  return _makeBurgerPrimitive(evolved);
 }
 
 function spawnOrbs(level, inst) {
   const scene = state.scene;
   inst.orbs = [];
+  const evolved = !!inst.evolved;
   for (let i = 0; i < level.count; i++) {
     const group = new THREE.Group();
     // Burger stack — stays on the default render layer. BLOOM_LAYER is for
     // glowy emissives; putting the burger on it makes the bloom pass render
     // each mesh in isolation against black, then additive-composite it back,
     // which produced the ghostly "blue square" look the player flagged.
-    const burger = _makeBurger(!!inst.evolved);
+    const burger = _makeBurger(evolved);
     group.add(burger);
-    // Flat additive glow on ground
-    const glow = new THREE.Mesh(GLOW_GEO, GLOW_MAT);
+    // ── Layered ground FX ──
+    // 1. Rune disc base — the canonical magic-AoE art under the burger so
+    //    the orbital reads as a sacred relic, not a floating sandwich.
+    const runeMat = new THREE.MeshBasicMaterial({
+      map: _getOrbRuneTex(),
+      color: evolved ? 0xa8ff3a : 0xffd24a,
+      transparent: true, opacity: 0.55,
+      depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    });
+    const rune = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.6), runeMat);
+    rune.quaternion.copy(_glowFlat);
+    rune.position.y = -0.42;
+    rune.layers.enable(BLOOM_LAYER);
+    group.add(rune);
+    // 2. Soft glow halo (kept from the original art) — sits between rune and burger
+    const glowMat = new THREE.MeshBasicMaterial({
+      map: tex('glowGold'),
+      color: evolved ? 0xa8ff3a : 0xffd24a,
+      transparent: true, opacity: 0.45,
+      depthWrite: false, blending: THREE.AdditiveBlending,
+    });
+    const glow = new THREE.Mesh(GLOW_GEO, glowMat);
     glow.quaternion.copy(_glowFlat);
-    glow.position.y = -0.40;
+    glow.position.y = -0.38;
     glow.layers.enable(BLOOM_LAYER);
     group.add(glow);
+    // 3. Heat shimmer billboard — soft warm glow that pulses, sells "freshly
+    //    grilled". For Toxic Halo this becomes the dripping poison aura.
+    const shimmerMat = new THREE.MeshBasicMaterial({
+      map: tex(evolved ? 'sparkCyan' : 'glowGold'),
+      color: evolved ? 0xa8ff3a : 0xff9a3a,
+      transparent: true, opacity: evolved ? 0.55 : 0.30,
+      depthWrite: false, blending: THREE.AdditiveBlending,
+    });
+    const shimmer = new THREE.Mesh(SHIMMER_PLANE, shimmerMat);
+    shimmer.quaternion.copy(_glowFlat);
+    shimmer.position.y = -0.45;
+    shimmer.layers.enable(BLOOM_LAYER);
+    group.add(shimmer);
     group.position.copy(state.hero.pos);
     group.position.y = 0.5;
     scene.add(group);
@@ -127,6 +243,8 @@ function spawnOrbs(level, inst) {
       mesh: group,
       core: burger,
       glow,
+      rune,
+      shimmer,
       angle: (i / level.count) * Math.PI * 2,
       lastHitTime: new Map(),
     });
@@ -177,29 +295,39 @@ export default {
     // Toxic Halo evo: swap to Double Cheeseburger model + recolor ground glow.
     // The base burger meshes get disposed/rebuilt instead of tinted in-place
     // (tinting GLB materials per-mesh was unreliable across the food pack).
+    // spawnOrbs() now reads `inst.evolved` to bake the toxic decals + green
+    // halo, so a clean re-spawn is all we need.
     if (inst.evolved && !inst._tinted) {
       inst._tinted = true;
       disposeOrbs(inst);
       spawnOrbs(level, inst);
-      for (const orb of inst.orbs) {
-        if (orb.glow && orb.glow.material) {
-          orb.glow.material = orb.glow.material.clone();
-          orb.glow.material.color.set(0x99ff33);
-        }
-      }
     }
 
-    // Subtle glow pulse — costs nothing, reads as energy
-    const pulse = 1 + Math.sin(now * 4) * 0.08;
+    // Layered pulses — each layer breathes at its own rhythm so the orbital
+    // doesn't feel like a single static prop.
+    const pulse        = 1 + Math.sin(now * 4) * 0.08;     // halo
+    const runePulse    = 1 + Math.sin(now * 2.6) * 0.06;   // disc, slow
+    const shimmerPulse = 1 + Math.sin(now * 7.2) * 0.14;   // shimmer, fast
+    const shimmerAlpha = 0.25 + Math.abs(Math.sin(now * 3.5)) * 0.20;
 
     for (const orb of inst.orbs) {
       orb.angle += level.rotSpeed * dt;
       const x = hero.x + Math.cos(orb.angle) * radiusFinal;
       const z = hero.z + Math.sin(orb.angle) * radiusFinal;
-      orb.mesh.position.set(x, 0.5, z);
+      // Gentle vertical bob: each orb phased by its angle so the ring breathes.
+      const bob = Math.sin(now * 3.1 + orb.angle * 2) * 0.06;
+      orb.mesh.position.set(x, 0.5 + bob, z);
       // Self-spin so each burger reads as a tumbling object, not a sprite.
       if (orb.core) orb.core.rotation.y += dt * 1.8;
       if (orb.glow) orb.glow.scale.setScalar(pulse);
+      if (orb.rune) {
+        orb.rune.scale.setScalar(runePulse);
+        orb.rune.rotation.z = (orb.rune.rotation.z || 0) + dt * 0.6;
+      }
+      if (orb.shimmer) {
+        orb.shimmer.scale.setScalar(shimmerPulse);
+        orb.shimmer.material.opacity = shimmerAlpha * (inst.evolved ? 1.8 : 1.0);
+      }
 
       // Collision check
       const candidates = queryRadius(orb.mesh.position, HIT_RADIUS);

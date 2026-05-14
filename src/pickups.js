@@ -12,6 +12,8 @@ import { state } from './state.js';
 import { spawnMagnetSpark } from './fx.js';
 import { HERO } from './config.js';
 import { sfx } from './audio.js';
+import { tex } from './particleTextures.js';
+import { BLOOM_LAYER } from './postfx.js';
 
 const ATTRACT_MUL = 2.5;    // attraction radius = pickupRadius × this
 const ATTRACT_ACCEL = 28;
@@ -34,6 +36,15 @@ let _starInst  = null;
 let _bombInst = null;
 let _freezeInst = null;
 let _chickenInst = null;
+// Per-pickup billboard halo sprite layer — one InstancedMesh per pickup
+// family, painted with the matching procedural decal. Sits flat above each
+// pickup and floats at the same Y. Sells the pickup as a "hand-drawn icon"
+// rather than a primitive shape.
+let _heartHaloInst = null;
+let _starHaloInst = null;
+let _bombHaloInst = null;
+let _freezeHaloInst = null;
+let _chickenHaloInst = null;
 
 const _hearts = []; // {x,z,t}
 const _stars  = []; // {x,z,t}
@@ -91,9 +102,11 @@ function _makeInstanced(geo, color, emissiveColor, cap) {
   const mat = new THREE.MeshStandardMaterial({
     color: color,
     emissive: emissiveColor,
-    emissiveIntensity: 0.25,    // subtle — was way too bright before
-    roughness: 0.45,
-    metalness: 0.1,
+    // Bumped from 0.25 — pickups were reading as "matte primitive"; this gets
+    // them just into the readable-glow band without blowing out under bloom.
+    emissiveIntensity: 0.55,
+    roughness: 0.4,
+    metalness: 0.15,
   });
   const inst = new THREE.InstancedMesh(geo, mat, cap);
   inst.count = cap;
@@ -107,21 +120,58 @@ function _makeInstanced(geo, color, emissiveColor, cap) {
   return inst;
 }
 
+/**
+ * Build an InstancedMesh of flat sprite billboards. Each instance is a
+ * unit-size plane painted with the given procedural decal. Sits flat above
+ * the pickup (the geometry/icon underneath) so the player reads the food
+ * silhouette at any zoom. Additive blend — bumps under bloom for clarity.
+ */
+function _makeHaloInstanced(texName, cap, color = 0xffffff, opacity = 0.95) {
+  const geo = new THREE.PlaneGeometry(1, 1);
+  const mat = new THREE.MeshBasicMaterial({
+    map: tex(texName),
+    color, transparent: true, opacity,
+    depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+  });
+  const inst = new THREE.InstancedMesh(geo, mat, cap);
+  inst.count = cap;
+  inst.frustumCulled = false;
+  inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  for (let i = 0; i < cap; i++) {
+    _m4.compose(_v3.set(0, -1000, 0), _flatX, _zeroScale);
+    inst.setMatrixAt(i, _m4);
+  }
+  inst.instanceMatrix.needsUpdate = true;
+  inst.layers.enable(BLOOM_LAYER);
+  return inst;
+}
+
 export function initPickups(scene) {
   if (_heartInst) return;
-  _heartInst = _makeInstanced(_makeHeartGeometry(), 0xff3355, 0x661122, CAP_HEARTS);
-  _starInst  = _makeInstanced(_makeStarGeometry(),  0xffd24a, 0x553300, CAP_STARS);
-  // Bomb (red sphere) — AoE damage all on-screen enemies
-  _bombInst    = _makeInstanced(new THREE.SphereGeometry(0.45, 16, 12),     0x2b2b2b, 0xff2200, CAP_BOMBS);
+  _heartInst = _makeInstanced(_makeHeartGeometry(), 0xff3355, 0x991133, CAP_HEARTS);
+  _starInst  = _makeInstanced(_makeStarGeometry(),  0xffd24a, 0x7a4400, CAP_STARS);
+  // Bomb (dark sphere) — AoE damage all on-screen enemies
+  _bombInst    = _makeInstanced(new THREE.SphereGeometry(0.45, 16, 12),     0x2b2b2b, 0xff5022, CAP_BOMBS);
   // Freeze (cyan octahedron) — 3s slow on all enemies on screen
-  _freezeInst  = _makeInstanced(new THREE.OctahedronGeometry(0.50, 0),      0x88ddff, 0x224477, CAP_FREEZE);
+  _freezeInst  = _makeInstanced(new THREE.OctahedronGeometry(0.50, 0),      0x88ddff, 0x4488cc, CAP_FREEZE);
   // Chicken (warm egg cylinder) — full heal
-  _chickenInst = _makeInstanced(new THREE.SphereGeometry(0.40, 12, 10),     0xffe3a0, 0x553311, CAP_CHICKENS);
+  _chickenInst = _makeInstanced(new THREE.SphereGeometry(0.40, 12, 10),     0xffe3a0, 0x8a5511, CAP_CHICKENS);
   scene.add(_heartInst);
   scene.add(_starInst);
   scene.add(_bombInst);
   scene.add(_freezeInst);
   scene.add(_chickenInst);
+  // Sprite halo layer — one InstancedMesh per pickup family.
+  _heartHaloInst   = _makeHaloInstanced('heartSprite',  CAP_HEARTS,  0xffffff, 0.85);
+  _starHaloInst    = _makeHaloInstanced('starSprite',   CAP_STARS,   0xffffff, 0.90);
+  _bombHaloInst    = _makeHaloInstanced('bombSprite',   CAP_BOMBS,   0xffffff, 0.95);
+  _freezeHaloInst  = _makeHaloInstanced('snowflake',    CAP_FREEZE,  0xffffff, 0.90);
+  _chickenHaloInst = _makeHaloInstanced('drumstick',    CAP_CHICKENS,0xffffff, 0.95);
+  scene.add(_heartHaloInst);
+  scene.add(_starHaloInst);
+  scene.add(_bombHaloInst);
+  scene.add(_freezeHaloInst);
+  scene.add(_chickenHaloInst);
 }
 
 export function spawnHeart(x, z) {
@@ -176,6 +226,18 @@ function _writeMatrix(inst, i, p, scale) {
   inst.setMatrixAt(i, _m4);
 }
 
+// Write the halo billboard matrix. Plane lies flat above the pickup so the
+// painted decal reads top-down. Pulses with a soft pop so the halo "breathes".
+const _haloScl = new THREE.Vector3();
+function _writeHalo(inst, i, p, scale) {
+  if (!inst) return;
+  const pulse = 1 + Math.sin(p.t * 4.5) * 0.07;
+  _v3.set(p.x, Y_BASE + Math.sin(p.t * 3) * 0.18 + 0.45, p.z);
+  _haloScl.set(scale * pulse, scale * pulse, scale * pulse);
+  _m4.compose(_v3, _flatX, _haloScl);
+  inst.setMatrixAt(i, _m4);
+}
+
 function _hide(inst, i) {
   _m4.compose(_v3.set(0, -1000, 0), _q.identity(), _zeroScale);
   inst.setMatrixAt(i, _m4);
@@ -194,6 +256,7 @@ export function tickPickups(dt) {
     const d2 = dx * dx + dz * dz;
     if (d2 <= PICK_R2) {
       _hide(_heartInst, i);
+      _hide(_heartHaloInst, i);
       _hearts.splice(i, 1);
       _heartDirty = true;
       // Heal
@@ -208,6 +271,7 @@ export function tickPickups(dt) {
       continue;
     }
     _writeMatrix(_heartInst, i, p, 1.0);
+    _writeHalo(_heartHaloInst, i, p, 1.6);
     _heartDirty = true;
   }
 
@@ -220,6 +284,7 @@ export function tickPickups(dt) {
     const d2 = dx * dx + dz * dz;
     if (d2 <= PICK_R2) {
       _hide(_starInst, i);
+      _hide(_starHaloInst, i);
       _stars.splice(i, 1);
       _starDirty = true;
       // Magnetize all on-screen gems
@@ -233,6 +298,7 @@ export function tickPickups(dt) {
       continue;
     }
     _writeMatrix(_starInst, i, p, 1.2);
+    _writeHalo(_starHaloInst, i, p, 1.8);
     _starDirty = true;
   }
 
@@ -244,12 +310,14 @@ export function tickPickups(dt) {
     const dx = p.x - hx, dz = p.z - hz;
     if (dx * dx + dz * dz <= PICK_R2) {
       _hide(_bombInst, i);
+      _hide(_bombHaloInst, i);
       _bombs.splice(i, 1);
       _bombDirty = true;
       _bombEffect(p.x, p.z);
       continue;
     }
     _writeMatrix(_bombInst, i, p, 1.3);
+    _writeHalo(_bombHaloInst, i, p, 1.8);
     _bombDirty = true;
   }
 
@@ -261,12 +329,14 @@ export function tickPickups(dt) {
     const dx = p.x - hx, dz = p.z - hz;
     if (dx * dx + dz * dz <= PICK_R2) {
       _hide(_freezeInst, i);
+      _hide(_freezeHaloInst, i);
       _freezes.splice(i, 1);
       _freezeDirty = true;
       _freezeEffect();
       continue;
     }
     _writeMatrix(_freezeInst, i, p, 1.2);
+    _writeHalo(_freezeHaloInst, i, p, 1.8);
     _freezeDirty = true;
   }
 
@@ -278,6 +348,7 @@ export function tickPickups(dt) {
     const dx = p.x - hx, dz = p.z - hz;
     if (dx * dx + dz * dz <= PICK_R2) {
       _hide(_chickenInst, i);
+      _hide(_chickenHaloInst, i);
       _chickens.splice(i, 1);
       _chickenDirty = true;
       state.hero.hp = state.hero.hpMax;
@@ -285,21 +356,43 @@ export function tickPickups(dt) {
       continue;
     }
     _writeMatrix(_chickenInst, i, p, 1.2);
+    _writeHalo(_chickenHaloInst, i, p, 1.8);
     _chickenDirty = true;
   }
 
-  // Hide indices beyond current list length (cleanup tails)
-  for (let i = _hearts.length; i < CAP_HEARTS; i++) { _hide(_heartInst, i); }
-  for (let i = _stars.length;  i < CAP_STARS;  i++) { _hide(_starInst,  i); }
-  for (let i = _bombs.length;  i < CAP_BOMBS;  i++) { _hide(_bombInst,  i); }
-  for (let i = _freezes.length;i < CAP_FREEZE; i++) { _hide(_freezeInst,i); }
-  for (let i = _chickens.length;i < CAP_CHICKENS;i++) { _hide(_chickenInst,i); }
+  // Hide indices beyond current list length (cleanup tails) — both the
+  // primitive geometry instance AND the sprite halo instance.
+  for (let i = _hearts.length; i < CAP_HEARTS; i++) { _hide(_heartInst, i); _hide(_heartHaloInst, i); }
+  for (let i = _stars.length;  i < CAP_STARS;  i++) { _hide(_starInst,  i); _hide(_starHaloInst, i); }
+  for (let i = _bombs.length;  i < CAP_BOMBS;  i++) { _hide(_bombInst,  i); _hide(_bombHaloInst, i); }
+  for (let i = _freezes.length;i < CAP_FREEZE; i++) { _hide(_freezeInst,i); _hide(_freezeHaloInst, i); }
+  for (let i = _chickens.length;i < CAP_CHICKENS;i++) { _hide(_chickenInst,i); _hide(_chickenHaloInst, i); }
 
-  if (_heartDirty) { _heartInst.instanceMatrix.needsUpdate = true; _heartDirty = false; }
-  if (_starDirty)  { _starInst.instanceMatrix.needsUpdate  = true; _starDirty  = false; }
-  if (_bombDirty)  { _bombInst.instanceMatrix.needsUpdate  = true; _bombDirty  = false; }
-  if (_freezeDirty){ _freezeInst.instanceMatrix.needsUpdate = true; _freezeDirty = false; }
-  if (_chickenDirty){ _chickenInst.instanceMatrix.needsUpdate = true; _chickenDirty = false; }
+  if (_heartDirty) {
+    _heartInst.instanceMatrix.needsUpdate = true;
+    if (_heartHaloInst) _heartHaloInst.instanceMatrix.needsUpdate = true;
+    _heartDirty = false;
+  }
+  if (_starDirty)  {
+    _starInst.instanceMatrix.needsUpdate  = true;
+    if (_starHaloInst) _starHaloInst.instanceMatrix.needsUpdate = true;
+    _starDirty  = false;
+  }
+  if (_bombDirty)  {
+    _bombInst.instanceMatrix.needsUpdate  = true;
+    if (_bombHaloInst) _bombHaloInst.instanceMatrix.needsUpdate = true;
+    _bombDirty  = false;
+  }
+  if (_freezeDirty){
+    _freezeInst.instanceMatrix.needsUpdate = true;
+    if (_freezeHaloInst) _freezeHaloInst.instanceMatrix.needsUpdate = true;
+    _freezeDirty = false;
+  }
+  if (_chickenDirty){
+    _chickenInst.instanceMatrix.needsUpdate = true;
+    if (_chickenHaloInst) _chickenHaloInst.instanceMatrix.needsUpdate = true;
+    _chickenDirty = false;
+  }
 }
 
 // Bomb: AoE 50 damage to all enemies within 18 units of pickup point.
@@ -335,7 +428,15 @@ function _freezeEffect() {
 export function resetPickups() {
   _hearts.length = 0; _stars.length = 0;
   _bombs.length = 0; _freezes.length = 0; _chickens.length = 0;
-  for (const [inst, cap] of [[_heartInst, CAP_HEARTS], [_starInst, CAP_STARS], [_bombInst, CAP_BOMBS], [_freezeInst, CAP_FREEZE], [_chickenInst, CAP_CHICKENS]]) {
+  const all = [
+    [_heartInst, CAP_HEARTS], [_starInst, CAP_STARS],
+    [_bombInst, CAP_BOMBS], [_freezeInst, CAP_FREEZE],
+    [_chickenInst, CAP_CHICKENS],
+    [_heartHaloInst, CAP_HEARTS], [_starHaloInst, CAP_STARS],
+    [_bombHaloInst, CAP_BOMBS], [_freezeHaloInst, CAP_FREEZE],
+    [_chickenHaloInst, CAP_CHICKENS],
+  ];
+  for (const [inst, cap] of all) {
     if (!inst) continue;
     for (let i = 0; i < cap; i++) _hide(inst, i);
     inst.instanceMatrix.needsUpdate = true;

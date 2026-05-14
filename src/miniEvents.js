@@ -20,6 +20,11 @@ import { spawnKillRing, spawnMagnetSpark } from './fx.js';
 import { BLOOM_LAYER } from './postfx.js';
 import { sfx } from './audio.js';
 import { grantEmbers } from './meta.js';
+import { makeRuneRingTexture } from './enemyTells.js';
+import { tex } from './particleTextures.js';
+
+let _miniEventRuneTex = null;
+function _getMiniRuneTex() { return _miniEventRuneTex || (_miniEventRuneTex = makeRuneRingTexture()); }
 
 // ── Tunables ─────────────────────────────────────────────────────────────────
 const GOBLIN_INTERVAL    = 90;   // sec
@@ -231,14 +236,35 @@ function _spawnCache(x, z) {
   );
   body.position.y = 0.4;
   body.castShadow = true;
+  // Halo above cache — textured rune disc + sparkle overlay so the cache
+  // pings the eye through any crowd as a "treasure goblin reward".
   const ring = new THREE.Mesh(
-    new THREE.TorusGeometry(0.7, 0.08, 6, 18),
-    new THREE.MeshBasicMaterial({ color: 0xffe14a, transparent: true, opacity: 0.95 })
+    new THREE.PlaneGeometry(1.8, 1.8),
+    new THREE.MeshBasicMaterial({
+      map: _getMiniRuneTex(),
+      color: 0xffe14a, transparent: true, opacity: 0.95,
+      depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    })
   );
+  ring.rotation.order = 'YXZ';
   ring.rotation.x = -Math.PI / 2;
   ring.position.y = 1.4;
+  ring.userData.spinPhase = Math.random() * Math.PI * 2;
   ring.layers.enable(BLOOM_LAYER);
-  g.add(body); g.add(ring);
+  // Twinkle pip floating above the halo
+  const twinkle = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.7, 0.7),
+    new THREE.MeshBasicMaterial({
+      map: tex('twinkleGold'),
+      transparent: true, opacity: 0.9,
+      depthWrite: false, blending: THREE.AdditiveBlending,
+    })
+  );
+  twinkle.rotation.x = -Math.PI / 2;
+  twinkle.position.y = 1.85;
+  twinkle.layers.enable(BLOOM_LAYER);
+  g.add(body); g.add(ring); g.add(twinkle);
+  g.userData.twinkle = twinkle;
   g.position.set(x, 0, z);
   g.userData.ring = ring;
   g.userData.t = 0;
@@ -256,7 +282,11 @@ function _tickCachePickup() {
     const c = _caches[i];
     if (!c.alive) continue;
     c.t += dt;
-    if (c.group.userData.ring) c.group.userData.ring.rotation.z += dt * 2.4;
+    if (c.group.userData.ring) c.group.userData.ring.rotation.y += dt * 1.6;
+    if (c.group.userData.twinkle) {
+      c.group.userData.twinkle.rotation.z += dt * 3.2;
+      c.group.userData.twinkle.material.opacity = 0.6 + 0.35 * Math.abs(Math.sin(c.t * 6));
+    }
     c.group.position.y = Math.sin(c.t * 2.0) * 0.08;
     const dx = c.x - hx, dz = c.z - hz;
     if (dx * dx + dz * dz <= CACHE_PICKUP_R2) {
@@ -303,7 +333,11 @@ function _startMeteor() {
 }
 
 function _makeStrikeRing(radius) {
-  // Filled red disc + outline ring to read clearly on the ground.
+  // Layered impact telegraph:
+  //  • filled red disc (danger zone, low alpha) — gives the floor a hot patch
+  //  • textured rune ring (canonical magic-AoE art) — runic outline that
+  //    rotates as the meteor arms, sells "summoning circle locking on".
+  // Reads at a glance from any zoom level.
   const g = new THREE.Group();
   const inner = new THREE.Mesh(
     new THREE.CircleGeometry(radius * 0.9, 32),
@@ -311,10 +345,16 @@ function _makeStrikeRing(radius) {
   );
   inner.rotation.x = -Math.PI / 2;
   const outline = new THREE.Mesh(
-    new THREE.RingGeometry(radius * 0.92, radius * 1.05, 48),
-    new THREE.MeshBasicMaterial({ color: 0xff5a3a, transparent: true, opacity: 0.95, depthWrite: false })
+    new THREE.PlaneGeometry(radius * 2.1, radius * 2.1),
+    new THREE.MeshBasicMaterial({
+      map: _getMiniRuneTex(),
+      color: 0xff5a3a, transparent: true, opacity: 0.95, depthWrite: false,
+      blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    })
   );
+  outline.rotation.order = 'YXZ';
   outline.rotation.x = -Math.PI / 2;
+  outline.userData.spinPhase = Math.random() * Math.PI * 2;
   outline.layers.enable(BLOOM_LAYER);
   inner.renderOrder = 4;
   outline.renderOrder = 5;
@@ -335,8 +375,10 @@ function _tickMeteor(dt, t) {
     const remain = Math.max(0, s.armAt - t);
     const k = 1 - Math.min(1, remain / METEOR_ARM_TIME);
     if (s.ring.userData.outline) {
-      const o = s.ring.userData.outline.material;
-      o.opacity = 0.6 + 0.4 * Math.abs(Math.sin(t * (4 + 8 * k)));
+      const o = s.ring.userData.outline;
+      o.material.opacity = 0.6 + 0.4 * Math.abs(Math.sin(t * (4 + 8 * k)));
+      // Rune outline spins faster as the meteor locks in — visible windup beat.
+      o.rotation.y = (o.userData.spinPhase || 0) + t * (0.6 + k * 2.4);
     }
     if (s.ring.userData.inner) {
       s.ring.userData.inner.material.opacity = 0.25 + 0.20 * k;
@@ -414,13 +456,20 @@ function _startElite() {
   const cR = 11 + Math.random() * 4;
   const cx = hp.x + Math.cos(cAng) * cR;
   const cz = hp.z + Math.sin(cAng) * cR;
-  // Magenta telegraph ring at cluster center
+  // Magenta telegraph ring at cluster center — textured rune disc so the
+  // elite-pack warning reads as a hex circle vs a flat colored donut.
   const tellRing = new THREE.Mesh(
-    new THREE.RingGeometry(2.4, 2.7, 48),
-    new THREE.MeshBasicMaterial({ color: 0xff44ff, transparent: true, opacity: 0.9, depthWrite: false })
+    new THREE.PlaneGeometry(5.4, 5.4),
+    new THREE.MeshBasicMaterial({
+      map: _getMiniRuneTex(),
+      color: 0xff44ff, transparent: true, opacity: 0.9, depthWrite: false,
+      blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    })
   );
+  tellRing.rotation.order = 'YXZ';
   tellRing.rotation.x = -Math.PI / 2;
   tellRing.position.set(cx, 0.05, cz);
+  tellRing.userData.spinPhase = Math.random() * Math.PI * 2;
   tellRing.layers.enable(BLOOM_LAYER);
   tellRing.renderOrder = 5;
   _scene.add(tellRing);
@@ -463,11 +512,12 @@ function _startElite() {
 function _tickElite(dt, t) {
   const es = _eliteState;
   if (!es) { _activeEvent = null; return; }
-  // Pulse telegraph ring
+  // Pulse + spin telegraph rune ring
   if (es.tellRing) {
     const pulse = 1 + Math.sin(t * 6) * 0.06;
-    es.tellRing.scale.set(pulse, 1, pulse);
+    es.tellRing.scale.set(pulse, pulse, pulse);
     es.tellRing.material.opacity = 0.7 + Math.abs(Math.sin(t * 4)) * 0.3;
+    es.tellRing.rotation.y = (es.tellRing.userData.spinPhase || 0) + t * 0.9;
   }
   // Check pack status
   const allDead = es.members.every(e => !e || !e.alive);

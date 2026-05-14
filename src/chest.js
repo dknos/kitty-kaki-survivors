@@ -11,6 +11,11 @@ import { showSlotMachine } from './ui.js';
 import { spawnKillRing, spawnMagnetSpark } from './fx.js';
 import { cloneCached } from './assets.js';
 import { BLOOM_LAYER } from './postfx.js';
+import { makeRuneRingTexture } from './enemyTells.js';
+import { tex } from './particleTextures.js';
+
+let _chestRuneTex = null;
+function _getChestRuneTex() { return _chestRuneTex || (_chestRuneTex = makeRuneRingTexture()); }
 
 const PICKUP_RADIUS_SQ = 4.0;   // 2 units
 const CHEST_Y = 0.5;
@@ -57,18 +62,40 @@ function _makeChestMesh() {
     g.add(body);
   }
 
-  // Spinning halo ring above (always present — visual identifier)
+  // Halo above the chest — textured rune disc (canonical magic ring art) +
+  // a twinkle billboard. The chest needs to ping the player's eye through
+  // a crowd; the layered halo replaces the old plain-torus identifier.
   const ring = new THREE.Mesh(
-    new THREE.TorusGeometry(1.0, 0.10, 6, 20),
-    new THREE.MeshBasicMaterial({ color: 0xffe14a, transparent: true, opacity: 0.9 }),
+    new THREE.PlaneGeometry(2.4, 2.4),
+    new THREE.MeshBasicMaterial({
+      map: _getChestRuneTex(),
+      color: 0xffe14a, transparent: true, opacity: 0.95,
+      depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    }),
   );
   ring.position.y = 2.2;
+  ring.rotation.order = 'YXZ';
   ring.quaternion.copy(_ringQuat);
+  ring.userData.spinPhase = Math.random() * Math.PI * 2;
   ring.layers.enable(BLOOM_LAYER);
   g.add(ring);
+  // Twinkle pip riding on top of the halo
+  const twinkle = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.9, 0.9),
+    new THREE.MeshBasicMaterial({
+      map: tex('twinkleGold'),
+      transparent: true, opacity: 0.95,
+      depthWrite: false, blending: THREE.AdditiveBlending,
+    }),
+  );
+  twinkle.position.y = 2.55;
+  twinkle.quaternion.copy(_ringQuat);
+  twinkle.layers.enable(BLOOM_LAYER);
+  g.add(twinkle);
 
   // Tag for the spin loop
   g.userData.ring = ring;
+  g.userData.twinkle = twinkle;
   return g;
 }
 
@@ -140,9 +167,15 @@ export function tickChests(dt) {
     if (!c.alive) continue;
     c.t += dt;
 
-    // Spin halo + gentle bob
+    // Spin halo + gentle bob. The rune ring uses YXZ Euler order so
+    // rotation.y is the world-up yaw (composes BEFORE the flat-X rotation).
     const ring = c.group.userData.ring;
-    if (ring) ring.rotateZ(dt * 2.5);
+    if (ring) ring.rotation.y = (ring.userData.spinPhase || 0) + c.t * 1.6;
+    const twinkle = c.group.userData.twinkle;
+    if (twinkle) {
+      twinkle.rotateZ(dt * 3.2);
+      twinkle.material.opacity = 0.7 + 0.3 * Math.abs(Math.sin(c.t * 5.5));
+    }
     c.group.position.y = Math.sin(c.t * 2.0) * 0.08;
 
     // Pickup check

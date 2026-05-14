@@ -4,37 +4,53 @@
  * Enemies caught in the ring are frozen for `freezeDur` seconds (spd 0) and
  * take +25% damage from all sources while frozen (see enemies.js damageEnemy).
  *
- * Visual: 3 staggered RingGeometry meshes on the ground using AdditiveBlending,
- * so the pulse reads as a layered bloom rather than a single flat disc.
+ * Visual: 3 staggered textured-plane rings (rune-texture art) on the ground
+ * using AdditiveBlending, each rotating with its own yaw drift so the pulse
+ * reads as a layered spell circle rather than a single flat disc.
  */
 import * as THREE from 'three';
 import { state } from '../state.js';
 import { damageEnemy, queryRadius } from '../enemies.js';
 import { BLOOM_LAYER } from '../postfx.js';
 import { sfx } from '../audio.js';
+import { makeRuneRingTexture } from '../enemyTells.js';
 
 // ── Shared geometry + material (cached across all rings) ─────────────────────
-// Unit-radius ring; scaled per-pulse to the desired world radius.
-const RING_GEO = new THREE.RingGeometry(0.85, 1.0, 48, 1);
-const RING_MAT = new THREE.MeshBasicMaterial({
-  color: 0xbbf0ff,
-  transparent: true,
-  opacity: 0.85,
-  depthWrite: false,
-  blending: THREE.AdditiveBlending,
-  side: THREE.DoubleSide,
-});
+// Textured plane (1u radius equivalent) — uses the canonical rune ring art
+// so each frost pulse reads as ice-mage glyph rather than a flat cyan donut.
+// Per-instance materials are cloned so each of the 3 staggered rings can
+// fade its own opacity and (subtly) drift its own yaw.
+const RING_GEO = new THREE.PlaneGeometry(2.0, 2.0);
+let _frostRuneTex = null;
+function _getFrostTex() { return _frostRuneTex || (_frostRuneTex = makeRuneRingTexture()); }
+function _makeFrostRingMat() {
+  return new THREE.MeshBasicMaterial({
+    map: _getFrostTex(),
+    color: 0xbbf0ff,
+    transparent: true,
+    opacity: 0.85,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+  });
+}
 
 const _flat = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
+const _axisY = new THREE.Vector3(0, 1, 0);
+const _quat = new THREE.Quaternion();
 const RING_COUNT = 3;            // 3-ring stagger so the aura pulses
 const RING_LIFE = 0.55;          // seconds each ring expands before fading
 const RING_STAGGER = 0.10;       // seconds between successive ring spawns
 
 function _makeRing() {
-  const m = new THREE.Mesh(RING_GEO, RING_MAT.clone());
+  const m = new THREE.Mesh(RING_GEO, _makeFrostRingMat());
   m.quaternion.copy(_flat);
   m.position.y = 0.06;
   m.visible = false;
+  // Each ring carries its own yaw offset so the textured rune ticks don't
+  // all align — kills the "lockstep" feel of using a single rune tex on
+  // multiple stacked rings.
+  m.userData.yawBase = Math.random() * Math.PI * 2;
   // The ring glow itself goes on the bloom layer for the dreamy frost halo.
   m.layers.enable(BLOOM_LAYER);
   return m;
@@ -110,6 +126,8 @@ export default {
     }
 
     // Advance rings. Each ring expands from 0 → maxR over RING_LIFE.
+    // Re-orient each ring with a unique yaw + slow counter-spin so the rune
+    // ticks visibly rotate (sells "spell circle inscribing itself").
     for (const r of inst.rings) {
       if (r.age < 0) { r.age += dt; r.mesh.visible = false; continue; }
       if (r.age > RING_LIFE) { r.mesh.visible = false; continue; }
@@ -118,6 +136,11 @@ export default {
       const scale = (r.maxR || radius) * (0.1 + 0.9 * t);
       r.mesh.position.set(r.x, 0.06, r.z);
       r.mesh.scale.set(scale, scale, scale);
+      // Compose flat orientation with a per-ring yaw drift so the textured
+      // ticks don't lockstep visually.
+      const yaw = (r.mesh.userData.yawBase || 0) + now * 0.8 + (r.delay * 6);
+      _quat.setFromAxisAngle(_axisY, yaw);
+      r.mesh.quaternion.multiplyQuaternions(_quat, _flat);
       r.mesh.material.opacity = 0.85 * (1 - t);
       r.mesh.visible = true;
     }

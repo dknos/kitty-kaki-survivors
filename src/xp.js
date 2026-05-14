@@ -11,6 +11,8 @@ import { weaponChoices, acquireWeapon, applyFiller, applyEvolution } from './wea
 import { shopLevel } from './meta.js';
 import { showLevelUpModal, hideLevelUpModal, flashLevelUp } from './ui.js';
 import { spawnMagnetSpark } from './fx.js';
+import { tex } from './particleTextures.js';
+import { BLOOM_LAYER } from './postfx.js';
 
 const GEM_CAPACITY = 500;
 const PICKUP_DIST = 0.5;
@@ -23,14 +25,23 @@ const _quat = new THREE.Quaternion();
 const _scaleOne = new THREE.Vector3(1, 1, 1);
 const _scaleZero = new THREE.Vector3(0, 0, 0);
 const _toHero = new THREE.Vector3();
+const _sparkleFlat = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
+const _sparkleScale = new THREE.Vector3();
 
 let _matrixDirty = false;
+// Separate dirty flag for the sparkle billboard layer (capped at gem capacity
+// so it pairs 1:1 with each gem slot).
+let _sparkleDirty = false;
+let _sparkleInst = null;
+const _sparkleColor = new THREE.Color();
 
 /** Write a hidden (scale-0) matrix at slot i. */
 function _hideInstance(i) {
   _mat.compose(_pos.set(0, -1000, 0), _quat.identity(), _scaleZero);
   state.gems.instMesh.setMatrixAt(i, _mat);
+  if (_sparkleInst) _sparkleInst.setMatrixAt(i, _mat);
   _matrixDirty = true;
+  _sparkleDirty = true;
 }
 
 /** Write a visible matrix at slot i for given world pos + value-based scale. */
@@ -40,6 +51,17 @@ function _placeInstance(i, pos, value = 1) {
   _mat.compose(pos, _quat.identity(), new THREE.Vector3(s, s, s));
   state.gems.instMesh.setMatrixAt(i, _mat);
   _matrixDirty = true;
+  // Sparkle layer rides slightly above the gem and pulses on a sine wave.
+  // Pulse is keyed off (pos.x + pos.z) so adjacent gems don't lockstep.
+  if (_sparkleInst) {
+    const phase = pos.x * 0.7 + pos.z * 1.3;
+    const pulse = 1.6 + 0.4 * Math.sin(state.time.game * 6 + phase);
+    _sparkleScale.set(pulse * s, pulse * s, pulse * s);
+    _pos.set(pos.x, pos.y + 0.15, pos.z);
+    _mat.compose(_pos, _sparkleFlat, _sparkleScale);
+    _sparkleInst.setMatrixAt(i, _mat);
+    _sparkleDirty = true;
+  }
 }
 
 // Per-value color + scale tier. value 1 = normal cyan, 5 = magenta elite, 25 = gold boss.
@@ -79,6 +101,34 @@ export function initXP(scene) {
   state.gems.list.length = 0;
   state.gems.nextSlot = 0;
   scene.add(inst);
+
+  // ── Sparkle billboard layer ──
+  // One twinkle plane per gem slot, painted flat. Adds a per-frame pulse
+  // overlay so the gem field reads as "shimmering treasure" instead of
+  // "100 static blue cubes". Still one draw call (InstancedMesh).
+  const sparkleGeo = new THREE.PlaneGeometry(0.55, 0.55);
+  const sparkleMat = new THREE.MeshBasicMaterial({
+    map: tex('twinkle'),
+    color: 0xffffff,
+    transparent: true,
+    opacity: 0.85,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  _sparkleInst = new THREE.InstancedMesh(sparkleGeo, sparkleMat, GEM_CAPACITY);
+  _sparkleInst.count = GEM_CAPACITY;
+  _sparkleInst.frustumCulled = false;
+  _sparkleInst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  _sparkleInst.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(GEM_CAPACITY * 3), 3);
+  _sparkleInst.instanceColor.setUsage(THREE.DynamicDrawUsage);
+  for (let i = 0; i < GEM_CAPACITY; i++) {
+    _sparkleInst.setMatrixAt(i, _mat); // already hidden
+    _sparkleInst.setColorAt(i, _gemColor.setHex(0x44ffcc));
+  }
+  _sparkleInst.instanceMatrix.needsUpdate = true;
+  _sparkleInst.instanceColor.needsUpdate = true;
+  _sparkleInst.layers.enable(BLOOM_LAYER);
+  scene.add(_sparkleInst);
 }
 
 export function dropGem(pos, value = 1) {
@@ -120,6 +170,12 @@ export function dropGem(pos, value = 1) {
   const tier = _gemTier(list[slot].value);
   inst.setColorAt(slot, _gemColor.setHex(tier.color));
   if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
+  // Mirror the gem tier color onto the sparkle layer so the twinkle matches
+  // (cyan gems sparkle cyan, magenta sparkles magenta, jackpot sparkles gold).
+  if (_sparkleInst && _sparkleInst.instanceColor) {
+    _sparkleInst.setColorAt(slot, _sparkleColor.setHex(tier.color));
+    _sparkleInst.instanceColor.needsUpdate = true;
+  }
   _placeInstance(slot, list[slot].pos, list[slot].value);
 }
 
@@ -200,6 +256,18 @@ export function updateGems(dt) {
 
     if (moved) {
       _placeInstance(i, g.pos, g.value);
+    } else if (_sparkleInst) {
+      // Idle gem: still repaint sparkle each frame so the twinkle pulses.
+      // Cheaper than rewriting the gem matrix because we only touch the
+      // sparkle billboard layer.
+      const tier = _gemTier(g.value);
+      const phase = g.pos.x * 0.7 + g.pos.z * 1.3;
+      const pulse = 1.6 + 0.4 * Math.sin(state.time.game * 6 + phase);
+      _sparkleScale.set(pulse * tier.scale, pulse * tier.scale, pulse * tier.scale);
+      _pos.set(g.pos.x, g.pos.y + 0.15, g.pos.z);
+      _mat.compose(_pos, _sparkleFlat, _sparkleScale);
+      _sparkleInst.setMatrixAt(i, _mat);
+      _sparkleDirty = true;
     }
   }
 
@@ -243,6 +311,10 @@ export function updateGems(dt) {
   if (_matrixDirty) {
     inst.instanceMatrix.needsUpdate = true;
     _matrixDirty = false;
+  }
+  if (_sparkleDirty && _sparkleInst) {
+    _sparkleInst.instanceMatrix.needsUpdate = true;
+    _sparkleDirty = false;
   }
 }
 
