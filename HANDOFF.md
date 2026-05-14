@@ -4,6 +4,31 @@
 
 ---
 
+## Iter 14 (2026-05-14, this session) — Dungeon & Environment Pro-Quality Pass
+
+**User feedback** (verbatim): *"the dungeons are basic looking too, cant we use high quality assets, theres tons of them online and we've used them before, research and build out the dungeons with real assets... go deep, max effort, max agents"*
+
+Shipped commits (in order):
+- `5f16812` — `DUNGEON_OVERHAUL.md` plan
+- `6a0d4dc` — Asset acquisition: 20 CC0 GLBs (Quaternius town + Lousberg dungeon + ruins + torches), 2.8 MB total, sorted under `assets/kits/{town,dungeon,ruins,torches}/`. `scripts/fetch-kits.sh` is idempotent and re-runnable. `assets/ASSETS_MANIFEST.md` catalogs sources + licenses.
+- `3d576ea` — `src/env.js` forest: real Quaternius kingdom-district buildings replace `_makeBuilding` BoxGeometry placeholders. Per-stage lighting added to `applyStageTint` (twilight cool dusk, cinder hot orange, void crypt-violet).
+- `8abe231` — `src/catacomb.js`: real Lousberg pillars/coffins/crypt/bones/arch. Walls + floor pick up PBR stone material (brown_mud retinted). Quaternius wall-torch GLB with ember-cone + flicker.
+- `eb4da4e` — `src/arenaDecor.js`: 18 Lousberg gravestones in twilight, basalt-black cinder rocks + 10 charred stumps, real-GLB cardinal pillars + 14 grounded bones in catacomb/void.
+- `327826d` — `src/town.js`: Quaternius Fantasy House (`kit_house`) cabin + Castle Gate (`kit_gate`) adventure gate, portal disc + audio cue preserved.
+
+**Hands-off**: AoE FX agent (`a9a5d4d7489b52f96`) was editing `bossTelegraphs.js / fx.js / miniEvents.js / particleTextures.js / stageHazards.js / weapons/frostbloom.js / weapons/sigilbell.js / FX_AUDIT_V2.md` simultaneously. None of those files were touched in this iter. All my commits used explicit `git add <path>` to keep their work-in-progress dirty.
+
+**Punted to iter 15**:
+- `src/interior.js` cabin interior primitives (out of scope — interior is iso-only and reads fine at that camera; user feedback was the dungeon/forest, not the room).
+- Atmospheric per-stage particles (pollen / wisps / embers / ghost sparkles). Spec is in `DUNGEON_OVERHAUL.md` — depends on the AoE agent's `particleTextures.js` changes landing first so we don't merge-conflict.
+- ASSETS.md is now superseded by `assets/ASSETS_MANIFEST.md` but not deleted — manifest covers iter-14 assets only; ASSETS.md has the original Poly Pizza pickup props.
+
+**Credits**: all 20 new GLBs are CC0 (Quaternius + Kay Lousberg). No `ui.js` credit-modal merge needed.
+
+**Live URL**: rebuild after push, hard-refresh https://dknos.github.io/kitty-kaki-survivors/. Forest stage should now show real medieval buildings; press E on the catacomb stairs → real Lousberg dungeon chamber. Stages should feel distinct (gravestones in twilight, basalt rocks + char-stumps in cinder, ossuary bones in void).
+
+---
+
 ## Project at a glance
 
 - **Repo:** `dknos/kitty-kaki-survivors` (GitHub Pages from `main` branch root)
