@@ -307,8 +307,7 @@ async function boot() {
     } else if (state.modes && state.modes.daily) {
       showBanner('★ DAILY CHALLENGE ★', 3.0, '#c87bff');
     }
-    // First-run guided tutorial (6 stages). No-op if meta.tutorialDone.
-    initTutorial();
+    // Tutorial disabled by user request — how-to-play.html covers new players.
   };
   setGateHandler(start);
   setInteractionHandler('house', () => enterInterior());
@@ -1090,7 +1089,6 @@ function frame(now) {
   tickCatacombEntrance(logicDt);
   updateBlobShadows();
   updateDamageNumbers(realDt);
-  tickTutorial(state, logicDt);
 
   // FX decay (real time so feedback fades even during hit-stop)
   state.fx.chromaticPulse *= Math.pow(0.05, realDt);
