@@ -298,6 +298,12 @@ export function preloadAll() {
     ['burger_evo', 'assets/food/Double Cheeseburger.glb'],
     // XP gem mesh (iter 33b) — Quaternius cheese block, CC0 from Poly Pizza.
     ['cheese',     'assets/food/cheese.glb'],
+    // Casino visuals (iter 33f) — CC-BY 3.0 from Poly Pizza (Poly by Google).
+    // casino_building: 1930s neon-sign casino used to replace the procedural
+    // Seedy Tent. dice + poker_chip: scatter bling around the entrance.
+    ['casino_building', 'assets/casino/casino_building.glb'],
+    ['casino_chip',     'assets/casino/poker_chip.glb'],
+    ['casino_dice',     'assets/casino/dice.glb'],
     // ── Iter 14 kits — CC0 from Poly Pizza CDN. See assets/ASSETS_MANIFEST.md.
     // Forest-district buildings (Quaternius, CC0).
     ['kit_house',     'assets/kits/town/fantasy_house.glb'],

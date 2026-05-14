@@ -374,17 +374,34 @@ function _makeBrazier() {
 // 8-color bible (deep red 0x7a1a1a, stake brown 0x6a4a30, lantern 0xff3a3a).
 function _makeSeedyTent() {
   const g = new THREE.Group();
-  // Tent body — cone with the apex slightly tilted forward so it doesn't read
-  // as a perfect circus tent. ConeGeometry(radius, height, segments).
-  const tent = new THREE.Mesh(
-    new THREE.ConeGeometry(1.7, 2.6, 12, 1, true),
-    new THREE.MeshStandardMaterial({
-      color: 0x7a1a1a, roughness: 0.92, metalness: 0.0, side: THREE.DoubleSide,
-    }),
-  );
-  tent.position.y = 1.3;
-  tent.castShadow = true; tent.receiveShadow = true;
-  g.add(tent);
+  // Iter 33f — Casino is the Poly by Google "Casino" CC-BY GLB (1930s neon
+  // sign building on a road circle). Procedural cone tent stays as fallback
+  // for the case where the GLB hasn't preloaded yet (or fails to fetch).
+  const cas = cloneCached('casino_building');
+  const usedGlb = !!cas;
+  if (cas) {
+    cas.scale.setScalar(0.018);      // source bbox ~176 units; pull to ~3.2 across
+    cas.rotation.y = Math.PI;        // face the camera/hero spawn
+    cas.position.y = 0.05;
+    cas.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    g.add(cas);
+    // Scatter poker chips at the entrance as bling. Cheap CC-BY low-poly,
+    // 284 tris each, so 4 of them barely move the draw budget.
+    for (let i = 0; i < 4; i++) {
+      const chip = cloneCached('casino_chip');
+      if (!chip) break;
+      chip.scale.setScalar(6);
+      chip.position.set(
+        -0.6 + i * 0.4 + (Math.random() - 0.5) * 0.2,
+        0.06 + i * 0.02,
+        1.4 - (i % 2) * 0.15,
+      );
+      chip.rotation.x = -Math.PI / 2;
+      chip.rotation.z = (i / 4) * Math.PI * 2;
+      g.add(chip);
+    }
+  }
+  if (!usedGlb) {
   // Vertical fabric seams — 4 thin darker stripes around the cone for
   // line-weight texture (matches the canopy/stripe pattern shop stall uses).
   for (let i = 0; i < 4; i++) {
@@ -437,7 +454,9 @@ function _makeSeedyTent() {
   );
   knob.position.set(0.18, 0.25, 1.71);
   g.add(knob);
+  }   // end procedural-fallback block (iter 33f)
   // Hanging lantern on a tiny mast off the apex — additive disc + point light.
+  // Kept unconditional so the casino has a red night-glow either way.
   const lantern = new THREE.Mesh(
     new THREE.CircleGeometry(0.22, 12),
     new THREE.MeshBasicMaterial({

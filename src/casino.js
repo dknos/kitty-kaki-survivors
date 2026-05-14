@@ -341,7 +341,7 @@ export function settleParlay(seed, payout) {
 // PERMANENT BUFFS — account-level, multi-level. Stored on
 // meta.casinoPerm[id] = level (int, 0..max). Costs scale linearly per level
 // (cost * (level+1)) so the second/third pick of any node is steeper.
-export const PERM_BUFFS = [
+export const CASINO_PERM_BUFFS = [
   { id: 'rigged_dice',  name: 'Rigged Dice',  desc: '+1 starting reroll per level (max 3)',     icon: '🎲', cost: 60,  max: 3 },
   { id: 'extra_choice', name: 'Extra Choice', desc: '+1 weapon option on level-up (max 2)',     icon: '➕', cost: 90,  max: 2 },
   { id: 'lucky_chest',  name: 'Lucky Charm',  desc: '+15% chest tier-up chance per level (max 3)', icon: '🍀', cost: 40, max: 3 },
@@ -351,7 +351,7 @@ export const PERM_BUFFS = [
 // TEMPORARY (RUN-SCOPED) BUFFS — bought now, queued for the next run via
 // meta.casinoRunQueued (array of buff ids). Consumed on run start; refilling
 // the queue is fine, each entry fires once.
-export const RUN_BUFFS = [
+export const CASINO_RUN_BUFFS = [
   { id: 'catnip_rush',  name: 'Catnip Rush',     desc: '+50% XP for the first 5 min next run', icon: '🌿', cost: 20 },
   { id: 'free_rerolls', name: 'Free Rerolls',    desc: '+3 rerolls next run',                  icon: '🔄', cost: 15 },
   { id: 'high_roller',  name: 'High Roller',     desc: '2× gold drops, +20% damage taken',      icon: '🎩', cost: 25 },
@@ -359,7 +359,7 @@ export const RUN_BUFFS = [
 ];
 
 // HOUSE UPGRADES — flat unlocks stored on meta.casinoHouse[id] = true.
-export const HOUSE_UPGRADES = [
+export const CASINO_HOUSE_UPGRADES = [
   { id: 'vip_multipliers', name: 'VIP Lounge', desc: 'Unlock 5× and 10× bet sizes',        icon: '👑', cost: 250 },
   { id: 'vault_decor',     name: 'The Vault',  desc: 'Decor: a Sigil hoard that grows with lifetime winnings', icon: '💰', cost: 500 },
 ];
@@ -372,7 +372,7 @@ export function permLevel(id) {
 
 /** Buy one level of a permanent buff. Returns true on success. */
 export function buyPerm(id) {
-  const def = PERM_BUFFS.find(b => b.id === id);
+  const def = CASINO_PERM_BUFFS.find(b => b.id === id);
   if (!def) return false;
   const m = getMeta();
   const lvl = permLevel(id);
@@ -388,7 +388,7 @@ export function buyPerm(id) {
 
 /** Queue a run-scoped buff for the next run. Returns true on success. */
 export function buyRunBuff(id) {
-  const def = RUN_BUFFS.find(b => b.id === id);
+  const def = CASINO_RUN_BUFFS.find(b => b.id === id);
   if (!def) return false;
   const m = getMeta();
   if ((m.sigils || 0) < def.cost) return false;
@@ -407,7 +407,7 @@ export function houseOwned(id) {
 
 /** Buy a house upgrade. Returns true on success. */
 export function buyHouse(id) {
-  const def = HOUSE_UPGRADES.find(b => b.id === id);
+  const def = CASINO_HOUSE_UPGRADES.find(b => b.id === id);
   if (!def) return false;
   const m = getMeta();
   if (houseOwned(id)) return false;

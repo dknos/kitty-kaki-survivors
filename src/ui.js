@@ -60,7 +60,7 @@ const F = {
 // ── Build version ────────────────────────────────────────────────────────────
 // Flipped to '1.0.0' on the iter-11 ship commit (Shop Tree Live Wires —
 // the broken-tier-1-3-consumers gap was the last v1.0 blocker).
-export const KK_VERSION = '1.4.19';
+export const KK_VERSION = '1.4.20';
 
 // ── Module-local DOM refs ────────────────────────────────────────────────────
 let _root = null;
@@ -3056,7 +3056,7 @@ function _buildBuffsTab() {
   const wrap = document.createElement('div');
   wrap.style.cssText = 'display:flex; flex-direction:column; gap:14px;';
   // Lazy-import catalogs each render so the data is always fresh
-  import('./casino.js').then(({ PERM_BUFFS, RUN_BUFFS, permLevel, buyPerm, buyRunBuff }) => {
+  import('./casino.js').then(({ CASINO_PERM_BUFFS, CASINO_RUN_BUFFS, permLevel, buyPerm, buyRunBuff }) => {
     wrap.innerHTML = '';
     const sec = (title, color) => {
       const h = document.createElement('div');
@@ -3065,7 +3065,7 @@ function _buildBuffsTab() {
       return h;
     };
     wrap.appendChild(sec('PERMANENT — Spent Sigils, kept forever', '#ffd27f'));
-    for (const def of PERM_BUFFS) {
+    for (const def of CASINO_PERM_BUFFS) {
       const lvl = permLevel(def.id);
       const cost = def.cost * (lvl + 1);
       wrap.appendChild(_buffRow(def, `${def.desc}`, `Lv ${lvl}/${def.max}`, cost, lvl >= def.max, () => {
@@ -3073,7 +3073,7 @@ function _buildBuffsTab() {
       }));
     }
     wrap.appendChild(sec('TEMPORARY — One-shot, applied next run', '#c9a4ff'));
-    for (const def of RUN_BUFFS) {
+    for (const def of CASINO_RUN_BUFFS) {
       wrap.appendChild(_buffRow(def, def.desc, 'Queues', def.cost, false, () => {
         if (buyRunBuff(def.id)) { try { sfx.uiClick(); } catch (_) {} renderBuffs(); }
       }));
@@ -3119,13 +3119,13 @@ function _buffRow(def, descText, levelText, cost, maxed, onBuy) {
 function _buildHouseTab() {
   const wrap = document.createElement('div');
   wrap.style.cssText = 'display:flex; flex-direction:column; gap:14px;';
-  import('./casino.js').then(({ HOUSE_UPGRADES, houseOwned, buyHouse }) => {
+  import('./casino.js').then(({ CASINO_HOUSE_UPGRADES, houseOwned, buyHouse }) => {
     wrap.innerHTML = '';
     const h = document.createElement('div');
     h.style.cssText = `font-family:${F.display}; letter-spacing:0.32em; color:#ffd27f; font-size:calc(var(--kk-font-scale,1) * 13px); margin:6px 0 4px;`;
     h.textContent = 'HOUSE — One-time unlocks';
     wrap.appendChild(h);
-    for (const def of HOUSE_UPGRADES) {
+    for (const def of CASINO_HOUSE_UPGRADES) {
       const owned = houseOwned(def.id);
       wrap.appendChild(_buffRow(def, def.desc, owned ? 'OWNED' : 'Not owned', def.cost, owned, () => {
         if (buyHouse(def.id)) { try { sfx.uiClick(); } catch (_) {} _closeCasino(); showCasinoMenu(); }
