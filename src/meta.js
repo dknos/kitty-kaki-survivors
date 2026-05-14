@@ -146,6 +146,17 @@ const DEFAULT = {
   sigils: 0,
   shopTree: {},
   presets: [],
+  // ── Iter 22A — cozy home decoration ──
+  // homeUnlocks: { itemId: timestamp } — mirrors meta.achievements shape so it
+  // round-trips through JSON.stringify cleanly (Sets would serialize to {}).
+  // Three items (rug, plant, lamp) are default-unlocked in HOME_CATALOG so
+  // first-time players can decorate immediately; the rest tie to existing
+  // achievement / mode-unlock flags via HOME_CATALOG[item].unlockCheck.
+  // homePlacements: array of {id, itemId, gridX, gridZ, rotY, wallSlot?,
+  // wallSide?} — capped at 30 inside src/homeDecor.js#placeItem to keep the
+  // room render budget sane.
+  homeUnlocks: {},
+  homePlacements: [],
 };
 
 // ── Affix relics (final boss loot) ───────────────────────────────────────────
@@ -1248,4 +1259,43 @@ export function isCharacterUnlocked(char, meta) {
     return !!m[key];
   }
   return !!(m.achievements && m.achievements[u]);
+}
+
+// ── Iter 22A — home decor helpers ───────────────────────────────────────────
+// Stay light: persistence shape lives in DEFAULT; the actual catalog +
+// placement rules live in src/homeDecor.js. These helpers just give callers a
+// clean read/write API without sprinkling getMeta()/saveMeta() everywhere.
+
+/** True if a home-decor item id has been unlocked in this save. */
+export function isHomeItemUnlocked(itemId) {
+  const meta = getMeta();
+  return !!(meta.homeUnlocks && meta.homeUnlocks[itemId]);
+}
+
+/**
+ * Mark a home-decor item as newly unlocked. Returns true if this was a fresh
+ * unlock (so the caller can fire the +Unlocked toast), false if already owned.
+ */
+export function unlockHomeItem(itemId) {
+  if (!itemId) return false;
+  const meta = getMeta();
+  if (!meta.homeUnlocks) meta.homeUnlocks = {};
+  if (meta.homeUnlocks[itemId]) return false;
+  meta.homeUnlocks[itemId] = Date.now();
+  saveMeta();
+  return true;
+}
+
+/** Current placements (defensive copy — callers may sort/filter freely). */
+export function listHomePlacements() {
+  const meta = getMeta();
+  if (!Array.isArray(meta.homePlacements)) meta.homePlacements = [];
+  return meta.homePlacements.map(p => ({ ...p }));
+}
+
+/** Replace the placements array wholesale. Used by homeDecor.js commit path. */
+export function setHomePlacements(arr) {
+  const meta = getMeta();
+  meta.homePlacements = Array.isArray(arr) ? arr.slice() : [];
+  saveMeta();
 }

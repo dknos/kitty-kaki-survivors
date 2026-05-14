@@ -17,6 +17,12 @@ import { getMeta } from './meta.js';
 import { bindPrompt, setPromptLabel } from './buttonPrompts.js';
 import { BLOOM_LAYER } from './postfx.js';
 import { makeRuneRingTexture } from './enemyTells.js';
+import {
+  initHomeDecor, rebuildPlacements, syncHomeUnlocks,
+  openDecorateMode, isDecorateActive, tickHomeDecor,
+  HOME_CATALOG,
+} from './homeDecor.js';
+import { sfx } from './audio.js';
 
 // Shared rune texture for interior FX (furnace ring). Lazy-cached.
 let _runeTex = null;
@@ -31,6 +37,7 @@ const DOOR_W = 2.4;
 let _group = null;
 let _promptEl = null;
 let _promptBinding = null;
+let _decoratePromptEl = null;    // ambient "H Decorate" hint when no fixture is nearby
 let _activeKey = null;
 const _handlers = {};
 const _interactables = [
@@ -47,7 +54,10 @@ function _matStandard(color, roughness = 0.85, metalness = 0.0) {
 }
 
 function _makeFloor() {
-  // Wide plank-stripe pattern via three thinner planes overlaid
+  // Wide wooden plank floor — base mesh + 9 visible plank seams running along
+  // the x-axis (the long room dimension). Iter 22A bumped seam count from
+  // 3→9 and added a subtle plank-tone variation so the floor reads as wood
+  // even before the player drops a rug on it.
   const g = new THREE.Group();
   const base = new THREE.Mesh(
     new THREE.PlaneGeometry(ROOM_W, ROOM_D),
@@ -57,17 +67,74 @@ function _makeFloor() {
   base.position.y = 0;
   base.receiveShadow = true;
   g.add(base);
-  // Dark plank seams (4 thin strips along x)
-  for (let i = -1; i <= 1; i++) {
+  // Plank seams — 9 strips, evenly spaced. Use AdditiveBlending: false on
+  // these because we want them to darken the wood, not glow over it.
+  const seamCount = 9;
+  for (let i = 1; i < seamCount; i++) {
+    const zPos = -ROOM_D / 2 + (i / seamCount) * ROOM_D;
     const seam = new THREE.Mesh(
-      new THREE.PlaneGeometry(ROOM_W, 0.05),
-      new THREE.MeshBasicMaterial({ color: 0x6a4830, transparent: true, opacity: 0.55 }),
+      new THREE.PlaneGeometry(ROOM_W, 0.04),
+      new THREE.MeshBasicMaterial({ color: 0x5a3a22, transparent: true, opacity: 0.55 }),
     );
     seam.rotation.x = -Math.PI / 2;
-    seam.position.y = 0.005;
-    seam.position.z = (i / 2) * ROOM_D;
+    seam.position.y = 0.006;
+    seam.position.z = zPos;
     g.add(seam);
   }
+  // Faint plank-tone variation — three darker strips at irregular intervals
+  // to break up the uniform color and read as separate planks.
+  for (const [zN, alpha] of [[-0.35, 0.16], [0.05, 0.12], [0.42, 0.18]]) {
+    const tone = new THREE.Mesh(
+      new THREE.PlaneGeometry(ROOM_W, ROOM_D / seamCount),
+      new THREE.MeshBasicMaterial({ color: 0x8a5a32, transparent: true, opacity: alpha }),
+    );
+    tone.rotation.x = -Math.PI / 2;
+    tone.position.y = 0.004;
+    tone.position.z = zN * ROOM_D;
+    g.add(tone);
+  }
+  // Baseboard trim along all four walls — 0.16u tall, dark wood. Sells the
+  // "this is a finished room, not a void" cue.
+  const trimMat = _matStandard(0x3a2a1a, 0.85);
+  const trimH = 0.18;
+  const tNorth = new THREE.Mesh(new THREE.BoxGeometry(ROOM_W, trimH, 0.12), trimMat);
+  tNorth.position.set(0, trimH / 2, -ROOM_D / 2 + 0.18);
+  g.add(tNorth);
+  const tSouth = new THREE.Mesh(new THREE.BoxGeometry(ROOM_W, trimH, 0.12), trimMat);
+  tSouth.position.set(0, trimH / 2,  ROOM_D / 2 - 0.18);
+  g.add(tSouth);
+  const tEast = new THREE.Mesh(new THREE.BoxGeometry(0.12, trimH, ROOM_D), trimMat);
+  tEast.position.set(ROOM_W / 2 - 0.18, trimH / 2, 0);
+  g.add(tEast);
+  const tWest = new THREE.Mesh(new THREE.BoxGeometry(0.12, trimH, ROOM_D), trimMat);
+  tWest.position.set(-ROOM_W / 2 + 0.18, trimH / 2, 0);
+  g.add(tWest);
+  return g;
+}
+
+function _makeWindowShaft() {
+  // Subtle cool-blue beam from a south-wall "window" — adds a second light
+  // direction so the warm fill from the ceiling lamp reads as warm. Pure
+  // visual cue (no geometry for the window itself; the front wall obscures
+  // it from the iso angle, but the shaft of light is what sells "afternoon
+  // light through the curtain").
+  const g = new THREE.Group();
+  // A wide, soft, low-intensity plane angled to the floor
+  const beamGeo = new THREE.PlaneGeometry(2.6, 4.5);
+  const beam = new THREE.Mesh(
+    beamGeo,
+    new THREE.MeshBasicMaterial({
+      color: 0xa8c4e8, transparent: true, opacity: 0.10,
+      depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    }),
+  );
+  beam.rotation.x = -Math.PI / 2.4;
+  beam.position.set(2.5, 1.5, 3.0);
+  g.add(beam);
+  // Window light source itself
+  const winLight = new THREE.PointLight(0xa8c4e8, 0.6, 10, 2);
+  winLight.position.set(2.5, 2.4, 4.6);
+  g.add(winLight);
   return g;
 }
 
@@ -450,6 +517,9 @@ export function buildInterior(scene) {
   g.add(computer);
   g.userData._computer = computer;
 
+  // Window-shaft cool light from the south wall — iter 22A cozy upgrade.
+  g.add(_makeWindowShaft());
+
   // ── Ambient lighting (warm interior fill) ──
   const fill = new THREE.PointLight(0xffd4a0, 0.55, 22, 2);
   fill.position.set(0, 3.6, 0);
@@ -458,12 +528,25 @@ export function buildInterior(scene) {
   const kicker = new THREE.PointLight(0x9bb6e8, 0.35, 14, 2);
   kicker.position.set(-ROOM_W / 2 + 1, 3.0, -ROOM_D / 2 + 1);
   g.add(kicker);
+  // Hearth-side warm corner light — iter 22A. Anchors the SW corner where
+  // the fireplace already sits, so the eye reads "fire warms the room" even
+  // when the player isn't standing next to the hearth.
+  const hearthWarm = new THREE.PointLight(0xffae6a, 0.4, 10, 2);
+  hearthWarm.position.set(-ROOM_W / 2 + 1.5, 2.0, 2.5);
+  g.add(hearthWarm);
 
   // Hide initially — only visible when state.mode === 'interior'
   // Stash far below world; toggling .visible alone leaves lights affecting other modes.
   g.position.y = -200;
   scene.add(g);
   _group = g;
+
+  // ── Iter 22A: cozy-home decor layer ──
+  // initHomeDecor attaches a sibling group inside `g` that holds every
+  // player-placed item. rebuildPlacements is called on every enter so the
+  // room re-reads meta.homePlacements (so a fresh achievement-unlock seen
+  // in town immediately materializes the next time the player walks in).
+  initHomeDecor(g);
 
   // ── DOM prompt ──
   if (!_promptEl) {
@@ -483,15 +566,73 @@ export function buildInterior(scene) {
     _promptBinding = bindPrompt(_promptEl, 'interact', '');
     window.addEventListener('keydown', _onKeyDown);
   }
+  // Iter 22A — ambient "H · Decorate" hint pinned to the bottom-right so it
+  // doesn't fight with the centered interactable prompt. Always visible
+  // while inside, dimmed when no decorate-eligible state, hidden during
+  // decorate mode (overlay covers its own UI).
+  if (!_decoratePromptEl) {
+    _decoratePromptEl = document.createElement('div');
+    _decoratePromptEl.id = 'kk-interior-decorate-hint';
+    _decoratePromptEl.style.cssText = `
+      position: fixed; bottom: 14%; right: 24px;
+      padding: 8px 16px; pointer-events: none; z-index: 89;
+      background: linear-gradient(180deg, rgba(20,28,22,0.86), rgba(8,14,12,0.92));
+      border: 1px solid rgba(255,232,188,0.18); border-radius: 8px;
+      color: #f5efe1; font: 500 13px 'Inter', system-ui, sans-serif;
+      letter-spacing: 0.16em; text-transform: uppercase;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.55);
+      display: none;
+    `;
+    _decoratePromptEl.innerHTML = '<b style="color:#ffd27f;">H</b> · Decorate';
+    document.body.appendChild(_decoratePromptEl);
+  }
   return g;
 }
 
 function _onKeyDown(e) {
   if (state.mode !== 'interior') return;
+  // Iter 22A — H opens the decorate overlay. We intercept BEFORE the
+  // interact-key check so the player can hit H whether or not they're
+  // standing on an interactable. homeDecor.js handles its own ESC/H exit.
+  if (e.code === 'KeyH' && !isDecorateActive()) {
+    e.preventDefault();
+    openDecorateMode();
+    return;
+  }
+  // While decorate mode is open, the regular interactable keybind is dead.
+  if (isDecorateActive()) return;
   if (e.code !== 'KeyE' && e.code !== 'Enter') return;
   if (!_activeKey) return;
   if (_activeKey === 'exit') { _handlers.exit && _handlers.exit(); return; }
   if (_handlers[_activeKey]) _handlers[_activeKey]();
+}
+
+// ── Iter 22A — one-shot unlock toast for newly-granted home items ──────────
+// Mirrors the _kkShowMicroToast cadence in ui.js (1.4s top-center pulse) so
+// the player gets the same "achievement-style" cue without us coupling to
+// ui.js (which is in our scope but kept thin per the brief).
+function _showHomeUnlockToast(itemDef) {
+  const toast = document.createElement('div');
+  const flavor = itemDef.flavor ? ` — ${itemDef.flavor}` : '';
+  toast.textContent = `🎁 Unlocked: ${itemDef.name}${flavor}`;
+  toast.style.cssText = `
+    position: fixed; left: 50%; top: 16%;
+    transform: translateX(-50%);
+    padding: 10px 22px;
+    background: linear-gradient(180deg, rgba(28,36,30,0.96), rgba(14,20,16,0.98));
+    border: 1px solid #ffd27f;
+    border-radius: 8px;
+    color: #ffd27f;
+    font: 600 14px 'Inter', system-ui, sans-serif;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    text-shadow: 0 0 6px rgba(255,210,127,0.45);
+    box-shadow: 0 8px 22px rgba(0,0,0,0.55), 0 0 18px rgba(255,210,127,0.28);
+    pointer-events: none;
+    z-index: 250;
+    animation: kk-fade-in 0.22s ease-out;
+  `;
+  document.body.appendChild(toast);
+  setTimeout(() => { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 2400);
 }
 
 export function setInteriorHandler(key, fn) { _handlers[key] = fn; }
@@ -511,6 +652,22 @@ export function enterInterior() {
     _group.add(computer);
     _group.userData._computer = computer;
   }
+  // Iter 22A — sync home-item unlocks (any new achievements since last visit
+  // immediately grant their tied item), then re-instantiate every persisted
+  // placement so the room reflects the saved state. Newly-unlocked items
+  // toast one at a time with a 400ms stagger so a back-to-back unlock spree
+  // (first-run player popping multiple achievements on the same return)
+  // reads as a celebration, not a wall of text.
+  try {
+    const granted = syncHomeUnlocks();
+    granted.forEach((def, i) => {
+      setTimeout(() => {
+        try { sfx.modalOpen(); } catch (_) {}
+        _showHomeUnlockToast(def);
+      }, 400 * (i + 1));
+    });
+    rebuildPlacements();
+  } catch (e) { /* never block enter on decor errors */ }
   // Spawn at the door (south end of the room)
   state.hero.pos.set(0, 0, ROOM_D / 2 - 2);
   state.hero.vel.set(0, 0, 0);
@@ -521,12 +678,27 @@ export function exitInterior() {
   state.mode = 'town';
   if (_group) _group.position.y = -200;
   if (_promptEl) _promptEl.style.display = 'none';
+  if (_decoratePromptEl) _decoratePromptEl.style.display = 'none';
   _activeKey = null;
 }
 
 export function tickInterior(dt) {
   if (state.mode !== 'interior') {
     if (_promptEl && _promptEl.style.display !== 'none') _promptEl.style.display = 'none';
+    if (_decoratePromptEl && _decoratePromptEl.style.display !== 'none') _decoratePromptEl.style.display = 'none';
+    return;
+  }
+
+  // Iter 22A — feed the home-decor cursor (no-op when decorate mode is off).
+  // Must run BEFORE the early-return below so the cursor tracks even when
+  // decorate mode is the only active overlay.
+  try { tickHomeDecor(); } catch (_) {}
+
+  // While decorate mode is active, suppress the interactable prompt + the
+  // ambient H hint (the overlay has its own controls strip).
+  if (isDecorateActive()) {
+    if (_promptEl) _promptEl.style.display = 'none';
+    if (_decoratePromptEl) _decoratePromptEl.style.display = 'none';
     return;
   }
 
@@ -561,6 +733,8 @@ export function tickInterior(dt) {
   } else {
     _promptEl.style.display = 'none';
   }
+  // Iter 22A — ambient "H · Decorate" hint always present in the interior.
+  if (_decoratePromptEl) _decoratePromptEl.style.display = 'block';
 
   // Constrain hero to room interior with a small wall margin
   const margin = 0.6;
