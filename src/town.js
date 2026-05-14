@@ -128,9 +128,11 @@ function _makeAdventureGate() {
   }
   // Glowing portal disc — animated in tickTown (unchanged behavior).
   _portal = new THREE.Mesh(
-    new THREE.CircleGeometry(1.8, 36),
+    new THREE.PlaneGeometry(3.6, 3.6),
     new THREE.MeshBasicMaterial({
-      color: 0x7fffd4, transparent: true, opacity: 0.55, depthWrite: false,
+      map: makeRuneRingTexture(),
+      color: 0x7fffd4, transparent: true, opacity: 0.7, depthWrite: false,
+      blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
     }),
   );
   _portal.rotation.x = -Math.PI / 2;

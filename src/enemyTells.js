@@ -21,6 +21,7 @@
 import * as THREE from 'three';
 import { state } from './state.js';
 import { BLOOM_LAYER } from './postfx.js';
+import { tex } from './particleTextures.js';
 
 // ── Caps ──────────────────────────────────────────────────────────────────
 const ELITE_RING_CAP   = 32;
@@ -449,8 +450,12 @@ export function initEnemyTells(scene) {
   _scene.add(_rangedTells);
 
   // ── Threat-tier dot (mini-boss / final boss billboard) ──
+  // Textured with the multi-flare twinkle star so the floating beacon reads
+  // as "danger pinged" rather than a flat plane. Per-instance color (set in
+  // setColorAt above) tints the tex per threat tier (mini-boss vs final).
   const dotGeo = new THREE.PlaneGeometry(DOT_SIZE, DOT_SIZE);
   const dotMat = new THREE.MeshBasicMaterial({
+    map: tex('flashStar') || tex('twinkle'),
     color: 0xffffff,
     transparent: true,
     opacity: 0.95,
