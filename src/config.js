@@ -99,7 +99,7 @@ export const ENEMY_TIERS = [
   { glb: 'dragon',    hp: 400, spd: 1.2, dmg: 30, minD: 7.0, weight: 1,  scale: 1.4, elite: true },
   // New animated Quaternius tiers
   { glb: 'spider',    hp: 8,   spd: 3.2, dmg: 5,  minD: 1.2, weight: 6,  scale: 0.85 },
-  { glb: 'wolf',      hp: 18,  spd: 3.0, dmg: 7,  minD: 2.0, weight: 5,  scale: 1.0, faceFlip: true, procAnim: 'pad' },
+  { glb: 'wolf',      hp: 18,  spd: 3.0, dmg: 7,  minD: 2.0, weight: 5,  scale: 1.0, faceYaw: -Math.PI / 2, procAnim: 'pad' },
   { glb: 'wizard',    hp: 25,  spd: 1.6, dmg: 8,  minD: 3.0, weight: 4,  scale: 0.95,
     ranged: { range: 14, stopAt: 10, cooldown: 2.4, projSpeed: 9, projDmg: 9, projTtl: 2.4 } },
   { glb: 'ghost',     hp: 35,  spd: 2.4, dmg: 11, minD: 4.0, weight: 4,  scale: 1.0, ghostly: true },
