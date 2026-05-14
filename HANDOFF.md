@@ -37,14 +37,16 @@ User collaboration style:
 | 28 | Iter 3: Controller First | completed |
 | 29 | Iter 4: Stage Rules | completed |
 | 30 | Iter 5: Teach the Loop | completed |
-| **31** | **Iter 6: Meta With Teeth** | **in_progress** (no work done yet — just queued) |
-| 32 | Iter 7: Roster Pressure | pending |
-| 33 | Iter 8: Enemy Identity | pending |
-| 34 | Iter 9: Retention Hooks | pending |
+| 31 | Iter 6: Meta With Teeth (sigils + branching shop + presets) | **completed** `ded59e3` |
+| **32** | **Iter 7: Roster Pressure** | **in_progress** (3 agents fanned out — see `ITER_789_BRIEFS.md` 7a/7b/7c) |
+| 33 | Iter 8: Enemy Identity | pending (brief pre-generated in `ITER_789_BRIEFS.md`) |
+| 34 | Iter 9: Retention Hooks | pending (brief pre-generated in `ITER_789_BRIEFS.md`) |
 | 35 | Iter 10: Polish Lock (ship) | pending |
 | 36 | Iter 11: r171 + TSL compute particles spike | pending |
 
 WSL session may have a fresh task list — if so, re-create these from this table.
+
+**Pre-generated briefs:** `ITER_789_BRIEFS.md` at repo root has tuned 3-agent splits for iters 7, 8, 9 (data/hooks/UI pattern, locked contracts, tuning constants). Read it before spawning the next iter's agents.
 
 ## Iteration pattern (use it)
 
@@ -61,12 +63,13 @@ When agents touch the same file (e.g. `main.js`, `ui.js`), expect 3-way merges. 
 
 ## Recent commits (top of `main`)
 
-- `2d51fff` Visual polish: rune-textured rings + dark hero shadow (also bundled iter 5b/c files)
+- `7b8ebc2` FX quality pass — burgers fixed, rings rune-textured, 12 files, particleTextures vocab grew 18 helpers
+- `c3ef07d` Remove persistent "Skip tutorial" corner button (user feedback)
+- `ded59e3` Iter 6: Meta With Teeth — sigils + 3-branch shop tree + presets
+- `4369d9f` Handoff doc (this file)
+- `2d51fff` Visual polish: rune-textured rings + dark hero shadow
 - `36dccd8` Tutorial: drop stage-1 pause (deadlocks movement)
 - `3c70691` Iter 4: Stage Rules — per-stage modifiers, mini-events, arena decor
-- `99f84db` Iter 3: Controller First — gamepad, UI focus, context prompts
-- `38e8990` Wolf walk + hornet sideways fix
-- `715b59b` Iter 2 full merge
 
 ## Architecture (the parts you need to know)
 
@@ -113,20 +116,31 @@ When agents touch the same file (e.g. `main.js`, `ui.js`), expect 3-way merges. 
 
 ## What to do next
 
-**Iter 6: Meta With Teeth** (task #31, marked in_progress)
+**Iter 7: Roster Pressure** (task #32, marked in_progress at time of writing)
 
-Roadmap brief: branching shop upgrades + a second meta currency (Sigils, earned from boss kills / quest completions / daily). Players should feel that NOT picking everything on their first run is correct.
+Pre-generated brief at `ITER_789_BRIEFS.md` "Iter 7" section. 3-agent split locked:
+- **7a — Data.** `src/config.js` + `src/meta.js`. Adds `signature` field to CHARACTERS, 2 new chars (phoenix sigil-gated, clockwork bossrush-gated), `isCharacterUnlocked()` helper, `lifetime.sigilsEarned` counter.
+- **7b — Hooks.** `src/main.js` `src/hero.js` `src/enemies.js` (damageEnemy only) + `src/weapons/chain.js` + `src/weapons/web.js`. Wires signature mechanics.
+- **7c — UI.** `src/ui.js` character picker, signature preview line, sigil-progress pip, Clockwork unlock banner. Plus `src/weapons/descriptions.js` flavor.
 
-Suggested 3-agent split:
-- **6a — Sigil currency + earn paths.** Add `meta.sigils`, earn hooks (mini-boss = 1, final boss = 5, quest complete = 2, daily = 3). Surface in shop header + run-end results screen.
-- **6b — Branching shop tree.** Convert `src/meta.js` shop from flat upgrade list to a tree with 3 prestige branches (Survival / Power / Greed) gated by sigils. Each branch ~4 nodes with prerequisites. Visualize as a node graph in shop modal.
-- **6c — Build presets / loadouts.** Save favorite character+stage+passive picks as named presets, persisted in `meta.presets`. Add to start screen. Advisor's #1 risk was "build combinatorics" — this addresses it.
+Iter 8 + 9 briefs live in the same doc. Read the relevant section before fanning out the next iter's agents.
 
-Brief each agent with: file paths to read, exact API surface, "do NOT touch X" list.
+## Iter 6 surfaces shipped (don't break these)
+
+- `meta.sigils` currency; `grantSigils(n, source)` exported from `src/meta.js`
+- `SHOP_TREE` 12-node branching upgrade tree (3 branches × 4 tiers); persisted in `meta.shopTree`
+- `meta.presets` character+stage convenience loadouts (cap 6)
+- `state.run.passive_*` scalar pattern for shop-tree effects: `passive_dmgReduction`, `passive_dmg`, `passive_cooldown`, `passive_critChance`, `passive_regen`, `passive_coinMul`, `passive_chestRate`, `passive_miniBossSigilBonus`, `passive_revives`, `passive_overdrive`, `passive_treasureMap`. **Tier-4 capstones (Phoenix revive, Overdrive, Treasure Map) are tagged `// TODO(iter6-wire)` for full plumbing.**
+- `commitRunResults()` returns `sigilsEarned`; death screen shows sigil row (magenta `#c87bff`)
+- Start screen has presets row (`_startPresetRowRef`) between stage row and play buttons
+
+## FX quality bar (user-locked, 2026-05-14)
+
+User feedback: "spider web is good, burgers are mid". Spider web FX (`src/weapons/web.js`) is the visual quality bar. `makeRuneRingTexture()` from `src/enemyTells.js` is canonical for any AoE ring. Flat `RingGeometry + MeshBasicMaterial` is the explicit anti-pattern. `src/particleTextures.js` now has 18 procedural helpers (twinkle ×3, bunCap, cheeseSlice ×2, pattyTop, hearts, stars, bombs, snowflake, drumstick, pollen, lavaPuddle, wizardBolt ×3) — reuse before adding new ones. FX deferred next pass: `town.js`/`interior.js`/`catacomb.js` rune circles (per `FX_AUDIT.md`).
 
 ## Pending bug-fix watchlist
 
-Nothing open as of `2d51fff`. The wolf-walk + hornet-sideways + tutorial-deadlock + green-shadow + flat-ring bugs are all shipped. User has not reported anything since the ring/shadow fix.
+Nothing open as of `7b8ebc2`. User confirmed/asked for: Skip-tutorial button removal (shipped `c3ef07d`), FX placeholder cleanup (shipped `7b8ebc2`).
 
 ## How to verify your work before pushing
 
