@@ -126,13 +126,14 @@ function _makeAdventureGate() {
     lintel.position.set(0, 4.65, 0);
     g.add(lintel);
   }
-  // Glowing portal disc — animated in tickTown (unchanged behavior).
+  // Glowing portal disc — flat mint puddle, no radial spoke art so it
+  // doesn't read as "lines radiating across the plaza". Iter 28c's rune-
+  // tex + additive blending caused the rune's 24 tick marks + 48 outer
+  // hair ticks to bleed through everything in town.
   _portal = new THREE.Mesh(
-    new THREE.PlaneGeometry(3.6, 3.6),
+    new THREE.CircleGeometry(1.8, 36),
     new THREE.MeshBasicMaterial({
-      map: makeRuneRingTexture(),
-      color: 0x7fffd4, transparent: true, opacity: 0.7, depthWrite: false,
-      blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+      color: 0x7fffd4, transparent: true, opacity: 0.55, depthWrite: false,
     }),
   );
   _portal.rotation.x = -Math.PI / 2;
