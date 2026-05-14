@@ -361,12 +361,14 @@ async function boot() {
     showCodex();
   });
 
-  // ── Iter 23a — suppress browser context menu on the game canvas ────────────
+  // ── Iter 23a + Iter 27 — suppress browser context menu globally ───────────
   // Right-click is a gameplay input (e.g. homeDecor pickup) — players never
-  // need the browser context menu over #game-canvas. Wired globally here so
-  // it covers every mode, not just decorate. homeDecor.js still has its own
-  // belt-and-suspenders handler scoped to its overlay.
+  // need the browser context menu inside the game. Canvas-only suppression
+  // (iter 23a) missed right-clicks on overlay DOM (decorate palette, modals).
+  // Window-level catch-all covers everything; per-element handlers in
+  // homeDecor.js / casino.js etc. still run their own logic on top.
   canvas.addEventListener('contextmenu', (e) => { e.preventDefault(); }, false);
+  window.addEventListener('contextmenu', (e) => { e.preventDefault(); }, false);
 
   // ── WebGL context-loss / restored — canvas-level wiring ────────────────────
   // canvas is captured at module top (const canvas = ...). preventDefault on

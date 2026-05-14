@@ -802,6 +802,15 @@ function _onMouseDown(e) {
   if (!_decorateActive) return;
   // Don't react to clicks inside the palette overlay.
   if (_overlayEl && _overlayEl.contains(e.target)) return;
+  // Iter 27 — refresh hover state from THIS event's coords before processing.
+  // Per-frame _updateCursor uses cached _mouse coords; a click immediately
+  // after switching from the palette overlay to the floor lands before the
+  // next mousemove tick, leaving _hoverTile null → "cant place anything".
+  // Force mouse mode (user clicked, so they're using a mouse) + fresh raycast.
+  if (_inputMode !== 'mouse') _inputMode = 'mouse';
+  _mouse.clientX = e.clientX;
+  _mouse.clientY = e.clientY;
+  _updateCursor();
   if (e.button === 2) {
     // Right-click → pick up
     e.preventDefault();
