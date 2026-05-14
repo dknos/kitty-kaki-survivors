@@ -107,7 +107,7 @@ export function createCharCarousel(host, opts) {
 
   const stage = document.createElement('div');
   stage.style.cssText = `
-    position: relative; flex: 1 1 auto; aspect-ratio: 16 / 9; max-height: 360px;
+    position: relative; flex: 1 1 auto; aspect-ratio: 16 / 9; max-height: min(280px, 32vh);
     min-width: 0;
     border: 1px solid rgba(127,255,228,0.18);
     border-radius: 12px;
@@ -134,7 +134,7 @@ export function createCharCarousel(host, opts) {
   // Info panel below the stage
   const info = document.createElement('div');
   info.style.cssText = `
-    margin-top: 14px; padding: 14px 22px; min-height: 110px;
+    margin-top: 8px; padding: 8px 18px; min-height: 70px;
     border: 1px solid rgba(127,255,228,0.18);
     border-radius: 10px;
     background: linear-gradient(180deg, rgba(22,32,26,0.92), rgba(8,14,12,0.96));

@@ -60,7 +60,7 @@ const F = {
 // ── Build version ────────────────────────────────────────────────────────────
 // Flipped to '1.0.0' on the iter-11 ship commit (Shop Tree Live Wires —
 // the broken-tier-1-3-consumers gap was the last v1.0 blocker).
-export const KK_VERSION = '1.4.10';
+export const KK_VERSION = '1.4.11';
 
 // ── Module-local DOM refs ────────────────────────────────────────────────────
 let _root = null;
@@ -375,20 +375,22 @@ function injectCSS() {
       display: flex; flex-direction: column;
       align-items: center; justify-content: flex-start;
       overflow-y: auto; overflow-x: hidden;
-      padding: 40px 20px 80px;
+      padding: clamp(12px, 2vh, 24px) 20px clamp(24px, 6vh, 60px);
+      gap: clamp(2px, 0.6vh, 8px);
       pointer-events: auto;
       font-family: ${F.body};
       z-index: 90;
     }
     .kk-start-title {
       font-family: ${F.display};
-      font-size: calc(var(--kk-font-scale, 1) * 68px); font-weight: 900;
+      font-size: clamp(28px, calc(var(--kk-font-scale, 1) * 5.2vw), calc(var(--kk-font-scale, 1) * 56px));
+      font-weight: 900;
       letter-spacing: 0.22em;
       color: ${C.amber};
       text-shadow:
         0 2px 20px rgba(0,0,0,0.65),
         0 0 36px rgba(255,210,127,0.25);
-      margin-bottom: 18px;
+      margin-bottom: 6px;
       text-align: center;
       line-height: 1.05;
     }
@@ -1618,7 +1620,7 @@ export function showStartScreen(text) {
       </g>
     </svg>
   `;
-  ornamentTop.style.cssText = 'margin-bottom: 12px;';
+  ornamentTop.style.cssText = 'margin-bottom: 4px;';
 
   const title = document.createElement('div');
   title.className = 'kk-start-title';
@@ -1627,7 +1629,7 @@ export function showStartScreen(text) {
   // Mirror flourish under the title
   const ornamentBot = document.createElement('div');
   ornamentBot.innerHTML = ornamentTop.innerHTML;
-  ornamentBot.style.cssText = 'margin-top: 4px; margin-bottom: 14px; transform: rotate(180deg);';
+  ornamentBot.style.cssText = 'margin-top: 2px; margin-bottom: 6px; transform: rotate(180deg);';
 
   const sub = document.createElement('div');
   sub.className = 'kk-start-sub';
@@ -1645,7 +1647,7 @@ export function showStartScreen(text) {
   // The legacy card-grid path is replaced; charCarousel.js renders its own
   // info panel + arrow buttons + pip strip into this host.
   const charRow = document.createElement('div');
-  charRow.style.cssText = 'display:flex; flex-direction:column; align-items:center; gap:8px; margin-top:18px; pointer-events:auto; width:100%; max-width:90vw;';
+  charRow.style.cssText = 'display:flex; flex-direction:column; align-items:center; gap:4px; margin-top:6px; pointer-events:auto; width:100%; max-width:90vw;';
   // Sigil-pip colour matches the magenta sigil treatment used in the death-screen
   // stats row + shop tree (`#c87bff`). Don't introduce a fresh token.
   const SIGIL_PIP_C = '#c87bff';
@@ -1708,7 +1710,7 @@ export function showStartScreen(text) {
   // ── Archetype chip row — gameplay profile (starter weapon + stats + signature)
   const archRow = document.createElement('div');
   archRow.style.cssText = `
-    display:flex; gap:8px; margin-top:14px; pointer-events:auto;
+    display:flex; gap:6px; margin-top:6px; pointer-events:auto;
     flex-wrap:wrap; justify-content:center; max-width:760px;
   `;
   // Same guard as carousel wrap — main.js installs window click→start.
@@ -2126,13 +2128,13 @@ export function showStartScreen(text) {
   // Click Play → Select panel (avatar carousel, archetype, stage, preset, Start Run).
   _menuPanel = document.createElement('div');
   _menuPanel.style.cssText = `
-    display: flex; flex-direction: column; align-items: center; gap: 14px;
-    margin-top: 18px; pointer-events: auto; width: 100%; max-width: 760px;
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+    margin-top: 6px; pointer-events: auto; width: 100%; max-width: 760px;
   `;
   _selectPanel = document.createElement('div');
   _selectPanel.style.cssText = `
-    display: none; flex-direction: column; align-items: center; gap: 6px;
-    margin-top: 18px; pointer-events: auto; width: 100%; max-width: 760px;
+    display: none; flex-direction: column; align-items: center; gap: 4px;
+    margin-top: 6px; pointer-events: auto; width: 100%; max-width: 760px;
   `;
   _startScreen.appendChild(_menuPanel);
   _startScreen.appendChild(_selectPanel);
@@ -2504,7 +2506,7 @@ export function showStartScreen(text) {
 
   // ── Select panel footer: Start Run + Back to Menu ──
   const selectFooter = document.createElement('div');
-  selectFooter.style.cssText = 'display:flex; gap:14px; margin-top:18px; pointer-events:auto; flex-wrap:wrap; justify-content:center;';
+  selectFooter.style.cssText = 'display:flex; gap:12px; margin-top:10px; pointer-events:auto; flex-wrap:wrap; justify-content:center;';
   selectFooter.addEventListener('click', (e) => { e.stopPropagation(); });
 
   const startRunBtn = document.createElement('button');
@@ -2512,14 +2514,14 @@ export function showStartScreen(text) {
   startRunBtn.textContent = '▶  PLAY';
   startRunBtn.className = 'kk-btn-primary';
   startRunBtn.style.cssText = `
-    padding: 14px 38px; cursor: pointer;
-    background: linear-gradient(180deg, rgba(255,210,127,0.18), rgba(180,130,40,0.22));
+    padding: 12px 34px; cursor: pointer;
+    background: linear-gradient(180deg, rgba(255,210,127,0.22), rgba(180,130,40,0.26));
     border: 1px solid ${C.amber};
     border-radius: 10px;
     color: ${C.amber};
-    font-family: ${F.display}; font-size: calc(var(--kk-font-scale, 1) * 16px); font-weight: 700;
+    font-family: ${F.display}; font-size: calc(var(--kk-font-scale, 1) * 18px); font-weight: 800;
     letter-spacing: 0.28em;
-    box-shadow: 0 1px 0 rgba(255,255,255,0.08) inset, 0 12px 24px rgba(0,0,0,0.55), 0 0 18px rgba(255,210,127,0.16);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.08) inset, 0 12px 24px rgba(0,0,0,0.55), 0 0 22px rgba(255,210,127,0.22);
   `;
   startRunBtn.addEventListener('mouseenter', () => { try { sfx.uiHover(); } catch (_) {} });
   startRunBtn.addEventListener('click', (e) => {
