@@ -623,12 +623,80 @@ export function buildEnv(scene, renderer) {
       }
     }
   };
+  // ── Helltide overlay (iter 17) ──
+  // Hot red-orange sky/fog + warm hemi shift while the Helltide event is
+  // active. Snapshots the LIVE stage-tinted values at activation time so
+  // restoration on endHelltide brings us back to the current stage (not the
+  // forest baseline). Atmospheric particles are NOT touched here — they
+  // continue running in parallel under the overlay tint.
+  //
+  // applyHelltideOverlay(active, intensity)
+  //   active=true  → snapshot + lerp toward hellfire tint over ~1.5s
+  //   active=false → lerp back to snapshot over ~1.5s, clear snapshot at end
+  // Intensity (default 1.0) scales how aggressive the red shift is so future
+  // callers can do a "high-tier Helltide" without re-authoring the overlay.
+  let _helltideTween = null;   // { dir: +1 or -1, t: 0..1, intensity, snap, target }
+  const _HELLTIDE_TARGET = {
+    sun:    { color: 0xff5a28, intensity: 1.6 },
+    hemi:   { sky: 0xff6e3a, ground: 0x3a0a06, intensity: 0.55 },
+    fill:   { color: 0xff4422, intensity: 0.55 },
+    fogHex: 0x3a0a06,
+  };
+  function _hexLerp(a, b, k) {
+    const ar = (a >> 16) & 0xff, ag = (a >> 8) & 0xff, ab = a & 0xff;
+    const br = (b >> 16) & 0xff, bg = (b >> 8) & 0xff, bb = b & 0xff;
+    return ((Math.round(ar + (br - ar) * k) << 16) |
+            (Math.round(ag + (bg - ag) * k) << 8)  |
+             Math.round(ab + (bb - ab) * k)) >>> 0;
+  }
+  group.userData.applyHelltideOverlay = (active, intensity) => {
+    const itn = (intensity == null) ? 1.0 : Math.max(0, Math.min(1.5, intensity));
+    if (active) {
+      // Snapshot CURRENT (live, stage-tinted) values — not the baseline.
+      const snap = {
+        sunColor: sun.color.getHex(), sunIntensity: sun.intensity,
+        hemiSky:  hemi.color.getHex(), hemiGround: hemi.groundColor.getHex(),
+        hemiIntensity: hemi.intensity,
+        fillColor: fill.color.getHex(), fillIntensity: fill.intensity,
+        fogHex: scene.fog && scene.fog.color ? scene.fog.color.getHex() : null,
+      };
+      _helltideTween = { dir: +1, t: 0, intensity: itn, snap, dur: 1.5 };
+    } else {
+      if (!_helltideTween) return;   // nothing to undo
+      _helltideTween = { ...(_helltideTween), dir: -1, t: 0, dur: 1.5 };
+    }
+  };
+  // Per-frame tween advancer; called from tickAtmosphere.
+  function _stepHelltideTween(dt) {
+    if (!_helltideTween) return;
+    const tw = _helltideTween;
+    tw.t = Math.min(1, tw.t + dt / tw.dur);
+    const k = tw.dir > 0 ? tw.t : (1 - tw.t);   // 0→1 ramp in, 1→0 ramp out
+    const blend = k * tw.intensity;
+    const snap = tw.snap;
+    const T = _HELLTIDE_TARGET;
+    sun.color.setHex(_hexLerp(snap.sunColor, T.sun.color, blend));
+    sun.intensity = snap.sunIntensity + (T.sun.intensity - snap.sunIntensity) * blend;
+    hemi.color.setHex(_hexLerp(snap.hemiSky, T.hemi.sky, blend));
+    hemi.groundColor.setHex(_hexLerp(snap.hemiGround, T.hemi.ground, blend));
+    hemi.intensity = snap.hemiIntensity + (T.hemi.intensity - snap.hemiIntensity) * blend;
+    fill.color.setHex(_hexLerp(snap.fillColor, T.fill.color, blend));
+    fill.intensity = snap.fillIntensity + (T.fill.intensity - snap.fillIntensity) * blend;
+    if (snap.fogHex != null && scene.fog && scene.fog.color) {
+      scene.fog.color.setHex(_hexLerp(snap.fogHex, T.fogHex, blend));
+    }
+    if (tw.t >= 1) {
+      if (tw.dir < 0) _helltideTween = null;  // fully restored — release snap
+      // dir > 0 finished: hold at full hellfire tint until endHelltide flips it.
+    }
+  }
   // ── Tick the active stage's atmospheric particles (iter 15) ──
   // Called once per gameplay frame from main.js. dt is real-time (not
   // game-time) so atmosphere keeps drifting during hit-stop/pause for life.
   // hero is optional; falls back to (0,0) if undefined (e.g. title-screen
   // hover where the run hasn't started yet — but main.js guards anyway).
   group.userData.tickAtmosphere = (dt, hero) => {
+    _stepHelltideTween(dt);
     const id = group.userData._activeStageId;
     if (!id) return;
     const cluster = atmosClusters[id];

@@ -225,10 +225,14 @@ export function tickSpawnDirector(dt) {
   const dailyMul  = state.run && state.run.dailySpawnMul  ? state.run.dailySpawnMul  : 1;
   const ruleMul   = state.run && state.run.stageRuleSpawnMul ? state.run.stageRuleSpawnMul : 1;
   const weeklyMul = state.run && state.run.weeklySpawnMul ? state.run.weeklySpawnMul : 1;
+  // Iter 17 — Helltide mega-event multiplies the alive cap by ~2.5× for
+  // the duration of the event. Composed with daily/rule/weekly so we
+  // never compound past targetAliveCap (still hard-capped below).
+  const helltideMul = state.run && state.run.helltideSpawnMul ? state.run.helltideSpawnMul : 1;
   // Weekly DOUBLE_SPAWNS multiplies the target alive cap. Compose with daily +
   // stage-rule swarms so a Daily SWARM_DAY happening to be Weekly DOUBLE_SPAWNS
   // doesn't compound past targetAliveCap (still hard-capped below).
-  const swarmMul = dailyMul * ruleMul * weeklyMul;
+  const swarmMul = dailyMul * ruleMul * weeklyMul * helltideMul;
   // Boss rush: tiny ambient swarm (3-4 alive) so the player still has XP and
   // pickups, but the focus is the bosses.
   const target = bossRush

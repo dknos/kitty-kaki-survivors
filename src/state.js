@@ -273,6 +273,17 @@ export function resetState() {
   state.run.passive_overdrive      = false; // Power t4 capstone: ticks main-loop overdrive cycle
   state.run.passive_treasureMap    = false; // Greed t4 capstone: free starter chest in _primeRunStart
   state.run._treasureMapSpawned    = false; // one-shot guard so the chest isn't double-spawned across run-entry paths
+  // ── Helltide overlay event (iter 17) ──
+  // Auto-triggered timed mega-event: doubles spawn rate, runs multiple
+  // concurrent mini-events, drops a unique currency. All state below is
+  // owned by src/helltide.js; resetState wipes it so retries start clean.
+  state.run.helltideActive         = false;
+  state.run.helltideEndAt          = 0;     // game-time at which the current event ends
+  state.run.helltideNextAt         = 0;     // game-time of next auto-trigger (set by helltide.js init)
+  state.run.helltideSpawnMul       = 1;     // read by spawnDirector — multiplies target alive cap
+  state.run.helltideEliteBonus     = 0;     // additive elite-chance bonus (reserved for future enemy roll)
+  state.run.helltideEmbersBanked   = 0;     // total embers picked up this run
+  state.run.helltideMaxBanked      = 0;     // best banked count across all Helltides this run
   // Overdrive cycle state (Power tier-4 capstone). Ticked from main.js run loop
   // when passive_overdrive is true: every 60s of game time, flip active=true for
   // 5s. During the active window we stash + multiply h.statMul.cooldown/dmg and
