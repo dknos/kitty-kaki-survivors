@@ -15,6 +15,7 @@
  */
 import { grantEmbers } from './meta.js';
 import { sfx } from './audio.js';
+import { hideTooltip } from './tooltips.js';
 
 const PALETTE = {
   paper:    '#f3e8cf',
@@ -356,6 +357,8 @@ function _loop(t) {
 
 // ── Show / close ──
 export function showSketchbook() {
+  // Iter 21a — defensive tooltip hide on modal entry.
+  try { hideTooltip(); } catch (_) {}
   if (_open) return;
   try { sfx.modalOpen(); } catch (_) {}
   _open = true;

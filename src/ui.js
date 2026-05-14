@@ -720,6 +720,10 @@ export function updateUI() {
 }
 
 export function showLevelUpModal(choices) {
+  // Iter 21a — kill any hover tooltip before this modal covers the source el.
+  // Without this, click-through into a modal leaves the tooltip floating at
+  // z:9999 with no mouseleave fired (the source detaches / gets occluded).
+  try { hideTooltip(); } catch (_) {}
   if (_modal) hideLevelUpModal();
 
   const registry = _registry || {};
@@ -1285,6 +1289,8 @@ export function showDeathScreen() {
 }
 
 export function showStartScreen(text) {
+  // Iter 21a — defensive tooltip hide on modal entry.
+  try { hideTooltip(); } catch (_) {}
   if (_startScreen) {
     // Update subtitle in place
     const sub = _startScreen.querySelector('.kk-start-sub');
@@ -2299,6 +2305,8 @@ let _slotKeyHandler = null;
 export function isSlotOpen() { return !!_slotModal; }
 
 export function showSlotMachine() {
+  // Iter 21a — defensive tooltip hide on modal entry.
+  try { hideTooltip(); } catch (_) {}
   if (_slotModal) return;
   state.time.paused = true;
 
@@ -2482,6 +2490,8 @@ function _closeSlot() {
 // ── Grimoire modal (evolution discoveries) ───────────────────────────────────
 let _grimModal = null;
 export function showGrimoire() {
+  // Iter 21a — defensive tooltip hide on modal entry.
+  try { hideTooltip(); } catch (_) {}
   if (_grimModal) return;
   try { sfx.modalOpen(); } catch (_) {}
   _grimModal = document.createElement('div');
@@ -2630,6 +2640,8 @@ export function isGrimoireOpen() { return !!_grimModal; }
 let _shopModal = null;
 let _shopFocusScope = null;
 export function showShop() {
+  // Iter 21a — defensive tooltip hide on modal entry.
+  try { hideTooltip(); } catch (_) {}
   if (_shopModal) return;
   try { sfx.modalOpen(); } catch (_) {}
   _shopModal = document.createElement('div');
@@ -2939,6 +2951,8 @@ export function hideShop() {
 let _houseModal = null;
 export function isHouseOpen() { return !!_houseModal; }
 export function showHouse() {
+  // Iter 21a — defensive tooltip hide on modal entry.
+  try { hideTooltip(); } catch (_) {}
   if (_houseModal) return;
   try { sfx.modalOpen(); } catch (_) {}
   _houseModal = document.createElement('div');
@@ -3064,6 +3078,8 @@ export function hideHouse() {
 let _questModal = null;
 export function isQuestBoardOpen() { return !!_questModal; }
 export function showQuestBoard() {
+  // Iter 21a — defensive tooltip hide on modal entry.
+  try { hideTooltip(); } catch (_) {}
   if (_questModal) return;
   try { sfx.modalOpen(); } catch (_) {}
   const meta = getMeta();
@@ -3267,6 +3283,8 @@ function _applyAccessibilityLive() {
 }
 
 export function showOptions() {
+  // Iter 21a — defensive tooltip hide on modal entry.
+  try { hideTooltip(); } catch (_) {}
   try { sfx.modalOpen(); } catch (_) {}
   if (_optionsPanel) return;
   _ensureFontScaleStyle();
@@ -3991,6 +4009,8 @@ function _showNextSecret() {
 let _tutorial = null;
 let _tutorialHideTO = null;
 export function showTutorial() {
+  // Iter 21a — defensive tooltip hide on modal entry.
+  try { hideTooltip(); } catch (_) {}
   if (_tutorial || !_root) return;
   _tutorial = document.createElement('div');
   _tutorial.style.cssText = `
@@ -4103,6 +4123,8 @@ export function hideHallOfRecords() {
   _hallModal = null;
 }
 export function showHallOfRecords() {
+  // Iter 21a — defensive tooltip hide on modal entry.
+  try { hideTooltip(); } catch (_) {}
   if (_hallModal) return;
   try { sfx.modalOpen(); } catch (_) {}
   if (!_root) {
@@ -4369,6 +4391,8 @@ let _creditsModal = null;
 let _creditsFocusScope = null;
 
 export function showCredits() {
+  // Iter 21a — defensive tooltip hide on modal entry.
+  try { hideTooltip(); } catch (_) {}
   if (_creditsModal || !_root) return;
   try { sfx.modalOpen(); } catch (_) {}
 
@@ -4661,6 +4685,8 @@ _bindErrorListeners();
 let _ctxLossModal = null;
 
 export function showContextLossModal() {
+  // Iter 21a — defensive tooltip hide on modal entry.
+  try { hideTooltip(); } catch (_) {}
   if (_ctxLossModal) return;
   const root = _getToastRoot();
   if (!root) return;

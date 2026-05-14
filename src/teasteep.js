@@ -8,6 +8,7 @@
  * Same overlay architecture as sketchbook + yarndart.
  */
 import { grantEmbers } from './meta.js';
+import { hideTooltip } from './tooltips.js';
 
 const PALETTE = {
   paper:    '#f3e8cf',
@@ -327,6 +328,8 @@ function _loop(t) {
 }
 
 export function showTeaSteep() {
+  // Iter 21a — defensive tooltip hide on modal entry.
+  try { hideTooltip(); } catch (_) {}
   if (_open) return;
   _open = true;
   _root = document.createElement('div');

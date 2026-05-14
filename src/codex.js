@@ -19,6 +19,7 @@
 
 import { getMeta, saveMeta } from './meta.js';
 import { sfx } from './audio.js';
+import { hideTooltip } from './tooltips.js';
 
 // ── Theme tokens (mirror ui.js so this module renders without coupling) ─────
 const C = {
@@ -226,6 +227,8 @@ export function hideCodex() {
 }
 
 export function showCodex() {
+  // Iter 21a — defensive tooltip hide on modal entry.
+  try { hideTooltip(); } catch (_) {}
   if (_modal) return;
   try { sfx.modalOpen(); } catch (_) {}
   // Lazy-resolve registries so this module doesn't pull three.js at import time.

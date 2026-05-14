@@ -15,6 +15,7 @@
 
 import { getMeta, saveMeta, setOption } from './meta.js';
 import { makeSeed } from './leaderboard.js';
+import { hideTooltip } from './tooltips.js';
 
 const MAX_ENTRIES = 20;
 
@@ -120,6 +121,8 @@ export function hideRunHistory() {
 }
 
 export function showRunHistory() {
+  // Iter 21a — defensive tooltip hide on modal entry.
+  try { hideTooltip(); } catch (_) {}
   if (_modal) return;
   const root = document.getElementById('ui-root') || document.body;
   const meta = getMeta();
