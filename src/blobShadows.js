@@ -75,10 +75,20 @@ export function updateBlobShadows() {
 
   // Other entities: enemies with castShadow already cast a real one — skip.
   const arr = state.enemies.active;
+  const gateSq = 24 * 24; // 24u camera-distance gate (PERF.md soft spot fix)
+
   for (let k = 0; k < arr.length && i < CAP; k++) {
     const e = arr[k];
     if (!e.alive) continue;
     if (e.mesh && e.mesh.userData && e.mesh.userData._castSet) continue;
+
+    // ⚡ Bolt: skip drawing shadows for enemies off-screen to save InstancedMesh matrix update costs
+    if (hp && e.mesh) {
+      const dx = e.mesh.position.x - hp.x;
+      const dz = e.mesh.position.z - hp.z;
+      if (dx * dx + dz * dz > gateSq) continue;
+    }
+
     const ms = e.mesh ? e.mesh.scale.x : 1;
     // size ≈ horizontal footprint of the model
     const r = Math.max(0.6, ms * 0.9);
