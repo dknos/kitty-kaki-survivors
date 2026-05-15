@@ -100,6 +100,17 @@ const WEAPON_BLURBS = {
     body: (lv) => `Sweeps ${lv.count} ${lv.length}m streaks at random angles every ${lv.cooldown.toFixed(2)}s. Each cut deals ${lv.dmg} damage across a ${lv.width.toFixed(1)}m-wide swath.`,
     tags: ['AoE', 'Burst', 'Random'],
   },
+  // ── Iter 34 — Phase F3 signature weapons ──
+  sig_bezelbug_facet: {
+    flavor: 'Facet — Gem-shards spit outward in a perfect star. No aim, no apology.',
+    body: (lv) => `Fires ${lv.count} shards in a 360° star every ${lv.cooldown.toFixed(2)}s at ${lv.speed}m/s for ${lv.dmg} damage each. Pierces ${lv.pierce} enem${lv.pierce > 1 ? 'ies' : 'y'} per shard.`,
+    tags: ['Radial', 'Pierce', 'Burst'],
+  },
+  sig_rocker_powerchord: {
+    flavor: 'Power Chord — Hit the wide fret and the front row evaporates.',
+    body: (lv) => `Forward-cone sonic wave every ${lv.cooldown.toFixed(2)}s — ${lv.length}m long, ${lv.width.toFixed(1)}m wide. The wave sweeps over ${lv.duration.toFixed(2)}s, hitting each enemy ONCE for ${lv.dmg} damage.`,
+    tags: ['Cone', 'Wave', 'Directional'],
+  },
 };
 
 // Passive copy. Each line tells the player what the number actually does to

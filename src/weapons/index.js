@@ -29,6 +29,9 @@ import sigBomdiaSunburst   from './sig/bomdia_sunburst.js';
 import sigCamperSignalfire from './sig/camper_signalfire.js';
 import sigRadcatFallout    from './sig/radcat_fallout.js';
 import sigMonaBrushstroke  from './sig/mona_brushstroke.js';
+// Phase F3 sig kits.
+import sigBezelbugFacet    from './sig/bezelbug_facet.js';
+import sigRockerPowerchord from './sig/rocker_powerchord.js';
 import { passiveChoices, applyPassive, PASSIVES } from './passives.js';
 export { applyPassive, PASSIVES };
 
@@ -49,6 +52,8 @@ export const REGISTRY = {
   [sigCamperSignalfire.id]: sigCamperSignalfire,
   [sigRadcatFallout.id]:    sigRadcatFallout,
   [sigMonaBrushstroke.id]:  sigMonaBrushstroke,
+  [sigBezelbugFacet.id]:    sigBezelbugFacet,
+  [sigRockerPowerchord.id]: sigRockerPowerchord,
 };
 
 const WORLD_BOUND = 200; // projectile cull bound (square half-extent around hero)
