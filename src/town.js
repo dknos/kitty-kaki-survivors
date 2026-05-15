@@ -691,6 +691,13 @@ export function exitTown() {
 
 export function isInTown() { return state.mode === 'town'; }
 
+// Iter 33h — let sibling sub-modes (casino interior, etc.) hide the town
+// group while their own room is on-screen. Town's plaza disc (PLAZA_R=18)
+// is wider than most interior rooms, so it can bleed past the room walls
+// at the iso camera frustum's edges + show through any semi-transparent
+// floor tile in the interior.
+export function setTownGroupVisible(v) { if (_group) _group.visible = !!v; }
+
 export function tickTown(dt) {
   if (state.mode !== 'town') {
     if (_promptEl && _promptEl.style.display !== 'none') _promptEl.style.display = 'none';

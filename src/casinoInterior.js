@@ -19,6 +19,7 @@ import { state } from './state.js';
 import { bindPrompt, setPromptLabel } from './buttonPrompts.js';
 import { BLOOM_LAYER } from './postfx.js';
 import { cloneCached } from './assets.js';
+import { setTownGroupVisible } from './town.js';
 
 const ROOM_W = 20;
 const ROOM_D = 14;
@@ -63,10 +64,7 @@ function _makeFloor() {
       const dark = (i + j) % 2 === 0;
       const tile = new THREE.Mesh(
         new THREE.PlaneGeometry(tileW * 0.95, tileD * 0.95),
-        new THREE.MeshBasicMaterial({
-          color: dark ? 0x231a14 : 0x2a1414,
-          transparent: true, opacity: 0.65,
-        }),
+        new THREE.MeshBasicMaterial({ color: dark ? 0x2a0a0a : 0x3a1010 }),
       );
       tile.rotation.x = -Math.PI / 2;
       tile.position.set(
@@ -588,6 +586,9 @@ export function setCasinoInteriorHandler(key, fn) { _handlers[key] = fn; }
 export function enterCasinoInterior() {
   state.mode = 'casino_interior';
   if (_group) _group.position.y = 0;
+  // Hide the town group while the casino room is on-screen — plaza circle
+  // is wider than the room and bleeds through the iso camera frustum edges.
+  try { setTownGroupVisible(false); } catch (_) {}
   // Spawn at the door (south end of the room)
   state.hero.pos.set(0, 0, ROOM_D / 2 - 2.4);
   state.hero.vel.set(0, 0, 0);
@@ -597,6 +598,7 @@ export function enterCasinoInterior() {
 export function exitCasinoInterior() {
   state.mode = 'town';
   if (_group) _group.position.y = -200;
+  try { setTownGroupVisible(true); } catch (_) {}
   if (_promptEl) _promptEl.style.display = 'none';
   _activeKey = null;
 }
