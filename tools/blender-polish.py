@@ -24,6 +24,13 @@ def gather_meshes():
 
 
 def recenter(meshes):
+    # Blender is Z-up. After import_scene.gltf, the original glTF Y-up axis is
+    # remapped to Blender Z. So in Blender world coords:
+    #   X, Y = floor plane (horizontal)
+    #   Z    = vertical (feet at min, head at max)
+    # On export the inverse remap restores glTF Y-up. So we must:
+    #   horizontal center = bbox XY midpoint
+    #   feet              = bbox min Z
     minv = mathutils.Vector(( math.inf,)*3)
     maxv = mathutils.Vector((-math.inf,)*3)
     for o in meshes:
@@ -33,12 +40,12 @@ def recenter(meshes):
                 if wv[i] < minv[i]: minv[i] = wv[i]
                 if wv[i] > maxv[i]: maxv[i] = wv[i]
     cx = (minv.x + maxv.x) * 0.5
-    cz = (minv.z + maxv.z) * 0.5
-    cy = minv.y  # feet
+    cy = (minv.y + maxv.y) * 0.5
+    cz = minv.z
     for o in meshes:
         o.location.x -= cx
-        o.location.z -= cz
         o.location.y -= cy
+        o.location.z -= cz
     bpy.ops.object.select_all(action='DESELECT')
     for o in meshes:
         o.select_set(True)
