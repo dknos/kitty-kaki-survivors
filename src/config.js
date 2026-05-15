@@ -304,9 +304,15 @@ export const AVATARS = [
     tint: 0xffffff, scaleMul: 1.00,
   },
   {
-    id: 'kaki3', name: 'Kaki 3', icon: '✨',
-    desc: 'Placeholder name. Newly Rodin-baked silhouette.',
-    glb: 'kaki3.glb',
+    id: 'pipes', name: 'Pipes', icon: '🥸',
+    desc: 'Team-lead avatar. Mustache, red shirt, runs the room.',
+    glb: 'pipes.glb',
+    tint: 0xffffff, scaleMul: 1.00,
+  },
+  {
+    id: 'bomdia', name: 'Bom Dia', icon: '☀️',
+    desc: 'Bom Dia — morning patrol incarnate.',
+    glb: 'bomdia.glb',
     tint: 0xffffff, scaleMul: 1.00,
   },
 ];
