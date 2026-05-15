@@ -198,7 +198,12 @@ export function releaseProjectileVisuals(proj) {
   proj._slot = -1;
 }
 
-const SEARCH_RADIUS = 40;
+// Hero-relative search radius for the auto-aim weapon (iter 33x). Camera is
+// ortho half-height 28u, so anything beyond ~24u from the hero is on the edge
+// of the screen or off-screen entirely. We cap the search at 18u so the
+// weapon only ever locks onto enemies that read on-screen — no "auto-killing
+// targets I can't see".
+const SEARCH_RADIUS = 18;
 const FAN_SPREAD = 0.18; // radians between fanned projectiles
 
 function findNearestEnemy(pos) {
@@ -282,14 +287,18 @@ export default {
   icon: '✨',
   maxLevel: 8,
   levels: [
-    { cooldown: 1.00, speed: 18, dmg: 12, ttl: 2.0, pierce: 1, count: 1 },
-    { cooldown: 0.85, speed: 19, dmg: 16, ttl: 2.0, pierce: 1, count: 1 },
-    { cooldown: 0.75, speed: 20, dmg: 22, ttl: 2.0, pierce: 2, count: 1 },
-    { cooldown: 0.65, speed: 21, dmg: 30, ttl: 2.2, pierce: 2, count: 2 },
-    { cooldown: 0.55, speed: 22, dmg: 40, ttl: 2.2, pierce: 3, count: 2 },
-    { cooldown: 0.50, speed: 24, dmg: 54, ttl: 2.5, pierce: 3, count: 3 },
-    { cooldown: 0.45, speed: 26, dmg: 70, ttl: 2.5, pierce: 4, count: 3 },
-    { cooldown: 0.40, speed: 28, dmg: 90, ttl: 3.0, pierce: 4, count: 4 },
+    // iter 33x — range is speed × ttl. Camera ortho half-height = 28u, so we
+    // cap each level's max travel under 22u to keep projectiles within the
+    // visible play area. Damage trimmed ~30% so the auto-aim doesn't trivialize
+    // mid-tier mobs while the player is still levelling other weapons.
+    { cooldown: 1.00, speed: 16, dmg:  8, ttl: 1.10, pierce: 1, count: 1 },
+    { cooldown: 0.85, speed: 17, dmg: 11, ttl: 1.15, pierce: 1, count: 1 },
+    { cooldown: 0.75, speed: 18, dmg: 15, ttl: 1.20, pierce: 2, count: 1 },
+    { cooldown: 0.65, speed: 19, dmg: 21, ttl: 1.20, pierce: 2, count: 2 },
+    { cooldown: 0.55, speed: 20, dmg: 28, ttl: 1.20, pierce: 3, count: 2 },
+    { cooldown: 0.50, speed: 21, dmg: 38, ttl: 1.20, pierce: 3, count: 3 },
+    { cooldown: 0.45, speed: 22, dmg: 50, ttl: 1.20, pierce: 4, count: 3 },
+    { cooldown: 0.40, speed: 22, dmg: 63, ttl: 1.20, pierce: 4, count: 4 },
   ],
 
   init(state, level, inst) {
