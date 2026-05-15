@@ -2802,25 +2802,44 @@ export function showSlotMachine() {
   _root.appendChild(_slotModal);
 
   // ── Spin animation ──
-  // Each reel cycles symbols rapidly, then locks. Decelerate so the stop
-  // feels satisfying. Stop times: 1.2s, 1.9s, 2.7s.
-  const stops = [1100, 1750, 2500];
+  // iter 33r — was 1100/1750/2500ms (~2.7s total), too long with chest cadence
+  // bumped down. Cut to 500/800/1100ms (~1.3s total). Skip button + Space
+  // during spin snap reels to final state immediately.
+  const stops = [500, 800, 1100];
   const finalRolls = [rollReel(), rollReel(), rollReel()];
 
   let elapsed = 0;
   let lastTick = performance.now();
+  let _skipped = false;
 
   function symbolForFrame(reelIdx, t) {
     const stop = stops[reelIdx];
     if (t >= stop) return finalRolls[reelIdx].icon;
     // Cycle speed slows as we approach stop time
     const tRem = stop - t;
-    const speed = Math.max(40, 400 - tRem * 0.3); // slower interval as close to stop
+    const speed = Math.max(30, 220 - tRem * 0.3);
     const idx = Math.floor(t / speed) % SLOT_SYMBOLS.length;
     return SLOT_SYMBOLS[idx].icon;
   }
 
+  function _finalizeSpin() {
+    for (let i = 0; i < 3; i++) {
+      reels[i].textContent = finalRolls[i].icon;
+      reels[i].style.borderColor = C.amber;
+      reels[i].style.boxShadow = `0 0 18px ${C.amber}, inset 0 0 12px rgba(0,0,0,0.7)`;
+    }
+    skipBtn.style.display = 'none';
+    const outcome = resolveOutcome(finalRolls);
+    pending.outcome = outcome;
+    _showOutcome(outcome, result, continueBtn, gambleBtn);
+    if (outcome.tier !== 'jackpot') {
+      gambleBtn.style.display = 'inline-block';
+      gambleBtn.onclick = () => _doGamble(pending, result, continueBtn, gambleBtn);
+    }
+  }
+
   function animLoop() {
+    if (_skipped) return;
     const now = performance.now();
     const dt = now - lastTick;
     lastTick = now;
@@ -2836,26 +2855,49 @@ export function showSlotMachine() {
       }
     }
 
-    if (elapsed < stops[2] + 200) {
+    if (elapsed < stops[2] + 150) {
       _slotRAF = requestAnimationFrame(animLoop);
       return;
     }
-
-    // ── Resolve outcome (DEFERRED apply — only on TAKE IT) ──
-    const outcome = resolveOutcome(finalRolls);
-    pending.outcome = outcome;
-    _showOutcome(outcome, result, continueBtn, gambleBtn);
-
-    // Gamble disabled on jackpot (don't tease losing it)
-    if (outcome.tier !== 'jackpot') {
-      gambleBtn.style.display = 'inline-block';
-      gambleBtn.onclick = () => _doGamble(pending, result, continueBtn, gambleBtn);
-    }
+    _finalizeSpin();
   }
   let _slotRAF = requestAnimationFrame(animLoop);
   _slotModal.__rafId = () => _slotRAF;
 
+  // iter 33r — Skip button (visible during spin). Click or press Space/Enter
+  // mid-spin to snap reels to final state immediately.
+  const skipBtn = document.createElement('button');
+  skipBtn.type = 'button';
+  skipBtn.textContent = 'Skip · Space';
+  skipBtn.style.cssText = `padding: 10px 22px; cursor: pointer;
+    background: linear-gradient(180deg, rgba(20,28,22,0.94), rgba(8,14,12,0.96));
+    border: 1px solid rgba(245,239,225,0.4); border-radius: 8px;
+    color: rgba(245,239,225,0.85);
+    font-family: ${F.display}; font-size: calc(var(--kk-font-scale, 1) * 12px); font-weight: 700;
+    letter-spacing: 0.28em;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 12px 26px rgba(0,0,0,0.55);
+    margin-bottom: 12px;`;
+  skipBtn.addEventListener('click', () => {
+    if (_skipped) return;
+    _skipped = true;
+    if (_slotRAF) cancelAnimationFrame(_slotRAF);
+    _finalizeSpin();
+  });
+  // Insert skip ABOVE the result line so layout is stable.
+  _slotModal.insertBefore(skipBtn, result);
+
   _slotKeyHandler = (e) => {
+    // During spin, Space/Enter skips to final state.
+    if (!pending.outcome && !_skipped) {
+      if (e.code === 'Space' || e.code === 'Enter') {
+        e.preventDefault();
+        _skipped = true;
+        if (_slotRAF) cancelAnimationFrame(_slotRAF);
+        _finalizeSpin();
+        return;
+      }
+      return;
+    }
     if (continueBtn.style.display === 'none') return;
     if (e.code === 'Enter' || e.code === 'Space') {
       if (pending.outcome) applyOutcome(pending.outcome);

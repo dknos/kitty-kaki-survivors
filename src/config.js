@@ -86,8 +86,11 @@ export const SPAWN = {
   bossIntervalSec: 300,
   spawnBatchPerTick: 16,    // how many enemies can spawn in one director tick
   tickIntervalSec: 0.25,
-  chestIntervalSec: 75,     // periodic chest spawn near hero
-  chestEliteDropChance: 0.30, // probability an elite drop also spawns a chest
+  // iter 33r — chest density was 10× too high after iter 33q spawn bump.
+  // Periodic 75s + 30% elite drop dumped ~6-8 chests/min with the new alive
+  // counts. 240s + 3% elite → ~1 chest/min (mini-boss + final boss still drop).
+  chestIntervalSec: 240,    // periodic chest spawn near hero
+  chestEliteDropChance: 0.03, // probability an elite drop also spawns a chest
   // Iter 33l — time-based HP/dmg ramp coefficients (iter 33d originally inlined).
   // Both ride _computeDifficulty(t) [0..10]. HP scales harder than dmg so the
   // hero doesn't get clapped by attrition while late mobs still feel tanky.
