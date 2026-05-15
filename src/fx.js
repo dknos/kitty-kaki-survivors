@@ -11,6 +11,7 @@ import { tex } from './particleTextures.js';
 import { BLOOM_LAYER } from './postfx.js';
 import { makeRuneRingTexture } from './enemyTells.js';
 import { fxTex } from './fxTextures.js';
+import { FLAT_X_QUAT, floorDecalMaterial, applyFloorTier } from './fxLayers.js';
 
 const RING_CAP = 64;
 const SPARK_CAP = 64;
@@ -22,7 +23,7 @@ const TWINKLE_CAP = 64;
 const _m4 = new THREE.Matrix4();
 const _v3 = new THREE.Vector3();
 const _q  = new THREE.Quaternion();
-const _flatX = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
+const _flatX = FLAT_X_QUAT;
 const _zeroScale = new THREE.Vector3(0, 0, 0);
 // Iter 33k — pool a uniform-scale temp for per-frame Matrix4.compose() calls.
 // Previously each ring/spark/twinkle alloc'd `new THREE.Vector3(s,s,s)` per
@@ -49,15 +50,7 @@ export function initFX(scene) {
   // iter 33w — switched to hand-painted Blizzard-style WebP via fxTex.
   // Falls back to the legacy canvas ringGold if the manifest hasn't landed yet.
   const ringGeo = new THREE.PlaneGeometry(2.0, 2.0);
-  const ringTex = fxTex('ring_arcane') || tex('ringGold');
-  const ringMat = new THREE.MeshBasicMaterial({
-    map: ringTex,
-    color: 0xffffff,
-    transparent: true,
-    opacity: 1.0,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-  });
+  const ringMat = floorDecalMaterial({ map: fxTex('ring_arcane') || tex('ringGold'), side: THREE.FrontSide });
   _ringInst = new THREE.InstancedMesh(ringGeo, ringMat, RING_CAP);
   _ringInst.count = RING_CAP;
   _ringInst.frustumCulled = false;
@@ -67,23 +60,12 @@ export function initFX(scene) {
     _ringInst.setMatrixAt(i, _m4);
   }
   _ringInst.instanceMatrix.needsUpdate = true;
-  _ringInst.layers.enable(BLOOM_LAYER);
-  // iter 33v — push behind hero + enemies. Transparent additive default-sorts
-  // AFTER opaque, so without an explicit renderOrder these rings draw on top
-  // of the hero and enemy meshes — reading as a HUD layer instead of ground FX.
-  _ringInst.renderOrder = -2;
+  applyFloorTier(_ringInst, 'kill_pickup');
   scene.add(_ringInst);
 
   // Magnet spark — textured billboard sparkle
   const sparkGeo = new THREE.PlaneGeometry(0.6, 0.6);
-  const sparkMat = new THREE.MeshBasicMaterial({
-    map: tex('sparkCyan'),
-    color: 0xffffff,
-    transparent: true,
-    opacity: 1.0,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-  });
+  const sparkMat = floorDecalMaterial({ map: tex('sparkCyan'), side: THREE.FrontSide });
   _sparkInst = new THREE.InstancedMesh(sparkGeo, sparkMat, SPARK_CAP);
   _sparkInst.count = SPARK_CAP;
   _sparkInst.frustumCulled = false;
@@ -95,9 +77,7 @@ export function initFX(scene) {
     _sparkInst.setMatrixAt(i, _m4);
   }
   _sparkInst.instanceMatrix.needsUpdate = true;
-  _sparkInst.layers.enable(BLOOM_LAYER);
-  // iter 33v — sparks are ground-rise sprites; keep behind hero/enemies.
-  _sparkInst.renderOrder = -2;
+  applyFloorTier(_sparkInst, 'kill_pickup');
   scene.add(_sparkInst);
 
   // Per-instance color attribute so spawnMagnetSpark can spawn gold variants too.
@@ -112,14 +92,7 @@ export function initFX(scene) {
   // kills get warm-bone white pop. Single draw call shared across all
   // kill events. Sits at y just above the ring so the layered pop reads.
   const twinkleGeo = new THREE.PlaneGeometry(1.0, 1.0);
-  const twinkleMat = new THREE.MeshBasicMaterial({
-    map: tex('twinkleGold'),
-    color: 0xffffff,
-    transparent: true,
-    opacity: 1.0,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-  });
+  const twinkleMat = floorDecalMaterial({ map: tex('twinkleGold'), side: THREE.FrontSide });
   _ringTwinkleInst = new THREE.InstancedMesh(twinkleGeo, twinkleMat, TWINKLE_CAP);
   _ringTwinkleInst.count = TWINKLE_CAP;
   _ringTwinkleInst.frustumCulled = false;
@@ -129,8 +102,7 @@ export function initFX(scene) {
     _ringTwinkleInst.setMatrixAt(i, _m4);
   }
   _ringTwinkleInst.instanceMatrix.needsUpdate = true;
-  _ringTwinkleInst.layers.enable(BLOOM_LAYER);
-  _ringTwinkleInst.renderOrder = -2;
+  applyFloorTier(_ringTwinkleInst, 'kill_pickup');
   _ringTwinkleInst.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(TWINKLE_CAP * 3), 3);
   _ringTwinkleInst.instanceColor.setUsage(THREE.DynamicDrawUsage);
   const defaultTwinkleColor = new THREE.Color(0xfff9e6);
@@ -144,15 +116,12 @@ export function initFX(scene) {
   // tint so it reads as the hero's standing magic circle, not a HUD overlay.
   const pickupRingTex = makeRuneRingTexture();
   const pickupGeo = new THREE.PlaneGeometry(1, 1);
-  const pickupMat = new THREE.MeshBasicMaterial({
-    map: pickupRingTex,
-    color: 0xfff1cc,
-    transparent: true, opacity: 0.22,
-    depthWrite: false, blending: THREE.AdditiveBlending,
-  });
+  const pickupMat = floorDecalMaterial({ map: pickupRingTex, color: 0xfff1cc, opacity: 0.22, side: THREE.FrontSide });
   _pickupRing = new THREE.Mesh(pickupGeo, pickupMat);
   _pickupRing.quaternion.copy(_flatX);
   _pickupRing.position.y = 0.04;
+  // pickup ring sits one notch above the kill-ring stack on purpose: it's the
+  // hero's standing-magic-circle and should stay readable through ring pops.
   _pickupRing.renderOrder = -1;
   scene.add(_pickupRing);
 }

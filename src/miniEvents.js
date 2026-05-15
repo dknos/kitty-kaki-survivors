@@ -23,6 +23,7 @@ import { grantEmbers } from './meta.js';
 import { makeRuneRingTexture } from './enemyTells.js';
 import { tex } from './particleTextures.js';
 import { spawnTellMote } from './bossTelegraphs.js';
+import { applyFloorTier, floorDecalMaterial } from './fxLayers.js';
 import { initHelltide, tickHelltide, teardownHelltide, isHelltideActive } from './helltide.js';
 
 let _miniEventRuneTex = null;
@@ -409,20 +410,15 @@ function _makeStrikeRing(radius) {
   inner.rotation.x = -Math.PI / 2;
   const outline = new THREE.Mesh(
     new THREE.PlaneGeometry(radius * 2.1, radius * 2.1),
-    new THREE.MeshBasicMaterial({
-      map: _getMiniRuneTex(),
-      color: 0xff5a3a, transparent: true, opacity: 0.95, depthWrite: false,
-      blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
-    })
+    floorDecalMaterial({ map: _getMiniRuneTex(), color: 0xff5a3a, opacity: 0.95 }),
   );
   outline.rotation.order = 'YXZ';
   outline.rotation.x = -Math.PI / 2;
   outline.userData.spinPhase = Math.random() * Math.PI * 2;
-  outline.layers.enable(BLOOM_LAYER);
-  // Floor-decal layer (iter 33w). Both planes are flat ground (rotation.x=-π/2);
-  // negative renderOrder keeps them behind hero/enemy silhouettes.
-  inner.renderOrder = -3;
-  outline.renderOrder = -3;
+  // Both planes are flat ground (rotation.x=-π/2); applyFloorTier pins them
+  // behind hero/enemy silhouettes on the same telegraph layer.
+  applyFloorTier(inner, 'telegraph');
+  applyFloorTier(outline, 'telegraph');
   g.add(inner); g.add(outline);
   g.userData.outline = outline;
   g.userData.inner = inner;
@@ -525,18 +521,13 @@ function _startElite() {
   // elite-pack warning reads as a hex circle vs a flat colored donut.
   const tellRing = new THREE.Mesh(
     new THREE.PlaneGeometry(5.4, 5.4),
-    new THREE.MeshBasicMaterial({
-      map: _getMiniRuneTex(),
-      color: 0xff44ff, transparent: true, opacity: 0.9, depthWrite: false,
-      blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
-    })
+    floorDecalMaterial({ map: _getMiniRuneTex(), color: 0xff44ff, opacity: 0.9 }),
   );
   tellRing.rotation.order = 'YXZ';
   tellRing.rotation.x = -Math.PI / 2;
   tellRing.position.set(cx, 0.05, cz);
   tellRing.userData.spinPhase = Math.random() * Math.PI * 2;
-  tellRing.layers.enable(BLOOM_LAYER);
-  tellRing.renderOrder = -3;
+  applyFloorTier(tellRing, 'telegraph');
   _scene.add(tellRing);
 
   const count = ELITE_PACK_MIN + Math.floor(Math.random() * (ELITE_PACK_MAX - ELITE_PACK_MIN + 1));

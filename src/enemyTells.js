@@ -22,6 +22,7 @@ import * as THREE from 'three';
 import { state } from './state.js';
 import { BLOOM_LAYER } from './postfx.js';
 import { tex } from './particleTextures.js';
+import { applyFloorTier, floorDecalGeometry, floorDecalMaterial } from './fxLayers.js';
 
 // ── Caps ──────────────────────────────────────────────────────────────────
 const ELITE_RING_CAP   = 32;
@@ -892,27 +893,14 @@ export function initEnemyTells(scene) {
   // ── Per-family ground rings (iter 28h) ──
   // Shared PlaneGeometry. One InstancedMesh per family with its own texture.
   // Six families, each cap ELITE_RING_CAP — 6×32×Matrix4 is negligible.
-  const ringGeo = new THREE.PlaneGeometry(RING_OUTER * 2, RING_OUTER * 2);
-  ringGeo.rotateX(-Math.PI / 2);
+  const ringGeo = floorDecalGeometry(RING_OUTER * 2);
 
   const makeFamilyRings = (tex, defaultCol) => {
-    const mat = new THREE.MeshBasicMaterial({
-      map: tex,
-      color: 0xffffff,
-      transparent: true,
-      opacity: 0.95,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      side: THREE.DoubleSide,
-    });
+    const mat = floorDecalMaterial({ map: tex, opacity: 0.95 });
     const inst = new THREE.InstancedMesh(ringGeo, mat, ELITE_RING_CAP);
     inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     inst.frustumCulled = false;
-    // Floor-decal layer (iter 33w). Affix rings are flat ground planes
-    // (rotateX(-π/2)); negative renderOrder pushes them BEFORE the opaque hero
-    // and enemy meshes so the silhouette reads on top of the ring.
-    inst.renderOrder = -3;
-    inst.layers.enable(BLOOM_LAYER);
+    applyFloorTier(inst, 'telegraph');
     inst.instanceColor = new THREE.InstancedBufferAttribute(
       new Float32Array(ELITE_RING_CAP * 3), 3,
     );
@@ -997,23 +985,12 @@ export function initEnemyTells(scene) {
   // existing makeRuneRingTexture art so the affix family reads as "magical
   // warning, same as the other tells". Additive blending + BLOOM_LAYER so
   // it glows through the swarm's silhouette clutter.
-  const leapGeo = new THREE.PlaneGeometry(RING_OUTER * 2, RING_OUTER * 2);
-  leapGeo.rotateX(-Math.PI / 2);
-  const leapMat = new THREE.MeshBasicMaterial({
-    map: _makeRuneRingTexture(),
-    color: 0xffffff,
-    transparent: true,
-    opacity: 0.95,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    side: THREE.DoubleSide,
-  });
+  const leapGeo = floorDecalGeometry(RING_OUTER * 2);
+  const leapMat = floorDecalMaterial({ map: _makeRuneRingTexture(), opacity: 0.95 });
   _leapMarkers = new THREE.InstancedMesh(leapGeo, leapMat, LEAP_MARKER_CAP);
   _leapMarkers.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   _leapMarkers.frustumCulled = false;
-  // Ground rune at leap target — floor decal, sit behind hero/enemies.
-  _leapMarkers.renderOrder = -2;
-  _leapMarkers.layers.enable(BLOOM_LAYER);
+  applyFloorTier(_leapMarkers, 'telegraph');
   if (_leapMarkers.instanceColor === null) {
     const colors = new Float32Array(LEAP_MARKER_CAP * 3);
     _leapMarkers.instanceColor = new THREE.InstancedBufferAttribute(colors, 3);

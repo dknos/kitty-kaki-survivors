@@ -35,6 +35,7 @@ import { takeDamage as heroTakeDamage } from './hero.js';
 import { sfx } from './audio.js';
 import { makeRuneRingTexture } from './enemyTells.js';
 import { tex } from './particleTextures.js';
+import { applyFloorTier, floorDecalMaterial } from './fxLayers.js';
 
 let _runeTex = null;
 function _getRuneTex() { return _runeTex || (_runeTex = makeRuneRingTexture()); }
@@ -155,24 +156,12 @@ function _ensureMoteInst() {
   // We then yaw each mote so the head points along its velocity vector.
   const g = new THREE.PlaneGeometry(1.0, 1.0);
   // moteMagenta has the most balanced canvas; per-instance color tints it.
-  const m = new THREE.MeshBasicMaterial({
-    map: tex('moteWhite') || tex('moteCyan'),
-    color: 0xffffff,
-    transparent: true,
-    opacity: 0.95,
-    depthWrite: false,
-    blending: THREE.AdditiveBlending,
-    side: THREE.DoubleSide,
-  });
+  const m = floorDecalMaterial({ map: tex('moteWhite') || tex('moteCyan'), opacity: 0.95 });
   _moteInst = new THREE.InstancedMesh(g, m, MOTE_CAP);
   _moteInst.count = MOTE_CAP;
   _moteInst.frustumCulled = false;
   _moteInst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  // Boss-telegraph mote particles emit near the floor (y~0.05) and read as
-  // the ground tell's foreground accents. Float them just above the floor
-  // decals (-2) but still below hero — renderOrder -1.
-  _moteInst.renderOrder = -1;
-  _moteInst.layers.enable(BLOOM_LAYER);
+  applyFloorTier(_moteInst, 'boss_mote');
   // Per-instance color so cyan/magenta/amber motes coexist in one draw call.
   const colArr = new Float32Array(MOTE_CAP * 3);
   _moteColAttr = new THREE.InstancedBufferAttribute(colArr, 3);
@@ -331,15 +320,10 @@ export function resetBossTelegraphs() {
 function _makeRingMesh(color, opacity) {
   // Pooled geometry — one PlaneGeometry shared across all ring tells.
   const g = _getRingPoolGeo();
-  const m = new THREE.MeshBasicMaterial({
-    map: _getRuneTex(),
-    color: color, transparent: true, opacity: opacity != null ? opacity : 0.95,
-    depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
-  });
+  const m = floorDecalMaterial({ map: _getRuneTex(), color, opacity: opacity != null ? opacity : 0.95 });
   const ring = new THREE.Mesh(g, m);
-  ring.layers.enable(BLOOM_LAYER);
   ring.position.y = 0.04;
-  ring.renderOrder = -2;
+  applyFloorTier(ring, 'boss_tell');
   return ring;
 }
 
@@ -349,15 +333,10 @@ function _makeConeMesh(color) {
   // tint + opacity pulse is independent per windup. Boss-facing-hero
   // rotation is applied by the caller via rotation.y = -atan2(z, x).
   const g = _getConePoolGeo();
-  const m = new THREE.MeshBasicMaterial({
-    map: _getRuneTex(),
-    color: color, transparent: true, opacity: 0.85,
-    depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
-  });
+  const m = floorDecalMaterial({ map: _getRuneTex(), color, opacity: 0.85 });
   const mesh = new THREE.Mesh(g, m);
-  mesh.layers.enable(BLOOM_LAYER);
   mesh.position.y = 0.04;
-  mesh.renderOrder = -2;
+  applyFloorTier(mesh, 'boss_tell');
   return mesh;
 }
 
@@ -366,15 +345,10 @@ function _makeQuakeBar(color, opacity) {
   // across all 4 cardinal directions × multiple bosses simultaneously — the
   // per-bar position + rotation are mesh-level transforms.
   const g = _getQuakeBarPoolGeo();
-  const m = new THREE.MeshBasicMaterial({
-    map: _getRuneTex(),
-    color: color, transparent: true, opacity: opacity != null ? opacity : 0.85,
-    depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
-  });
+  const m = floorDecalMaterial({ map: _getRuneTex(), color, opacity: opacity != null ? opacity : 0.85 });
   const bar = new THREE.Mesh(g, m);
-  bar.layers.enable(BLOOM_LAYER);
   bar.position.y = 0.04;
-  bar.renderOrder = -2;
+  applyFloorTier(bar, 'boss_tell');
   return bar;
 }
 

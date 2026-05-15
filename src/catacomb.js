@@ -25,6 +25,7 @@ import { makeRuneRingTexture } from './enemyTells.js';
 import { cloneCached } from './assets.js';
 import { fxTex } from './fxTextures.js';
 import { tex } from './particleTextures.js';
+import { applyFloorTier, floorDecalGeometry, floorDecalMaterial } from './fxLayers.js';
 
 // Shared scratch matrix for catacomb mote columns. Module-level so the
 // per-frame mote update doesn't allocate; cheaper than `new Matrix4()` × 32
@@ -307,21 +308,15 @@ function _makeEntranceStairs() {
   // entrance into the catacomb — the existing warm 0xff7a3a hue cues "danger
   // below" better than a cold purple. Catacomb-internal glyph (stair-foot
   // rune below) uses the purple per brief.
-  const runeGeo = new THREE.PlaneGeometry(1.56, 1.56);
-  runeGeo.rotateX(-Math.PI / 2);
+  const runeGeo = floorDecalGeometry(1.56);
   const rune = new THREE.Mesh(
     runeGeo,
-    new THREE.MeshBasicMaterial({
-      map: _getRuneTex(),
-      color: 0xff7a3a, transparent: true, opacity: 0.85,
-      depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
-    }),
+    floorDecalMaterial({ map: _getRuneTex(), color: 0xff7a3a, opacity: 0.85 }),
   );
   rune.position.set(0, 0.05, -0.85);
-  rune.layers.enable(BLOOM_LAYER);
-  // Floor-decal — iter 33w. Catacomb entrance is a ground glyph; sit it
-  // behind hero/enemy silhouettes so the cat is never obscured by the rune.
-  rune.renderOrder = -4;
+  // Catacomb entrance is a ground glyph — portal tier keeps it behind
+  // hero/enemy silhouettes so the cat is never obscured by the rune.
+  applyFloorTier(rune, 'portal');
   rune.userData._spin = 0.35;
   g.add(rune);
   g.userData._rune = rune;
@@ -337,18 +332,15 @@ function _makeEntranceStairs() {
   //   3. mote column — 32-slot InstancedMesh, motes rise from rim and recycle
   const innerTex = fxTex('portal_catacomb_inner');
   if (innerTex) {
-    const innerGeo = new THREE.PlaneGeometry(0.95, 0.95);
-    innerGeo.rotateX(-Math.PI / 2);
+    const innerGeo = floorDecalGeometry(0.95);
     const inner = new THREE.Mesh(
       innerGeo,
-      new THREE.MeshBasicMaterial({
-        map: innerTex, color: 0xff9a55, transparent: true, opacity: 0.95,
-        depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
-      }),
+      floorDecalMaterial({ map: innerTex, color: 0xff9a55, opacity: 0.95 }),
     );
     inner.position.set(0, 0.07, -0.85);
-    inner.renderOrder = -3;
-    inner.layers.enable(BLOOM_LAYER);
+    // Inner glyph sits one tier above the outer rune so the counter-rotating
+    // sigil reads through the outer ring's bands.
+    applyFloorTier(inner, 'telegraph');
     inner.userData._spin = -0.6;
     g.add(inner);
     g.userData._innerRune = inner;
@@ -429,20 +421,14 @@ function _makeStairs() {
   // the rest of the runic-tell art language. Opacity-pulse anim hook left
   // for a future tick if needed; no consumer reads this _rune ref today
   // outside the entrance, so emissive→opacity port is a static glow.
-  const runeGeo = new THREE.PlaneGeometry(1.70, 1.70);
-  runeGeo.rotateX(-Math.PI / 2);
+  const runeGeo = floorDecalGeometry(1.70);
   const rune = new THREE.Mesh(
     runeGeo,
-    new THREE.MeshBasicMaterial({
-      map: _getRuneTex(),
-      color: 0xc87bff, transparent: true, opacity: 0.85,
-      depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
-    }),
+    floorDecalMaterial({ map: _getRuneTex(), color: 0xc87bff, opacity: 0.85 }),
   );
   rune.position.y = 0.03;
   rune.position.z = -0.8;
-  rune.layers.enable(BLOOM_LAYER);
-  rune.renderOrder = -4;
+  applyFloorTier(rune, 'portal');
   rune.userData._spin = 0.45;
   g.add(rune);
   g.userData._rune = rune;
