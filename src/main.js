@@ -4,8 +4,8 @@
  */
 import * as THREE from 'three';
 import { state, resetState } from './state.js';
-import { WORLD, SPAWN } from './config.js';
-import { preloadAll } from './assets.js';
+import { WORLD, SPAWN, AVATARS } from './config.js';
+import { preloadAll, lazyLoadGLTF, disposeCachedGLTF, BASE, GLTF_CACHE } from './assets.js';
 import { createComposer, resizeComposer, BLOOM_LAYER, applyAccessibilityOptions } from './postfx.js';
 import { buildEnv } from './env.js';
 import { unlockAudio, startMusic, setMusicTier, setVolume, setMasterVolume, setMusicVolume, setSfxVolume, suspendAudio, resumeAudio, sfx } from './audio.js';
@@ -296,8 +296,14 @@ async function boot() {
     });
   }
 
-  const start = () => {
+  const start = async () => {
     if (state.started && state.mode === 'run') return;
+    // iter 33y — ensure the selected avatar GLB is loaded BEFORE rebuildHero
+    // runs (which clones from GLTF_CACHE). If the user picked a non-default
+    // avatar in the carousel and clicked Play before its lazy fetch landed,
+    // we wait here and dispose all other hero_* cache entries to free VRAM.
+    try { await _ensureSelectedAvatarLoaded(); } catch (_) {}
+    try { _disposeUnselectedAvatars(); } catch (_) {}
     state.started = true;
     if (state.mode === 'town') exitTown();
     state.mode = 'run';
@@ -651,7 +657,11 @@ function _showTownArrivalToast(s) {
   }, 5000);
 }
 
-function restartRun() {
+async function restartRun() {
+  // iter 33y — re-loading a non-default avatar is the most common reason a
+  // restart would otherwise spawn the donor model; await the lazy fetch.
+  try { await _ensureSelectedAvatarLoaded(); } catch (_) {}
+  try { _disposeUnselectedAvatars(); } catch (_) {}
   _teardownActiveRun();
   _primeRunStart();
   resetMiniEvents();
@@ -660,6 +670,25 @@ function restartRun() {
   state._deathShown = false;
   state.started = true;
   state.run.startedAt = performance.now();
+}
+
+// iter 33y — hero-cache helpers.
+async function _ensureSelectedAvatarLoaded() {
+  const meta = getMeta();
+  const id = meta.selectedAvatar || 'kitty';
+  const av = AVATARS.find(a => a.id === id);
+  if (!av || !av.glb) return;        // donor-model avatar — already loaded
+  const key = `hero_${id}`;
+  if (GLTF_CACHE[key]) return;
+  await lazyLoadGLTF(key, BASE + av.glb);
+}
+function _disposeUnselectedAvatars() {
+  const meta = getMeta();
+  const sel = meta.selectedAvatar || 'kitty';
+  for (const av of (AVATARS || [])) {
+    if (av.id === sel || !av.glb) continue;
+    disposeCachedGLTF(`hero_${av.id}`);
+  }
 }
 
 // ── Main loop ─────────────────────────────────────────────────────────────────

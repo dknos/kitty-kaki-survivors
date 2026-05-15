@@ -15,7 +15,7 @@
  *   - Lazy: lights/meshes built on construct, RAF gated by `_visible` flag.
  */
 import * as THREE from 'three';
-import { cloneCached } from './assets.js';
+import { cloneCached, lazyLoadGLTF, BASE } from './assets.js';
 
 const RAIL_SPACING   = 2.6;      // x distance between adjacent char slots
 const SLOT_SCALE     = 0.6;      // base scale of un-selected chars
@@ -195,10 +195,13 @@ export function createCharCarousel(host, opts) {
     slot.position.x = i * RAIL_SPACING;
 
     const key = ch.glb ? `hero_${ch.id}` : 'hero';
-    const mesh = cloneCached(key) || cloneCached('hero');
     const ownedMats = [];
-    if (mesh) {
-      // Auto-fit: identical math to initHero so the preview matches gameplay
+
+    // iter 33y — lazy mount. Only the currently-selected avatar is preloaded
+    // at boot; the rest are fetched on demand here. We share the build path
+    // between eager (cache hit) and lazy (post-fetch) so the rendered look is
+    // identical either way.
+    function _buildAndAdd(mesh) {
       const rawBox = new THREE.Box3().setFromObject(mesh);
       const rawSize = rawBox.getSize(new THREE.Vector3());
       const autoFit = rawSize.y > 1e-6 ? TARGET_HEIGHT / rawSize.y : 1;
@@ -229,8 +232,16 @@ export function createCharCarousel(host, opts) {
         o.material = arr.length === 1 ? cloned[0] : cloned;
       });
       slot.add(mesh);
+    }
+
+    const mesh = cloneCached(key) || cloneCached('hero');
+    if (mesh) {
+      _buildAndAdd(mesh);
     } else {
-      // Fallback cone — same approach as initHero's GLB-fail branch
+      // Fallback cone — same approach as initHero's GLB-fail branch.
+      // When the cache miss is because the avatar GLB hasn't been fetched
+      // yet (iter 33y lazy preload), kick off the fetch and swap the cone
+      // for the real mesh when it arrives.
       const fb = new THREE.Mesh(
         new THREE.ConeGeometry(0.4, 1.2, 12),
         new THREE.MeshStandardMaterial({
@@ -240,6 +251,18 @@ export function createCharCarousel(host, opts) {
       fb.position.y = 0.6;
       ownedMats.push(fb.material);
       slot.add(fb);
+
+      if (ch.glb) {
+        lazyLoadGLTF(`hero_${ch.id}`, BASE + ch.glb).then((ok) => {
+          if (!ok) return;
+          const real = cloneCached(`hero_${ch.id}`);
+          if (!real) return;
+          slot.remove(fb);
+          try { fb.material.dispose(); } catch (_) {}
+          try { fb.geometry.dispose(); } catch (_) {}
+          _buildAndAdd(real);
+        });
+      }
     }
 
     // Lock pip overlay — small ring above the head for locked chars. Sprite

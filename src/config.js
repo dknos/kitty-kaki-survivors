@@ -353,6 +353,12 @@ export const AVATARS = [
     glb: 'bezelbug.glb',
     tint: 0xffffff, scaleMul: 1.00,
   },
+  {
+    id: 'rocker', name: 'RockerKaki', icon: '🎸',
+    desc: 'RockerKaki — leathers, hair-spray halo, amp turned to eleven.',
+    glb: 'rockerkaki.glb',
+    tint: 0xffffff, scaleMul: 1.00,
+  },
 ];
 
 /**

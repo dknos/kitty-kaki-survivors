@@ -66,6 +66,62 @@ export function cloneCached(key) {
 }
 
 /**
+ * Lazy GLTF loader (iter 33y) — fetches the asset if not yet cached and
+ * resolves with `true` when the cache entry is populated, `false` on error.
+ * Used by the carousel to fetch non-default hero avatars on demand instead
+ * of preloading all 12 at boot (~80 MB GPU memory).
+ *
+ * Returns an existing in-flight promise if one is pending for the same key,
+ * so concurrent callers share a single network request.
+ */
+const _inflight = new Map();
+export function lazyLoadGLTF(key, path) {
+  if (GLTF_CACHE[key]) return Promise.resolve(true);
+  const pending = _inflight.get(key);
+  if (pending) return pending;
+  const p = _preload(key, path).then((ok) => {
+    _inflight.delete(key);
+    return ok;
+  });
+  _inflight.set(key, p);
+  return p;
+}
+
+/**
+ * Drop a cached GLTF and release its GPU resources. Walks the scene graph
+ * to dispose every Material, MaterialMap (Texture), and BufferGeometry so
+ * VRAM doesn't leak. Used when we're done with non-selected hero avatars
+ * after entering run mode.
+ */
+export function disposeCachedGLTF(key) {
+  const gltf = GLTF_CACHE[key];
+  if (!gltf) return false;
+  const seenMats = new Set();
+  const seenTex = new Set();
+  const seenGeo = new Set();
+  gltf.scene.traverse((o) => {
+    if (o.geometry && !seenGeo.has(o.geometry)) {
+      seenGeo.add(o.geometry);
+      try { o.geometry.dispose(); } catch (_) {}
+    }
+    if (!o.material) return;
+    const arr = Array.isArray(o.material) ? o.material : [o.material];
+    for (const m of arr) {
+      if (!m || seenMats.has(m)) continue;
+      seenMats.add(m);
+      for (const slot of ['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'aoMap', 'alphaMap']) {
+        const t = m[slot];
+        if (t && !seenTex.has(t)) { seenTex.add(t); try { t.dispose(); } catch (_) {} }
+      }
+      try { m.dispose(); } catch (_) {}
+    }
+  });
+  GLTF_CACHE[key] = null;
+  delete GLTF_CACHE[key];
+  return true;
+}
+
+/**
  * Return the animation clips for a cached GLTF, or empty array.
  * Use with THREE.AnimationMixer to drive idle/walk/attack on enemies.
  */
@@ -317,8 +373,20 @@ export function preloadAll() {
   // Per-avatar GLB overrides — preload only those avatars that ship a
   // dedicated mesh (`avatar.glb` set). The base 'hero' key remains the
   // canonical donor model for any avatar without an override.
+  // iter 33y — lazy-load all non-selected avatars. Boot only preloads the
+  // currently-selected avatar (read from localStorage via meta.js). The
+  // carousel calls lazyLoadGLTF for adjacents as the user slides, and the
+  // main 'hero' donor model stays as a fallback for un-loaded picks.
+  let selectedAvatarId = 'kitty';
+  try {
+    const raw = (typeof localStorage !== 'undefined') ? localStorage.getItem('kk-survivors-meta-v1') : null;
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.selectedAvatar) selectedAvatarId = parsed.selectedAvatar;
+    }
+  } catch (_) { /* keep default */ }
   const avatarOverrides = (AVATARS || [])
-    .filter(a => a && a.glb)
+    .filter(a => a && a.glb && a.id === selectedAvatarId)
     .map(a => [`hero_${a.id}`, BASE + a.glb]);
   const list = [
     ['hero',     BASE + HERO.glb],
