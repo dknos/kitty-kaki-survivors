@@ -316,8 +316,14 @@ export const AVATARS = [
     tint: 0xffffff, scaleMul: 1.00,
   },
   {
+    id: 'mothman', name: 'Mothman', icon: '🦋',
+    desc: 'Mothman — pink-winged cryptid, eyes like brake lights.',
+    glb: 'mothman.glb',
+    tint: 0xffffff, scaleMul: 1.00,
+  },
+  {
     id: 'camper', name: 'Camper', icon: '⛺',
-    desc: 'Camper — bedroll on the back, never lost in the woods.',
+    desc: 'Camper — blue pigtails, bedroll, never lost in the woods.',
     glb: 'camper.glb',
     tint: 0xffffff, scaleMul: 1.00,
   },
@@ -325,12 +331,6 @@ export const AVATARS = [
     id: 'space', name: 'Space Kitty', icon: '🚀',
     desc: 'Space Kitty — vacuum-rated whiskers, zero-G stride.',
     glb: 'spacekitty.glb',
-    tint: 0xffffff, scaleMul: 1.00,
-  },
-  {
-    id: 'hero4', name: 'Kaki 7', icon: '✨',
-    desc: 'Placeholder name. Newly Rodin-baked silhouette.',
-    glb: 'hero4.glb',
     tint: 0xffffff, scaleMul: 1.00,
   },
 ];
