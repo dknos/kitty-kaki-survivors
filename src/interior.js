@@ -20,7 +20,6 @@ import { makeRuneRingTexture } from './enemyTells.js';
 import {
   initHomeDecor, rebuildPlacements, syncHomeUnlocks,
   openDecorateMode, isDecorateActive, tickHomeDecor,
-  HOME_CATALOG,
 } from './homeDecor.js';
 import { sfx } from './audio.js';
 import { gamepadState } from './gamepad.js';
@@ -764,4 +763,3 @@ export function tickInterior(dt) {
   if (h.z > maxZ) h.z = maxZ;
 }
 
-export const INTERIOR_ROOM = { W: ROOM_W, D: ROOM_D };

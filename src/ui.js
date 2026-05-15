@@ -9,7 +9,7 @@
  */
 import { state } from './state.js';
 import {
-  commitRunResults, getMeta, setOption, achievementCount, ACHIEVEMENTS, SHOP_UPGRADES, upgradeCost, buyUpgrade, shopLevel, isDiscovered, dailyChallengeConfig, commitDailyRun, equippedRelic, selectedStage, HOUSE_UPGRADES, houseLevel, houseCost, buyHouseUpgrade, QUEST_TEMPLATES, availableQuests, activeQuests, acceptQuest, abandonQuest, claimQuest, maxActiveQuests,
+  commitRunResults, getMeta, setOption, achievementCount, ACHIEVEMENTS, isDiscovered, dailyChallengeConfig, commitDailyRun, equippedRelic, selectedStage, HOUSE_UPGRADES, houseLevel, houseCost, buyHouseUpgrade, QUEST_TEMPLATES, availableQuests, activeQuests, acceptQuest, abandonQuest, claimQuest, maxActiveQuests,
   grantSigils,
   isCharacterUnlocked,
 
@@ -30,9 +30,9 @@ import { pushFocusScope, popFocusScope } from './uiFocus.js';
 import { mountLegend as mountPromptLegend, formatPrompt } from './buttonPrompts.js';
 import { loadArenaDecor } from './arenaDecor.js';
 import { bindTooltip, unbindTooltip, hideTooltip } from './tooltips.js';
-import { weaponBlurb, passiveBlurb, shopBlurb, fillerBlurb, characterBlurb, weaponStatRows, passiveStatRows } from './weapons/descriptions.js';
-import { showCodex, hideCodex, isCodexOpen } from './codex.js';
-import { showRunHistory, hideRunHistory, isRunHistoryOpen, recordRunResult } from './runHistory.js';
+import { weaponBlurb, passiveBlurb, fillerBlurb, characterBlurb, weaponStatRows, passiveStatRows } from './weapons/descriptions.js';
+import { showCodex, isCodexOpen } from './codex.js';
+import { showRunHistory, recordRunResult } from './runHistory.js';
 import { downloadShareCard, renderShareCard } from './shareCard.js';
 import { topRunsAcrossAll, formatSeedShareString } from './leaderboard.js';
 import { createCharCarousel } from './charCarousel.js';
@@ -60,7 +60,7 @@ const F = {
 // ── Build version ────────────────────────────────────────────────────────────
 // Flipped to '1.0.0' on the iter-11 ship commit (Shop Tree Live Wires —
 // the broken-tier-1-3-consumers gap was the last v1.0 blocker).
-export const KK_VERSION = '1.4.25';
+export const KK_VERSION = '1.4.26';
 
 // ── Module-local DOM refs ────────────────────────────────────────────────────
 let _root = null;

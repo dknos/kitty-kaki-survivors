@@ -84,6 +84,11 @@ export const SPAWN = {
   tickIntervalSec: 0.5,
   chestIntervalSec: 75,     // periodic chest spawn near hero
   chestEliteDropChance: 0.30, // probability an elite drop also spawns a chest
+  // Iter 33l — time-based HP/dmg ramp coefficients (iter 33d originally inlined).
+  // Both ride _computeDifficulty(t) [0..10]. HP scales harder than dmg so the
+  // hero doesn't get clapped by attrition while late mobs still feel tanky.
+  rampHpPerD: 0.6,
+  rampDmgPerD: 0.3,
 };
 
 /**

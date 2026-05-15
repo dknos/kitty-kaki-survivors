@@ -10,7 +10,7 @@
  */
 import * as THREE from 'three';
 import { state } from './state.js';
-import { ENEMY_TIERS, POOL_PREWARM, SPATIAL, HERO, SPAWN, DAMAGE } from './config.js';
+import { ENEMY_TIERS, POOL_PREWARM, SPATIAL, SPAWN, DAMAGE } from './config.js';
 import { cloneCached, GLTF_CACHE, getClips, findClip, upgradeMaterials, injectVertAnim } from './assets.js';
 import { takeDamage as heroTakeDamage } from './hero.js';
 import { dropGem } from './xp.js';
@@ -325,8 +325,8 @@ export function spawnEnemy(tierConfig, x, z) {
   // D ramps 0→1 over first 60 s, then 1→10 by 20 min. HP and damage both
   // ride that curve (HP harder, damage softer) on top of all other multipliers.
   const _D       = _computeDifficulty(state.time && state.time.game ? state.time.game : 0);
-  const rampHp   = 1 + 0.6 * _D;
-  const rampDmg  = 1 + 0.3 * _D;
+  const rampHp   = 1 + SPAWN.rampHpPerD  * _D;
+  const rampDmg  = 1 + SPAWN.rampDmgPerD * _D;
   const hpMul    = hyper * dailyHp * stageHp * weeklyHp * rampHp;
   const enemy = {
     mesh,

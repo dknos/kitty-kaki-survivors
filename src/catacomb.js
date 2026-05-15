@@ -765,5 +765,3 @@ export function resetCatacomb() {
   if (_entranceMesh) _entranceMesh.visible = true;
   if (_promptEl) _promptEl.style.display = 'none';
 }
-
-export const CATACOMB_DIMS = { W: CHAMBER_W, D: CHAMBER_D };

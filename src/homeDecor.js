@@ -31,7 +31,7 @@ import * as THREE from 'three';
 import { state } from './state.js';
 import {
   getMeta, saveMeta,
-  isHomeItemUnlocked, unlockHomeItem,
+  isHomeItemUnlocked,
   listHomePlacements, setHomePlacements,
 } from './meta.js';
 import { cloneCached } from './assets.js';

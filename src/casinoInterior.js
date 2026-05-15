@@ -646,4 +646,3 @@ export function tickCasinoInterior(dt) {
   if (h.z > maxZ) h.z = maxZ;
 }
 
-export const CASINO_INTERIOR_ROOM = { W: ROOM_W, D: ROOM_D };
