@@ -50,8 +50,14 @@ export const DASH = {
 };
 
 export const XP = {
-  base: 9,                  // xp needed for level 2 (iter 33d — was 5, too fast)
-  growth: 1.22,             // xpNext = base * growth^(level-1)  (was 1.18)
+  // Iter 33j — 33d's curve was still a clickfest: 8 levels in ~60s. Steeper
+  // base + growth pushes the L1→L8 total from 125 XP up to ~238 XP, which
+  // at the early spawn rate (~2 kills/sec) lands L8 around the 2:00 mark
+  // instead of 1:00. Curve table (xpNext per level):
+  //   L1→L2: 10   L2→L3: 14   L3→L4: 20   L4→L5: 27   L5→L6: 38
+  //   L6→L7: 54   L7→L8: 75   L8→L9:105  L9→L10:148  L10→L11:206
+  base: 10,
+  growth: 1.40,
   gemValue: 1,              // default
   gemSize: 0.35,
   gemMagnetMaxSpeed: 42,
