@@ -297,6 +297,12 @@ export const AVATARS = [
     glb: 'sote.glb',
     tint: 0xffffff, scaleMul: 1.00,
   },
+  {
+    id: 'cowboy', name: 'CowboyKaki', icon: '🤠',
+    desc: 'Spurs, brim, and a slow draw. Same kitty, frontier loadout.',
+    glb: 'cowboykaki.glb',
+    tint: 0xffffff, scaleMul: 1.00,
+  },
 ];
 
 /**
