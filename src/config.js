@@ -310,8 +310,14 @@ export const AVATARS = [
     tint: 0xffffff, scaleMul: 1.00,
   },
   {
+    id: 'bomdia', name: 'Bom Dia', icon: '☀️',
+    desc: 'Bom Dia — green twin-tails, idol energy at sunrise.',
+    glb: 'bomdia.glb',
+    tint: 0xffffff, scaleMul: 1.00,
+  },
+  {
     id: 'camper', name: 'Camper', icon: '⛺',
-    desc: 'Camper — green twin-tails, never far from the campfire.',
+    desc: 'Camper — bedroll on the back, never lost in the woods.',
     glb: 'camper.glb',
     tint: 0xffffff, scaleMul: 1.00,
   },
@@ -319,6 +325,12 @@ export const AVATARS = [
     id: 'space', name: 'Space Kitty', icon: '🚀',
     desc: 'Space Kitty — vacuum-rated whiskers, zero-G stride.',
     glb: 'spacekitty.glb',
+    tint: 0xffffff, scaleMul: 1.00,
+  },
+  {
+    id: 'hero4', name: 'Kaki 7', icon: '✨',
+    desc: 'Placeholder name. Newly Rodin-baked silhouette.',
+    glb: 'hero4.glb',
     tint: 0xffffff, scaleMul: 1.00,
   },
 ];
