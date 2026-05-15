@@ -310,9 +310,9 @@ export const AVATARS = [
     tint: 0xffffff, scaleMul: 1.00,
   },
   {
-    id: 'bomdia', name: 'Bom Dia', icon: '☀️',
-    desc: 'Bom Dia — morning patrol incarnate.',
-    glb: 'bomdia.glb',
+    id: 'camper', name: 'Camper', icon: '⛺',
+    desc: 'Camper — green twin-tails, never far from the campfire.',
+    glb: 'camper.glb',
     tint: 0xffffff, scaleMul: 1.00,
   },
 ];
