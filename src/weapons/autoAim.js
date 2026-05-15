@@ -11,14 +11,64 @@ import { BLOOM_LAYER } from '../postfx.js';
 import { getAimWorldPos } from '../input.js';
 import { getMeta } from '../meta.js';
 
-// Bright cyan core + larger additive glow halo. Shared mats across instances.
-const PROJ_CORE_GEO = new THREE.SphereGeometry(0.20, 10, 10);
-const PROJ_CORE_MAT = new THREE.MeshBasicMaterial({ color: 0xeaf7ff });
-const PROJ_GLOW_GEO = new THREE.PlaneGeometry(0.8, 0.8);
-const PROJ_GLOW_MAT = new THREE.MeshBasicMaterial({
-  map: tex('glowCyan'), color: 0x7fffe4,
-  transparent: true, opacity: 0.6, depthWrite: false, blending: THREE.AdditiveBlending,
-});
+// iter 33s — replaced low-poly SphereGeometry core with stacked textured
+// planes. Halo uses wizardBolt-style crackling magic texture (iceBolt for
+// the cyan variant); core uses flashStar for a bright pinpoint sparkle.
+// Both flat-on-ground (top-down ortho camera makes the planes read as
+// natural billboards). Glasswind evolved uses snowflake core for an icy
+// crystal look against a pale moteWhite trail tail.
+const PROJ_HALO_GEO  = new THREE.PlaneGeometry(1.4, 1.4);
+const PROJ_CORE_GEO  = new THREE.PlaneGeometry(0.65, 0.65);
+const PROJ_TRAIL_GEO = new THREE.PlaneGeometry(1, 1);
+// Materials are lazy because tex() resolves _cache from particleTextures,
+// which is populated by initParticleTextures() at scene bootstrap. autoAim
+// is imported earlier in some chains, so module-scope material creation
+// would lock in map:null and the missile would render as a flat colored
+// rectangle. First spawn after init resolves the real texture.
+let _haloMat = null, _coreMat = null, _trailMat = null;
+let _haloMatIce = null, _coreMatIce = null, _trailMatIce = null;
+function _mkHaloMat() {
+  return new THREE.MeshBasicMaterial({
+    map: tex('iceBolt'), color: 0x9ee6ff,
+    transparent: true, opacity: 0.95, depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+}
+function _mkCoreMat() {
+  return new THREE.MeshBasicMaterial({
+    map: tex('flashStar'), color: 0xffffff,
+    transparent: true, opacity: 1.0, depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+}
+function _mkTrailMat() {
+  return new THREE.MeshBasicMaterial({
+    map: tex('moteCyan'), color: 0x9ee6ff,
+    transparent: true, opacity: 0.7, depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+}
+function _mkHaloMatIce() {
+  return new THREE.MeshBasicMaterial({
+    map: tex('iceBolt'), color: 0xcfeaff,
+    transparent: true, opacity: 0.95, depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+}
+function _mkCoreMatIce() {
+  return new THREE.MeshBasicMaterial({
+    map: tex('snowflake'), color: 0xeaf6ff,
+    transparent: true, opacity: 1.0, depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+}
+function _mkTrailMatIce() {
+  return new THREE.MeshBasicMaterial({
+    map: tex('moteWhite'), color: 0xc8e8ff,
+    transparent: true, opacity: 0.75, depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+}
+function _getHaloMat()      { return _haloMat      || (_haloMat      = _mkHaloMat()); }
+function _getCoreMat()      { return _coreMat      || (_coreMat      = _mkCoreMat()); }
+function _getTrailMat()     { return _trailMat     || (_trailMat     = _mkTrailMat()); }
+function _getHaloMatIce()   { return _haloMatIce   || (_haloMatIce   = _mkHaloMatIce()); }
+function _getCoreMatIce()   { return _coreMatIce   || (_coreMatIce   = _mkCoreMatIce()); }
+function _getTrailMatIce()  { return _trailMatIce  || (_trailMatIce  = _mkTrailMatIce()); }
 const _glowFlat = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
 
 const SEARCH_RADIUS = 40;
@@ -45,29 +95,40 @@ function findNearestEnemy(pos) {
   return best;
 }
 
-// Glasswind: pale-blue / ice-shard color overrides for the evolved missile.
-const PROJ_CORE_MAT_ICE = new THREE.MeshBasicMaterial({ color: 0xd6ecff });
-const PROJ_GLOW_MAT_ICE = new THREE.MeshBasicMaterial({
-  map: tex('glowCyan'), color: 0xbfe0ff,
-  transparent: true, opacity: 0.65, depthWrite: false, blending: THREE.AdditiveBlending,
-});
 
 function spawnProjectile(origin, dir, level, dmg, speedMul = 1, pierceBonus = 0, owner = 'autoaim', opts = null) {
   const ice = !!(opts && opts.ice);
   const scaleMul = (opts && opts.scale) || 1;
   const group = new THREE.Group();
-  const core = new THREE.Mesh(PROJ_CORE_GEO, ice ? PROJ_CORE_MAT_ICE : PROJ_CORE_MAT);
-  const glow = new THREE.Mesh(PROJ_GLOW_GEO, ice ? PROJ_GLOW_MAT_ICE : PROJ_GLOW_MAT);
+  // Halo (big crackle disc), Core (bright sparkle), Trail (mote streak).
+  const halo  = new THREE.Mesh(PROJ_HALO_GEO,  ice ? _getHaloMatIce()  : _getHaloMat());
+  const core  = new THREE.Mesh(PROJ_CORE_GEO,  ice ? _getCoreMatIce()  : _getCoreMat());
+  const trail = new THREE.Mesh(PROJ_TRAIL_GEO, ice ? _getTrailMatIce() : _getTrailMat());
+  // Flat-on-ground: rotation.x = -π/2 places the plane facing camera (top-
+  // down ortho cam acts as natural billboard).
+  halo.rotation.x = -Math.PI / 2;
+  core.rotation.x = -Math.PI / 2;
+  trail.rotation.x = -Math.PI / 2;
+  // Trail stretched along motion vector: width=0.45, length=1.9. atan2(vx,vz)
+  // matches the world-Y rotation convention used by enemyProjectiles.js so
+  // the moteCyan bitmap's bright leading head sits in the direction of travel.
+  const yaw = Math.atan2(dir.x, dir.z);
+  trail.rotation.y = yaw;
+  trail.scale.set(0.45, 1.9, 1);
+  trail.position.set(0, -0.06, 0);
+  halo.position.set(0, -0.02, 0);
+  core.position.set(0, 0.01, 0);
   if (scaleMul !== 1) {
-    core.scale.setScalar(scaleMul);
-    glow.scale.setScalar(scaleMul);
+    halo.scale.multiplyScalar(scaleMul);
+    core.scale.multiplyScalar(scaleMul);
+    trail.scale.multiplyScalar(scaleMul);
   }
-  glow.quaternion.copy(_glowFlat);
-  glow.position.y = -0.05;
-  glow.layers.enable(BLOOM_LAYER);
+  halo.layers.enable(BLOOM_LAYER);
   core.layers.enable(BLOOM_LAYER);
+  trail.layers.enable(BLOOM_LAYER);
+  group.add(trail);
+  group.add(halo);
   group.add(core);
-  group.add(glow);
   group.position.set(origin.x, 0.5, origin.z);
   state.scene.add(group);
   const vel = new THREE.Vector3(dir.x, 0, dir.z).multiplyScalar(level.speed * (state.hero.statMul.projSpeed || 1) * speedMul);
@@ -93,35 +154,42 @@ function spawnProjectile(origin, dir, level, dmg, speedMul = 1, pierceBonus = 0,
 // Exported so the central projectile tick can spawn Glasswind shards on hit
 // without re-importing autoAim internals. Spawns 2 perpendicular half-dmg shards.
 export function spawnGlasswindShards(origin, parentVel, parentDmg) {
-  // Perpendicular split: ±35° off the original heading.
+  // Perpendicular split: ±35° off the original heading. Shards inherit the
+  // parent's actual world-velocity (already statMul-scaled) so they don't
+  // double-multiply via spawnProjectile's level.speed path.
   const baseAngle = Math.atan2(parentVel.z, parentVel.x);
   const speed = Math.hypot(parentVel.x, parentVel.z) || 1;
   for (const sign of [-1, 1]) {
     const a = baseAngle + sign * 0.6;
     const dir = { x: Math.cos(a), z: Math.sin(a) };
     const group = new THREE.Group();
-    const core = new THREE.Mesh(PROJ_CORE_GEO, PROJ_CORE_MAT_ICE);
-    const glow = new THREE.Mesh(PROJ_GLOW_GEO, PROJ_GLOW_MAT_ICE);
-    core.scale.setScalar(0.6);
-    glow.scale.setScalar(0.6);
-    glow.quaternion.copy(_glowFlat);
-    glow.position.y = -0.05;
-    glow.layers.enable(BLOOM_LAYER);
+    const halo  = new THREE.Mesh(PROJ_HALO_GEO,  _getHaloMatIce());
+    const core  = new THREE.Mesh(PROJ_CORE_GEO,  _getCoreMatIce());
+    const trail = new THREE.Mesh(PROJ_TRAIL_GEO, _getTrailMatIce());
+    halo.rotation.x = -Math.PI / 2;
+    core.rotation.x = -Math.PI / 2;
+    trail.rotation.x = -Math.PI / 2;
+    trail.rotation.y = Math.atan2(dir.x, dir.z);
+    trail.scale.set(0.45, 1.9, 1);
+    halo.scale.multiplyScalar(0.6);
+    core.scale.multiplyScalar(0.6);
+    trail.scale.multiplyScalar(0.6);
+    trail.position.set(0, -0.06, 0);
+    halo.position.set(0, -0.02, 0);
+    core.position.set(0, 0.01, 0);
+    halo.layers.enable(BLOOM_LAYER);
     core.layers.enable(BLOOM_LAYER);
+    trail.layers.enable(BLOOM_LAYER);
+    group.add(trail);
+    group.add(halo);
     group.add(core);
-    group.add(glow);
     group.position.set(origin.x, 0.5, origin.z);
     state.scene.add(group);
     const vel = new THREE.Vector3(dir.x, 0, dir.z).multiplyScalar(speed * 0.9);
     state.projectiles.active.push({
-      mesh: group,
-      vel,
-      dmg: parentDmg * 0.5,
-      ttl: 0.8,
-      pierce: 1,
-      hit: new Set(),
-      ownerWeapon: 'glasswind',
-      noSplit: true,    // shards don't re-split
+      mesh: group, vel,
+      dmg: parentDmg * 0.5, ttl: 0.8, pierce: 1,
+      hit: new Set(), ownerWeapon: 'glasswind', noSplit: true,
     });
   }
 }
