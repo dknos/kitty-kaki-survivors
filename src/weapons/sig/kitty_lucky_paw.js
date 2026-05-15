@@ -57,15 +57,19 @@ export default {
   desc: 'Random-target swipes — many small lucky strikes.',
   icon: '🐾',
   maxLevel: 8,
+  // Phase G tune: pre-G L8 (7*42/0.40 ≈ 735 instant-hit DPS, no projectile
+  // travel cost) was top-3 outlier. Random target spray needs no aim, so the
+  // ceiling stays slightly below cowboy/bezelbug. Trim count 7→5 + dmg 42→32
+  // at L8 → 5*32/0.40 ≈ 400 effective DPS.
   levels: [
     { cooldown: 0.90, count: 2, dmg:  6 },
-    { cooldown: 0.80, count: 3, dmg:  8 },
-    { cooldown: 0.70, count: 3, dmg: 11 },
-    { cooldown: 0.60, count: 4, dmg: 14 },
-    { cooldown: 0.55, count: 4, dmg: 19 },
-    { cooldown: 0.50, count: 5, dmg: 25 },
-    { cooldown: 0.45, count: 6, dmg: 33 },
-    { cooldown: 0.40, count: 7, dmg: 42 },
+    { cooldown: 0.80, count: 2, dmg:  8 },
+    { cooldown: 0.70, count: 3, dmg: 10 },
+    { cooldown: 0.62, count: 3, dmg: 13 },
+    { cooldown: 0.55, count: 4, dmg: 17 },
+    { cooldown: 0.50, count: 4, dmg: 21 },
+    { cooldown: 0.45, count: 5, dmg: 26 },
+    { cooldown: 0.40, count: 5, dmg: 32 },
   ],
 
   init(state, level, inst) { inst.cd = 0.3; },

@@ -766,8 +766,13 @@ export function spendEmbersForAvatar(id) {
 /**
  * Called at run end with the kills + bossKills earned while this avatar was
  * the active hero. Bumps kills + runs counters and grants Mastery per the
- * conversion rate locked in PROGRESSION_REDESIGN.md §6:
- *   1 Mastery per 10 enemy kills + 5 per mini-boss + 15 per final boss.
+ * conversion rate locked in PROGRESSION_REDESIGN.md §6 + recalibrated against
+ * §5.G's "1-2 / 8 / 25 runs" tier pacing in Phase G:
+ *   1 Mastery per 25 enemy kills + 5 per mini-boss + 15 per final boss.
+ *   (Phase G changed kills/10 → kills/25; pre-G a 500-kill run banked ~55
+ *    mastery, which made tier 3 (500) reachable in ~10 runs vs the planned
+ *    25. Slower per-run rate keeps the tier thresholds at the documented
+ *    50 / 200 / 500 without re-tuning carousel UI text.)
  * Returns the Mastery gained for the death-screen banner.
  */
 export function recordAvatarRun(id, { kills = 0, miniBossKills = 0, finalBossKills = 0 } = {}) {
@@ -782,7 +787,7 @@ export function recordAvatarRun(id, { kills = 0, miniBossKills = 0, finalBossKil
   const rec = meta.avatarUnlocks[id];
   rec.kills = (rec.kills || 0) + Math.max(0, Math.floor(kills));
   rec.runs  = (rec.runs  || 0) + 1;
-  const masteryGained = Math.floor(kills / 10)
+  const masteryGained = Math.floor(kills / 25)
                        + Math.max(0, Math.floor(miniBossKills)) * 5
                        + Math.max(0, Math.floor(finalBossKills)) * 15;
   if (!meta.mastery) meta.mastery = {};

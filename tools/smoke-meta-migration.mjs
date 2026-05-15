@@ -109,10 +109,11 @@ async function scenario4Api() {
   // grant mastery
   assert.equal(m.grantMastery('kitty', 50), 50,      'api: grantMastery returns balance');
   assert.equal(m.getMastery('kitty'), 50);
-  // recordAvatarRun: 100 kills = +10 mastery; mini = +5; final = +15
+  // recordAvatarRun (Phase G recalibration): 100 kills = +4 mastery
+  // (kills/25); mini = +5; final = +15. Pre-G formula was kills/10.
   const gained = m.recordAvatarRun('kitty', { kills: 100, miniBossKills: 1, finalBossKills: 1 });
-  assert.equal(gained, 10 + 5 + 15,                  'api: recordAvatarRun mastery formula');
-  assert.equal(m.getMastery('kitty'), 50 + 30);
+  assert.equal(gained, 4 + 5 + 15,                   'api: recordAvatarRun mastery formula');
+  assert.equal(m.getMastery('kitty'), 50 + 24);
   // setUnlockFlag idempotent
   assert.equal(m.setUnlockFlag('finalBossWin'), true);
   assert.equal(m.setUnlockFlag('finalBossWin'), false);

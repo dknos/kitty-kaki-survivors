@@ -43,18 +43,20 @@ export default {
   desc: 'Tight burst of bullets — Headhunter-friendly.',
   icon: '🔫',
   maxLevel: 8,
-  // Provisional curve (Phase G recalibrates against the 30-min bench). Speed
-  // x ttl ≤ ~22u keeps bullets on-screen at ortho zoom. Damage tracks autoaim
-  // baseline; burst-count caps at 6 to honor the "six-shooter" gag.
+  // Phase G tune: pre-G L8 (6*70/0.55 ≈ 763 single-target eDPS via pierce 3)
+  // was the second-highest outlier behind bezelbug. Trim dmg 70→52 + count
+  // 5→4 at L8 → 4*52/0.55 ≈ 378 single-target × pierce 3 ≈ 1100 for
+  // packed-file lines, comfortably below pipes' line-DPS niche. Speed x ttl
+  // ≤ ~22u (camera ortho rule). Burst-count still caps at the six-shooter gag.
   levels: [
     { cooldown: 1.20, speed: 22, dmg: 10, ttl: 0.85, pierce: 1, count: 2 },
-    { cooldown: 1.10, speed: 23, dmg: 14, ttl: 0.85, pierce: 1, count: 2 },
-    { cooldown: 1.00, speed: 24, dmg: 18, ttl: 0.85, pierce: 1, count: 3 },
-    { cooldown: 0.90, speed: 24, dmg: 24, ttl: 0.85, pierce: 2, count: 3 },
-    { cooldown: 0.80, speed: 25, dmg: 32, ttl: 0.85, pierce: 2, count: 4 },
-    { cooldown: 0.72, speed: 25, dmg: 42, ttl: 0.90, pierce: 2, count: 5 },
-    { cooldown: 0.65, speed: 26, dmg: 55, ttl: 0.90, pierce: 3, count: 6 },
-    { cooldown: 0.55, speed: 26, dmg: 70, ttl: 0.90, pierce: 3, count: 6 },
+    { cooldown: 1.10, speed: 23, dmg: 13, ttl: 0.85, pierce: 1, count: 2 },
+    { cooldown: 1.00, speed: 24, dmg: 17, ttl: 0.85, pierce: 1, count: 3 },
+    { cooldown: 0.90, speed: 24, dmg: 22, ttl: 0.85, pierce: 2, count: 3 },
+    { cooldown: 0.82, speed: 25, dmg: 28, ttl: 0.85, pierce: 2, count: 3 },
+    { cooldown: 0.75, speed: 25, dmg: 35, ttl: 0.90, pierce: 2, count: 4 },
+    { cooldown: 0.65, speed: 26, dmg: 43, ttl: 0.90, pierce: 3, count: 4 },
+    { cooldown: 0.55, speed: 26, dmg: 52, ttl: 0.90, pierce: 3, count: 4 },
   ],
 
   init(state, level, inst) {

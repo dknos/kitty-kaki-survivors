@@ -41,15 +41,20 @@ export default {
   desc: 'Line-pierce bolt — drills through a packed file of enemies.',
   icon: '🥸',
   maxLevel: 8,
+  // Phase G tune: pre-G L8 = 88 dmg × pierce 14 / 0.55s cd ≈ 2240 line-DPS in
+  // packed swarms — well past cowboy/bezelbug. Line-pierce kits SHOULD lead
+  // single-axis DPS by design, but 2200 dwarfed every other kit. Trim dmg
+  // 88→60 and pierce ceiling 14→10 at L8 → 60×10/0.55 ≈ 1090 line-DPS,
+  // ~1.5× cowboy's 700-ish packed-file value.
   levels: [
-    { cooldown: 1.20, speed: 24, dmg: 14, ttl: 0.95, pierce: 4, dotDps:  2, dotDur: 1.0 },
-    { cooldown: 1.10, speed: 25, dmg: 18, ttl: 0.95, pierce: 5, dotDps:  3, dotDur: 1.0 },
-    { cooldown: 1.00, speed: 26, dmg: 24, ttl: 1.00, pierce: 6, dotDps:  4, dotDur: 1.1 },
-    { cooldown: 0.90, speed: 26, dmg: 31, ttl: 1.00, pierce: 7, dotDps:  6, dotDur: 1.1 },
-    { cooldown: 0.80, speed: 27, dmg: 40, ttl: 1.05, pierce: 8, dotDps:  9, dotDur: 1.2 },
-    { cooldown: 0.72, speed: 27, dmg: 52, ttl: 1.05, pierce: 10, dotDps: 13, dotDur: 1.2 },
-    { cooldown: 0.65, speed: 28, dmg: 68, ttl: 1.10, pierce: 12, dotDps: 18, dotDur: 1.3 },
-    { cooldown: 0.55, speed: 28, dmg: 88, ttl: 1.10, pierce: 14, dotDps: 25, dotDur: 1.3 },
+    { cooldown: 1.20, speed: 24, dmg: 12, ttl: 0.95, pierce: 4, dotDps:  2, dotDur: 1.0 },
+    { cooldown: 1.10, speed: 25, dmg: 16, ttl: 0.95, pierce: 5, dotDps:  3, dotDur: 1.0 },
+    { cooldown: 1.00, speed: 26, dmg: 20, ttl: 1.00, pierce: 5, dotDps:  4, dotDur: 1.1 },
+    { cooldown: 0.90, speed: 26, dmg: 26, ttl: 1.00, pierce: 6, dotDps:  6, dotDur: 1.1 },
+    { cooldown: 0.82, speed: 27, dmg: 33, ttl: 1.05, pierce: 7, dotDps:  8, dotDur: 1.2 },
+    { cooldown: 0.74, speed: 27, dmg: 41, ttl: 1.05, pierce: 8, dotDps: 11, dotDur: 1.2 },
+    { cooldown: 0.65, speed: 28, dmg: 50, ttl: 1.10, pierce: 9, dotDps: 14, dotDur: 1.3 },
+    { cooldown: 0.55, speed: 28, dmg: 60, ttl: 1.10, pierce: 10, dotDps: 18, dotDur: 1.3 },
   ],
 
   init(state, level, inst) {

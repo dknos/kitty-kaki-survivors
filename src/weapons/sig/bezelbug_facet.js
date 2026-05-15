@@ -27,15 +27,18 @@ export default {
   icon: '💎',
   maxLevel: 8,
   // count grows with level; speed × ttl ≤ ~22u (camera ortho rule).
+  // Phase G tune: pre-G dmg 8→64 / count 6→24 / cd 1.4→0.7 made L8 effective
+  // DPS ~2200 (count*dmg/cd) — 3× the next-closest kit. Cut dmg ramp + flattened
+  // count ramp to bring L8 into the ~600-700 band shared by cowboy/kitty/mona.
   levels: [
-    { cooldown: 1.40, speed: 20, dmg:  8, ttl: 0.85, pierce: 1, count:  6 },
-    { cooldown: 1.30, speed: 21, dmg: 11, ttl: 0.90, pierce: 1, count:  7 },
-    { cooldown: 1.20, speed: 22, dmg: 15, ttl: 0.90, pierce: 1, count:  9 },
-    { cooldown: 1.10, speed: 22, dmg: 20, ttl: 0.95, pierce: 2, count: 11 },
-    { cooldown: 1.00, speed: 23, dmg: 27, ttl: 0.95, pierce: 2, count: 13 },
-    { cooldown: 0.90, speed: 24, dmg: 36, ttl: 1.00, pierce: 2, count: 16 },
-    { cooldown: 0.80, speed: 25, dmg: 48, ttl: 1.00, pierce: 3, count: 20 },
-    { cooldown: 0.70, speed: 26, dmg: 64, ttl: 1.05, pierce: 3, count: 24 },
+    { cooldown: 1.40, speed: 20, dmg:  7, ttl: 0.85, pierce: 1, count:  6 },
+    { cooldown: 1.30, speed: 21, dmg:  9, ttl: 0.90, pierce: 1, count:  7 },
+    { cooldown: 1.20, speed: 22, dmg: 12, ttl: 0.90, pierce: 1, count:  8 },
+    { cooldown: 1.10, speed: 22, dmg: 16, ttl: 0.95, pierce: 2, count: 10 },
+    { cooldown: 1.00, speed: 23, dmg: 21, ttl: 0.95, pierce: 2, count: 12 },
+    { cooldown: 0.95, speed: 24, dmg: 27, ttl: 1.00, pierce: 2, count: 13 },
+    { cooldown: 0.90, speed: 25, dmg: 33, ttl: 1.00, pierce: 3, count: 15 },
+    { cooldown: 0.85, speed: 26, dmg: 40, ttl: 1.05, pierce: 3, count: 16 },
   ],
 
   init(state, level, inst) { inst.cd = 0.5; },
