@@ -118,32 +118,23 @@ function _makeWall(w, h, color = 0x6a1014) {
 }
 
 function _makeNeonSign() {
-  // "CASINO" — a fat additive plane behind the back wall that bleeds bloom.
-  // Kept as a single plane (no per-letter geometry) so the read is "neon glow"
-  // without needing an SDF font upload.
+  // "CASINO" — opaque emissive plane flush against the back wall. Iter 33i —
+  // previous additive + depthWrite=false combo bled red across the floor in
+  // iso view (additive screen blend ignores world depth). Emissive + bloom
+  // layer gives the same neon glow without the bleed.
   const g = new THREE.Group();
   const panel = new THREE.Mesh(
-    new THREE.PlaneGeometry(7.5, 1.4),
-    new THREE.MeshBasicMaterial({
-      color: 0xff3a3a, transparent: true, opacity: 0.95,
-      depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    new THREE.PlaneGeometry(6.0, 1.2),
+    new THREE.MeshStandardMaterial({
+      color: 0xff3a3a, emissive: 0xff3a3a, emissiveIntensity: 1.6, roughness: 0.6,
     }),
   );
   panel.layers.enable(BLOOM_LAYER);
   panel.position.set(0, WALL_H - 1.4, -ROOM_D / 2 + 0.4);
   g.add(panel);
-  // A fainter outer halo so the neon reads soft, not pixelated
-  const halo = new THREE.Mesh(
-    new THREE.PlaneGeometry(8.6, 2.2),
-    new THREE.MeshBasicMaterial({
-      color: 0xff7a3a, transparent: true, opacity: 0.32,
-      depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
-    }),
-  );
-  halo.position.set(0, WALL_H - 1.4, -ROOM_D / 2 + 0.36);
-  g.add(halo);
-  // Warm fill light on the back wall
-  const pl = new THREE.PointLight(0xff7a3a, 1.4, 8, 2);
+  // Warm fill light on the back wall (kept — point lights are world-space and
+  // attenuate correctly, no additive overdraw).
+  const pl = new THREE.PointLight(0xff7a3a, 1.1, 7, 2);
   pl.position.set(0, WALL_H - 0.8, -ROOM_D / 2 + 1.2);
   g.add(pl);
   return g;
@@ -211,14 +202,15 @@ function _makeSlotMachine() {
   );
   frame.position.set(0, 1.55, 0.46);
   g.add(frame);
-  // Three reel panes (left, center, right)
+  // Three reel panes (left, center, right) — opaque emissive so they glow via
+  // bloom but never bleed across world geometry like the previous additive
+  // panes did (iter 33i fix).
   for (let i = 0; i < 3; i++) {
+    const tint = i === 1 ? 0xffd27f : 0xff7a3a;
     const pane = new THREE.Mesh(
       new THREE.PlaneGeometry(0.42, 0.78),
-      new THREE.MeshBasicMaterial({
-        color: i === 1 ? 0xffd27f : 0xff7a3a,
-        transparent: true, opacity: 0.92,
-        depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+      new THREE.MeshStandardMaterial({
+        color: tint, emissive: tint, emissiveIntensity: 1.4, roughness: 0.55,
       }),
     );
     pane.position.set(-0.48 + i * 0.48, 1.55, 0.49);
@@ -444,12 +436,11 @@ function _makeExitDoor() {
   );
   split.position.set(0, (WALL_H - 0.6) / 2, 0.07);
   g.add(split);
-  // EXIT sign above
+  // EXIT sign above — opaque emissive (no additive overdraw, iter 33i).
   const sign = new THREE.Mesh(
     new THREE.PlaneGeometry(0.9, 0.30),
-    new THREE.MeshBasicMaterial({
-      color: 0x2aff66, transparent: true, opacity: 0.95,
-      depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    new THREE.MeshStandardMaterial({
+      color: 0x2aff66, emissive: 0x2aff66, emissiveIntensity: 1.4, roughness: 0.55,
     }),
   );
   sign.position.set(0, WALL_H - 0.4, 0.07);
@@ -586,9 +577,11 @@ export function setCasinoInteriorHandler(key, fn) { _handlers[key] = fn; }
 export function enterCasinoInterior() {
   state.mode = 'casino_interior';
   if (_group) _group.position.y = 0;
-  // Hide the town group while the casino room is on-screen — plaza circle
-  // is wider than the room and bleeds through the iso camera frustum edges.
+  // Hide the town group + env stage backdrop while the casino room is
+  // on-screen — both extend past the room walls and bleed through the iso
+  // camera frustum edges (plaza disc + forest ground plane).
   try { setTownGroupVisible(false); } catch (_) {}
+  if (state.envGroup) state.envGroup.visible = false;
   // Spawn at the door (south end of the room)
   state.hero.pos.set(0, 0, ROOM_D / 2 - 2.4);
   state.hero.vel.set(0, 0, 0);
@@ -599,6 +592,7 @@ export function exitCasinoInterior() {
   state.mode = 'town';
   if (_group) _group.position.y = -200;
   try { setTownGroupVisible(true); } catch (_) {}
+  if (state.envGroup) state.envGroup.visible = true;
   if (_promptEl) _promptEl.style.display = 'none';
   _activeKey = null;
 }
@@ -609,12 +603,13 @@ export function tickCasinoInterior(dt) {
     return;
   }
 
-  // Slot-pane flicker + chandelier sway (cheap atmospherics).
+  // Slot-pane flicker (cheap atmospherics) — modulate emissive intensity now
+  // that panes are opaque emissive instead of additive (iter 33i).
   if (_group) {
     const t = state.time.real;
     _group.traverse(o => {
       if (o.userData && o.userData._slotPane) {
-        o.material.opacity = 0.78 + 0.18 * (0.5 + 0.5 * Math.sin(t * 4.3 + o.position.x * 7));
+        o.material.emissiveIntensity = 1.1 + 0.5 * (0.5 + 0.5 * Math.sin(t * 4.3 + o.position.x * 7));
       }
     });
   }
