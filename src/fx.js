@@ -10,6 +10,7 @@ import { HERO } from './config.js';
 import { tex } from './particleTextures.js';
 import { BLOOM_LAYER } from './postfx.js';
 import { makeRuneRingTexture } from './enemyTells.js';
+import { fxTex } from './fxTextures.js';
 
 const RING_CAP = 64;
 const SPARK_CAP = 64;
@@ -44,9 +45,11 @@ let _sparkDirty = false;
 let _twinkleDirty = false;
 
 export function initFX(scene) {
-  // Kill ring — textured plane, lying flat on the ground plane (rotated)
+  // Kill ring — textured plane, lying flat on the ground plane (rotated).
+  // iter 33w — switched to hand-painted Blizzard-style WebP via fxTex.
+  // Falls back to the legacy canvas ringGold if the manifest hasn't landed yet.
   const ringGeo = new THREE.PlaneGeometry(2.0, 2.0);
-  const ringTex = tex('ringGold');
+  const ringTex = fxTex('ring_arcane') || tex('ringGold');
   const ringMat = new THREE.MeshBasicMaterial({
     map: ringTex,
     color: 0xffffff,

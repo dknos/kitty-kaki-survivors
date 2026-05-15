@@ -23,11 +23,19 @@ import { bindPrompt, setPromptLabel } from './buttonPrompts.js';
 import { BLOOM_LAYER } from './postfx.js';
 import { makeRuneRingTexture } from './enemyTells.js';
 import { cloneCached } from './assets.js';
+import { fxTex } from './fxTextures.js';
 
 // Shared rune-ring texture for catacomb glyphs (entrance lip + stair foot).
-// Lazy-cached so we don't re-render the canvas every build.
+// iter 33w — prefer the hand-painted Blizzard-style portal glyph from the FX
+// manifest; fall back to the legacy canvas rune ring if the manifest hasn't
+// loaded yet (manifest is awaited in main.js boot, so this fallback is a
+// safety net for dev hot-reloads, not the production path).
 let _runeTex = null;
-function _getRuneTex() { return _runeTex || (_runeTex = makeRuneRingTexture()); }
+function _getRuneTex() {
+  if (_runeTex) return _runeTex;
+  _runeTex = fxTex('portal_catacomb_outer') || makeRuneRingTexture();
+  return _runeTex;
+}
 
 // Chamber dims (world units)
 const CHAMBER_W = 30;
@@ -305,6 +313,9 @@ function _makeEntranceStairs() {
   );
   rune.position.set(0, 0.05, -0.85);
   rune.layers.enable(BLOOM_LAYER);
+  // Floor-decal — iter 33w. Catacomb entrance is a ground glyph; sit it
+  // behind hero/enemy silhouettes so the cat is never obscured by the rune.
+  rune.renderOrder = -4;
   rune.userData._spin = 0.35;
   g.add(rune);
   g.userData._rune = rune;
@@ -347,6 +358,7 @@ function _makeStairs() {
   rune.position.y = 0.03;
   rune.position.z = -0.8;
   rune.layers.enable(BLOOM_LAYER);
+  rune.renderOrder = -4;
   rune.userData._spin = 0.45;
   g.add(rune);
   g.userData._rune = rune;

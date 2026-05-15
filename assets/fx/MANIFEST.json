@@ -1,0 +1,24 @@
+{
+  "_about": "Hand-painted Blizzard-style ground rings and portal glyphs. Source: Vertex Imagen 4 fast (1024px) → Pillow LANCZOS to 512px → WebP q88.",
+  "_blend_modes": {
+    "additive": "THREE.AdditiveBlending — black bg disappears, color adds onto floor. Use for rune rings, telegraph rings, kill pops.",
+    "normal":   "THREE.NormalBlending  — premultiplied alpha. Use only if texture has true alpha cutout."
+  },
+  "_floor_tiers": {
+    "shadow":     -10,
+    "kill_pickup": -5,
+    "portal":      -4,
+    "telegraph":   -3,
+    "boss_tell":   -2
+  },
+  "textures": {
+    "ring_arcane":           { "file": "rings/ring_arcane.webp",           "size": 512, "blend": "additive", "tier": "telegraph", "tintable": true,  "use": "Generic ornate ground ring. Drop-in for ringGold callers." },
+    "ring_kill_elite":       { "file": "rings/ring_kill_elite.webp",       "size": 512, "blend": "additive", "tier": "kill_pickup", "tintable": false, "use": "Crimson chaos-star kill ring for elites." },
+    "ring_kill_miniboss":    { "file": "rings/ring_kill_miniboss.webp",    "size": 512, "blend": "additive", "tier": "kill_pickup", "tintable": false, "use": "Gold + violet lightning kill ring for mini-bosses." },
+    "portal_catacomb_outer": { "file": "rings/portal_catacomb_outer.webp", "size": 512, "blend": "additive", "tier": "portal",    "tintable": false, "use": "Outer rotating glyph for catacomb entrance/exit." },
+    "portal_catacomb_inner": { "file": "rings/portal_catacomb_inner.webp", "size": 512, "blend": "additive", "tier": "portal",    "tintable": false, "use": "Inner counter-rotating sigil for catacomb." },
+    "aoe_danger":            { "file": "rings/aoe_danger.webp",            "size": 512, "blend": "additive", "tier": "telegraph", "tintable": true,  "use": "Red danger telegraph for AoE windups." },
+    "spawn_ring":            { "file": "rings/spawn_ring.webp",            "size": 512, "blend": "additive", "tier": "telegraph", "tintable": true,  "use": "Conjuring sigil for enemy summon / elite-pack spawn." },
+    "pickup_pulse":          { "file": "rings/pickup_pulse.webp",          "size": 512, "blend": "additive", "tier": "kill_pickup", "tintable": true,  "use": "Soft pickup-radius glow." }
+  }
+}

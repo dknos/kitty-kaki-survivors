@@ -168,7 +168,10 @@ function _ensureMoteInst() {
   _moteInst.count = MOTE_CAP;
   _moteInst.frustumCulled = false;
   _moteInst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  _moteInst.renderOrder = 5;
+  // Boss-telegraph mote particles emit near the floor (y~0.05) and read as
+  // the ground tell's foreground accents. Float them just above the floor
+  // decals (-2) but still below hero — renderOrder -1.
+  _moteInst.renderOrder = -1;
   _moteInst.layers.enable(BLOOM_LAYER);
   // Per-instance color so cyan/magenta/amber motes coexist in one draw call.
   const colArr = new Float32Array(MOTE_CAP * 3);
@@ -336,7 +339,7 @@ function _makeRingMesh(color, opacity) {
   const ring = new THREE.Mesh(g, m);
   ring.layers.enable(BLOOM_LAYER);
   ring.position.y = 0.04;
-  ring.renderOrder = 5;
+  ring.renderOrder = -2;
   return ring;
 }
 
@@ -354,7 +357,7 @@ function _makeConeMesh(color) {
   const mesh = new THREE.Mesh(g, m);
   mesh.layers.enable(BLOOM_LAYER);
   mesh.position.y = 0.04;
-  mesh.renderOrder = 5;
+  mesh.renderOrder = -2;
   return mesh;
 }
 
@@ -371,7 +374,7 @@ function _makeQuakeBar(color, opacity) {
   const bar = new THREE.Mesh(g, m);
   bar.layers.enable(BLOOM_LAYER);
   bar.position.y = 0.04;
-  bar.renderOrder = 5;
+  bar.renderOrder = -2;
   return bar;
 }
 

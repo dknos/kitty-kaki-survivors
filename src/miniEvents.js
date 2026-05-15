@@ -419,8 +419,10 @@ function _makeStrikeRing(radius) {
   outline.rotation.x = -Math.PI / 2;
   outline.userData.spinPhase = Math.random() * Math.PI * 2;
   outline.layers.enable(BLOOM_LAYER);
-  inner.renderOrder = 4;
-  outline.renderOrder = 5;
+  // Floor-decal layer (iter 33w). Both planes are flat ground (rotation.x=-π/2);
+  // negative renderOrder keeps them behind hero/enemy silhouettes.
+  inner.renderOrder = -3;
+  outline.renderOrder = -3;
   g.add(inner); g.add(outline);
   g.userData.outline = outline;
   g.userData.inner = inner;
@@ -534,7 +536,7 @@ function _startElite() {
   tellRing.position.set(cx, 0.05, cz);
   tellRing.userData.spinPhase = Math.random() * Math.PI * 2;
   tellRing.layers.enable(BLOOM_LAYER);
-  tellRing.renderOrder = 5;
+  tellRing.renderOrder = -3;
   _scene.add(tellRing);
 
   const count = ELITE_PACK_MIN + Math.floor(Math.random() * (ELITE_PACK_MAX - ELITE_PACK_MIN + 1));

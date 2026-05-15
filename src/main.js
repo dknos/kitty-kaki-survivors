@@ -188,6 +188,16 @@ async function boot() {
   showStartScreen('Loading…');
   initParticleTextures();   // synchronous canvas → texture, no network
   await preloadAll();
+  // iter 33w — load the hand-painted FX manifest before initFX so synchronous
+  // fxTex('ring_arcane') calls during init hit the WebP path, not the canvas
+  // fallback. Texture image data still arrives async; the manifest fetch is
+  // small (~1 KB) and happens in parallel with preloadAll above.
+  try {
+    const { fxAwait } = await import('./fxTextures.js');
+    await fxAwait();
+  } catch (e) {
+    console.warn('[boot.fxTex]', e);
+  }
 
   state.envGroup = buildEnv(scene, renderer);
   buildTown(scene);

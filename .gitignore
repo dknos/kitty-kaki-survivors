@@ -16,3 +16,7 @@ node_modules/
 
 # Background-agent worktrees (used by Claude Code Agent isolation)
 .claude/
+
+# AI-gen texture candidates (winners get promoted into assets/fx/)
+assets/fx/_candidates/
+

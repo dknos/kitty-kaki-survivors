@@ -908,7 +908,10 @@ export function initEnemyTells(scene) {
     const inst = new THREE.InstancedMesh(ringGeo, mat, ELITE_RING_CAP);
     inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     inst.frustumCulled = false;
-    inst.renderOrder = 4;
+    // Floor-decal layer (iter 33w). Affix rings are flat ground planes
+    // (rotateX(-π/2)); negative renderOrder pushes them BEFORE the opaque hero
+    // and enemy meshes so the silhouette reads on top of the ring.
+    inst.renderOrder = -3;
     inst.layers.enable(BLOOM_LAYER);
     inst.instanceColor = new THREE.InstancedBufferAttribute(
       new Float32Array(ELITE_RING_CAP * 3), 3,
@@ -1008,7 +1011,8 @@ export function initEnemyTells(scene) {
   _leapMarkers = new THREE.InstancedMesh(leapGeo, leapMat, LEAP_MARKER_CAP);
   _leapMarkers.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   _leapMarkers.frustumCulled = false;
-  _leapMarkers.renderOrder = 5;
+  // Ground rune at leap target — floor decal, sit behind hero/enemies.
+  _leapMarkers.renderOrder = -2;
   _leapMarkers.layers.enable(BLOOM_LAYER);
   if (_leapMarkers.instanceColor === null) {
     const colors = new Float32Array(LEAP_MARKER_CAP * 3);
