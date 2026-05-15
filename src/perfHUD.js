@@ -22,6 +22,19 @@ let _fps = 0;
 let _msAvg = 0;
 let _nextPaint = 0;
 
+// iter 33o — per-subsystem timing.
+// perfMark(name, startMs) accumulates (now - startMs) into _perfAcc[name].
+// Displayed in perfHUD as sorted ms breakdown over the same window as FPS.
+const _perfAcc = Object.create(null);
+const _perfDisp = Object.create(null);
+export function perfMark(name, startMs) {
+  if (!_on) return;
+  _perfAcc[name] = (_perfAcc[name] || 0) + (performance.now() - startMs);
+}
+export function perfStart() {
+  return _on ? performance.now() : 0;
+}
+
 export function initPerfHUD() {
   if (_el) return;
   _el = document.createElement('div');
@@ -69,6 +82,10 @@ export function updatePerfHUD() {
   _nextPaint = now + 250;
   _fps = _accFrames > 0 ? (1000 * _accFrames / _accMs) : 0;
   _msAvg = _accFrames > 0 ? (_accMs / _accFrames) : 0;
+  // Compute per-subsystem ms-per-frame avg from the accumulator window.
+  const _denom = Math.max(1, _accFrames);
+  for (const k in _perfAcc) _perfDisp[k] = _perfAcc[k] / _denom;
+  for (const k in _perfAcc) _perfAcc[k] = 0;
   _accFrames = 0; _accMs = 0;
 
   const r = state.renderer;
@@ -95,5 +112,20 @@ export function updatePerfHUD() {
     `projs ${String(projs).padStart(3)}  enemyProjs ${String(eprojs).padStart(3)}`,
     `gems ${String(gems).padStart(4)}   webs ${String(webs).padStart(2)}`,
   ];
+
+  // iter 33o — per-subsystem breakdown (top 10 ms hogs).
+  const _names = Object.keys(_perfDisp);
+  if (_names.length > 0) {
+    _names.sort((a, b) => _perfDisp[b] - _perfDisp[a]);
+    lines_out.push(``);
+    lines_out.push(`-- ms/frame --`);
+    for (let i = 0; i < Math.min(_names.length, 10); i++) {
+      const n = _names[i];
+      const v = _perfDisp[n];
+      if (v < 0.02) break;
+      lines_out.push(`${n.padEnd(12)} ${v.toFixed(2).padStart(5)}`);
+    }
+  }
+
   _el.innerHTML = `<span style="color:${fpsColor};">${lines_out[0]}</span>\n` + lines_out.slice(1).join('\n');
 }

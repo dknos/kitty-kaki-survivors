@@ -29,7 +29,7 @@ import { initVFXBurst, updateVFXBurst, resetVFXBurst } from './vfxBurst.js';
 import { initChests, tickChests, resetChests, spawnAt as spawnChestAt } from './chest.js';
 import { initBossTelegraphs, updateBossTelegraphs, resetBossTelegraphs } from './bossTelegraphs.js';
 import { initDestructibles, resetDestructibles } from './destructibles.js';
-import { initPerfHUD, updatePerfHUD } from './perfHUD.js';
+import { initPerfHUD, updatePerfHUD, perfStart, perfMark } from './perfHUD.js';
 import { initParticleTextures } from './particleTextures.js';
 import { initPickups, tickPickups, resetPickups } from './pickups.js';
 import { initBlobShadows, updateBlobShadows } from './blobShadows.js';
@@ -1155,35 +1155,36 @@ function frame(now) {
     );
   }
 
-  // ── Logic phase ──
+  // ── Logic phase ── (iter 33o — perfMark wraps subsystems for breakdown).
+  let _p;
   sampleInput();
-  updateHero(logicDt);
-  tickSpawnDirector(logicDt);
+  _p=perfStart(); updateHero(logicDt);            perfMark('hero', _p);
+  _p=perfStart(); tickSpawnDirector(logicDt);     perfMark('spawnDir', _p);
   // Tier-4 Overdrive capstone (Power branch) — must tick BEFORE tickWeapons
   // so the stashed statMul multipliers apply within the same frame's weapon
   // cooldown reads (autoAim / chain / orbitals all read h.statMul.cooldown).
   _tickOverdrive(logicDt);
-  updateEnemies(logicDt);
-  tickWeapons(logicDt);
-  updateGems(logicDt);
-  updateFX(logicDt);
-  updateVFXBurst(logicDt);
-  updatePickupRing();
-  updateEnemyProjectiles(logicDt);
-  tickChests(logicDt);
-  updateBossTelegraphs(logicDt);
-  tickTotems(logicDt);
-  tickPylons(logicDt);
-  tickBells(logicDt);
-  updateEnemyTells(logicDt);
-  tickStageHazards(logicDt);
-  tickStageRule(state, logicDt);
-  tickMiniEvents(logicDt);
-  tickArenaProps(logicDt);
-  tickPickups(logicDt);
-  tickCatacombEntrance(logicDt);
-  updateBlobShadows();
-  updateDamageNumbers(realDt);
+  _p=perfStart(); updateEnemies(logicDt);         perfMark('enemies', _p);
+  _p=perfStart(); tickWeapons(logicDt);           perfMark('weapons', _p);
+  _p=perfStart(); updateGems(logicDt);            perfMark('gems', _p);
+  _p=perfStart(); updateFX(logicDt);              perfMark('fx', _p);
+  _p=perfStart(); updateVFXBurst(logicDt);        perfMark('vfxBurst', _p);
+  _p=perfStart(); updatePickupRing();             perfMark('pickupRing', _p);
+  _p=perfStart(); updateEnemyProjectiles(logicDt);perfMark('eprojs', _p);
+  _p=perfStart(); tickChests(logicDt);            perfMark('chests', _p);
+  _p=perfStart(); updateBossTelegraphs(logicDt);  perfMark('bossTells', _p);
+  _p=perfStart(); tickTotems(logicDt);            perfMark('totems', _p);
+  _p=perfStart(); tickPylons(logicDt);            perfMark('pylons', _p);
+  _p=perfStart(); tickBells(logicDt);             perfMark('bells', _p);
+  _p=perfStart(); updateEnemyTells(logicDt);      perfMark('enemyTells', _p);
+  _p=perfStart(); tickStageHazards(logicDt);      perfMark('hazards', _p);
+  _p=perfStart(); tickStageRule(state, logicDt);  perfMark('stageRule', _p);
+  _p=perfStart(); tickMiniEvents(logicDt);        perfMark('miniEvents', _p);
+  _p=perfStart(); tickArenaProps(logicDt);        perfMark('arenaProps', _p);
+  _p=perfStart(); tickPickups(logicDt);           perfMark('pickups', _p);
+  _p=perfStart(); tickCatacombEntrance(logicDt);  perfMark('catacEntry', _p);
+  _p=perfStart(); updateBlobShadows();            perfMark('blobs', _p);
+  _p=perfStart(); updateDamageNumbers(realDt);    perfMark('dmgNums', _p);
 
   // FX decay (real time so feedback fades even during hit-stop)
   state.fx.chromaticPulse *= Math.pow(0.05, realDt);
@@ -1263,9 +1264,9 @@ function frame(now) {
     liftU.z += (targetB - liftU.z) * 0.04;
   }
 
-  updateUI();
+  _p=perfStart(); updateUI();      perfMark('ui', _p);
 
-  renderFrame();
+  _p=perfStart(); renderFrame();   perfMark('render', _p);
   updatePerfHUD();
   requestAnimationFrame(frame);
 }
