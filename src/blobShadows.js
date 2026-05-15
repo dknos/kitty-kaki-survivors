@@ -13,6 +13,7 @@ const _m4 = new THREE.Matrix4();
 const _v3 = new THREE.Vector3();
 const _flatX = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
 const _zeroScale = new THREE.Vector3(0, 0, 0);
+const _tmpScale  = new THREE.Vector3();    // iter 33k — pool for Matrix4.compose
 
 let _inst = null;
 let _dirty = false;
@@ -71,7 +72,7 @@ export function updateBlobShadows() {
   const hp = state.hero && state.hero.pos;
   if (hp && state.mode === 'run') {
     _v3.set(hp.x, Y_DECAL, hp.z);
-    _m4.compose(_v3, _flatX, new THREE.Vector3(0.85, 0.85, 0.85));
+    _m4.compose(_v3, _flatX, _tmpScale.set(0.85, 0.85, 0.85));
     _inst.setMatrixAt(i++, _m4);
   }
 
@@ -85,7 +86,7 @@ export function updateBlobShadows() {
     // size ≈ horizontal footprint of the model
     const r = Math.max(0.6, ms * 0.9);
     _v3.set(e.mesh.position.x, Y_DECAL, e.mesh.position.z);
-    _m4.compose(_v3, _flatX, new THREE.Vector3(r, r, r));
+    _m4.compose(_v3, _flatX, _tmpScale.set(r, r, r));
     _inst.setMatrixAt(i++, _m4);
   }
   // Hide unused slots

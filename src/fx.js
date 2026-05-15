@@ -23,6 +23,10 @@ const _v3 = new THREE.Vector3();
 const _q  = new THREE.Quaternion();
 const _flatX = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
 const _zeroScale = new THREE.Vector3(0, 0, 0);
+// Iter 33k — pool a uniform-scale temp for per-frame Matrix4.compose() calls.
+// Previously each ring/spark/twinkle alloc'd `new THREE.Vector3(s,s,s)` per
+// element per frame — ~300 GC objects/sec at heavy load.
+const _tmpScale = new THREE.Vector3();
 
 let _ringInst = null;
 let _sparkInst = null;
@@ -192,7 +196,7 @@ export function updateFX(dt) {
     } else {
       const s = r.baseScale * (0.3 + k * 3.2);
       _v3.set(r.x, 0.08, r.z);
-      _m4.compose(_v3, _flatX, new THREE.Vector3(s, s, s));
+      _m4.compose(_v3, _flatX, _tmpScale.set(s, s, s));
       _ringInst.setMatrixAt(i, _m4);
       _ringDirty = true;
     }
@@ -216,7 +220,7 @@ export function updateFX(dt) {
         const easeIn = Math.min(1, k * 4);             // 0 → 1 in first 25%
         const s = tw.baseScale * (0.35 + 0.85 * easeIn) * (1 - 0.2 * k);
         _v3.set(tw.x, 0.10, tw.z);
-        _m4.compose(_v3, _flatX, new THREE.Vector3(s, s, s));
+        _m4.compose(_v3, _flatX, _tmpScale.set(s, s, s));
         _ringTwinkleInst.setMatrixAt(i, _m4);
         // Color fade: hold full bright for first 40%, then linear fade.
         const a = k < 0.4 ? 1 : 1 - (k - 0.4) / 0.6;
@@ -241,7 +245,7 @@ export function updateFX(dt) {
       const rise = k * 1.2;
       const s = (1 - k) * 1.5; // sprite scale multiplier — start bigger than 1 unit
       _v3.set(sp.x, sp.y + rise, sp.z);
-      _m4.compose(_v3, _flatX, new THREE.Vector3(s, s, s));
+      _m4.compose(_v3, _flatX, _tmpScale.set(s, s, s));
       _sparkInst.setMatrixAt(i, _m4);
       _sparkInst.setColorAt(i, _sparkColor.setHex(sp.color || 0x44ffcc));
       _sparkDirty = true;

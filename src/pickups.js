@@ -218,11 +218,12 @@ function _magnetTowardHero(p, dt) {
 }
 
 const _spinEuler = new THREE.Euler();
+const _pickupScl = new THREE.Vector3();   // iter 33k — pool for compose
 function _writeMatrix(inst, i, p, scale) {
   _v3.set(p.x, Y_BASE + Math.sin(p.t * 3) * 0.18, p.z);
   _spinEuler.set(0, p.t * 1.4, 0);   // gentle Y-axis spin
   _q.setFromEuler(_spinEuler);
-  _m4.compose(_v3, _q, new THREE.Vector3(scale, scale, scale));
+  _m4.compose(_v3, _q, _pickupScl.set(scale, scale, scale));
   inst.setMatrixAt(i, _m4);
 }
 

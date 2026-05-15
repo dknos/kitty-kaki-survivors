@@ -32,6 +32,7 @@ const _m4 = new THREE.Matrix4();
 const _v3 = new THREE.Vector3();
 const _flatX = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
 const _zero = new THREE.Vector3(0, 0, 0);
+const _tmpScale = new THREE.Vector3();   // iter 33k — pool for Matrix4.compose
 const _color = new THREE.Color();
 
 let _scene = null;
@@ -124,7 +125,7 @@ export function initStageHazards(scene) {
 
 function _writeMatrix(inst, i, x, y, z, scale, color) {
   _v3.set(x, y, z);
-  _m4.compose(_v3, _flatX, new THREE.Vector3(scale, scale, scale));
+  _m4.compose(_v3, _flatX, _tmpScale.set(scale, scale, scale));
   inst.setMatrixAt(i, _m4);
   if (color !== undefined) inst.setColorAt(i, _color.setHex(color));
 }
@@ -140,7 +141,7 @@ function _writeMatrixYaw(inst, i, x, y, z, scale, yaw, color) {
   _v3.set(x, y, z);
   _yawQuat.setFromAxisAngle(_yawAxis, yaw);
   _composeQuat.multiplyQuaternions(_yawQuat, _flatX);
-  _m4.compose(_v3, _composeQuat, new THREE.Vector3(scale, scale, scale));
+  _m4.compose(_v3, _composeQuat, _tmpScale.set(scale, scale, scale));
   inst.setMatrixAt(i, _m4);
   if (color !== undefined) inst.setColorAt(i, _color.setHex(color));
 }

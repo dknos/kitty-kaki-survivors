@@ -18,6 +18,9 @@ const _m4 = new THREE.Matrix4();
 const _v3 = new THREE.Vector3();
 const _flatX = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
 const _zeroScale = new THREE.Vector3(0, 0, 0);
+const _tmpScale  = new THREE.Vector3();   // iter 33k — pool for Matrix4.compose
+const _dashQ     = new THREE.Quaternion(); // iter 33k — was alloc'd in updateVFXBurst
+const _dashE     = new THREE.Euler();      // iter 33k — same
 const _color = new THREE.Color();
 
 let _smokeInst = null, _emberInst = null, _flashInst = null, _shockInst = null, _dashInst = null;
@@ -216,7 +219,7 @@ export function updateVFXBurst(dt) {
     } else {
       const s = f.baseScale * (k < 0.25 ? (k / 0.25) : 1) * (1 - k * 0.5);
       _v3.set(f.x, 0.5, f.z);
-      _m4.compose(_v3, _flatX, new THREE.Vector3(s, s, s));
+      _m4.compose(_v3, _flatX, _tmpScale.set(s, s, s));
       _flashInst.setMatrixAt(i, _m4);
       const a = 1 - k;
       _flashInst.setColorAt(i, _color.setHex(f.color).multiplyScalar(a));
@@ -236,7 +239,7 @@ export function updateVFXBurst(dt) {
     } else {
       const s = r.baseScale * (0.4 + k * 4.2);
       _v3.set(r.x, 0.06, r.z);
-      _m4.compose(_v3, _flatX, new THREE.Vector3(s, s, s));
+      _m4.compose(_v3, _flatX, _tmpScale.set(s, s, s));
       _shockInst.setMatrixAt(i, _m4);
       const a = (1 - k) * (1 - k);
       _shockInst.setColorAt(i, _color.setHex(r.color).multiplyScalar(a));
@@ -263,7 +266,7 @@ export function updateVFXBurst(dt) {
       sm.vy = Math.max(0.2, sm.vy * Math.pow(0.6, dt));
       const s = sm.baseScale * (0.6 + k * 2.2);
       _v3.set(sm.x, sm.y, sm.z);
-      _m4.compose(_v3, _flatX, new THREE.Vector3(s, s, s));
+      _m4.compose(_v3, _flatX, _tmpScale.set(s, s, s));
       _smokeInst.setMatrixAt(i, _m4);
       // Darken to gray as it ages
       const shade = 1 - k * 0.6;
@@ -290,7 +293,7 @@ export function updateVFXBurst(dt) {
       e.z += e.vz * dt;
       const s = 0.6 * (1 - k * 0.3);
       _v3.set(e.x, e.y, e.z);
-      _m4.compose(_v3, _flatX, new THREE.Vector3(s, s, s));
+      _m4.compose(_v3, _flatX, _tmpScale.set(s, s, s));
       _emberInst.setMatrixAt(i, _m4);
       const a = 1 - k;
       _emberInst.setColorAt(i, _color.setHex(e.color).multiplyScalar(a));
@@ -300,8 +303,7 @@ export function updateVFXBurst(dt) {
   while (_embers.length && (_embers[0].t >= _embers[0].life || _embers[0].y < 0)) _embers.shift();
 
   // Dash streaks — flat additive plane stretched along motion. Fades 0.32s.
-  const _dashQ = new THREE.Quaternion();
-  const _dashE = new THREE.Euler();
+  // _dashQ / _dashE hoisted to module scope (iter 33k) to skip per-frame alloc.
   for (let i = 0; i < _dashStreaks.length; i++) {
     const ds = _dashStreaks[i];
     ds.t += dt;
@@ -317,7 +319,7 @@ export function updateVFXBurst(dt) {
       const widthScale = 0.55 * (1 - k * 0.4);
       const lenScale   = ds.length * (1 - k * 0.2);
       _v3.set(ds.x, 0.45, ds.z);
-      _m4.compose(_v3, _dashQ, new THREE.Vector3(widthScale, lenScale, 1));
+      _m4.compose(_v3, _dashQ, _tmpScale.set(widthScale, lenScale, 1));
       _dashInst.setMatrixAt(i, _m4);
       const a = 1 - k;
       _dashInst.setColorAt(i, _color.setHex(ds.color).multiplyScalar(a));

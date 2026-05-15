@@ -29,6 +29,7 @@ const _scaleZero = new THREE.Vector3(0, 0, 0);
 const _toHero = new THREE.Vector3();
 const _sparkleFlat = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
 const _sparkleScale = new THREE.Vector3();
+const _gemScale = new THREE.Vector3();   // iter 33k — pool for gem matrix compose
 
 let _matrixDirty = false;
 // Separate dirty flag for the sparkle billboard layer (capped at gem capacity
@@ -51,7 +52,7 @@ function _placeInstance(i, pos, value = 1, yaw = 0) {
   const tier = _gemTier(value);
   const s = tier.scale;
   _quat.setFromAxisAngle(_up, yaw);
-  _mat.compose(pos, _quat, new THREE.Vector3(s, s, s));
+  _mat.compose(pos, _quat, _gemScale.set(s, s, s));
   state.gems.instMesh.setMatrixAt(i, _mat);
   _matrixDirty = true;
   // Sparkle layer rides slightly above the gem and pulses on a sine wave.
