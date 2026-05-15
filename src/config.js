@@ -142,14 +142,16 @@ export const ENEMY_TIERS = [
 
 /** Initial roster size pre-warmed per pool to hide first-horde stall. */
 export const POOL_PREWARM = {
-  // iter 33t — sized to absorb 100-600 alive cap without mid-game cloning.
-  // Common tier counts ~2.5×; heavy tiers ~2×; rare elites 1× (low weight).
-  zombie: 70, goblin: 70, skeleton: 50, orc: 36, demon: 36,
-  robot: 24, mech: 16, xeno: 24, slime: 32, giant: 6, dragon: 3,
-  spider: 48, wolf: 36, wizard: 24, ghost: 24,
-  // Forest bugs — high counts because they're the new primary tier
-  ant: 100, beetle: 60, ladybug: 50, grasshopper: 40, butterfly: 30,
-  bee: 30, cockroach: 40, wasp: 24, caterpillar: 12, mantis: 12,
+  // iter 33y — trimmed ~40% from iter 33t. Pools auto-grow on miss (one-shot
+  // clone stall) so prewarm only needs to cover the first ~30 seconds of
+  // spawns, not the whole run cap. The old prewarm carried ~870 cloned
+  // meshes — a big chunk of resident JS + GPU memory even before play.
+  zombie: 40, goblin: 40, skeleton: 30, orc: 20, demon: 20,
+  robot: 14, mech: 8,  xeno: 14, slime: 18, giant: 3, dragon: 2,
+  spider: 28, wolf: 22, wizard: 14, ghost: 14,
+  // Forest bugs — primary forest tier, still highest counts but trimmed.
+  ant: 60, beetle: 36, ladybug: 30, grasshopper: 24, butterfly: 18,
+  bee: 18, cockroach: 24, wasp: 14, caterpillar: 8, mantis: 8,
 };
 
 export const SPATIAL = {
