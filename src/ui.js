@@ -12,6 +12,8 @@ import {
   commitRunResults, getMeta, setOption, achievementCount, ACHIEVEMENTS, isDiscovered, dailyChallengeConfig, commitDailyRun, equippedRelic, selectedStage, HOUSE_UPGRADES, houseLevel, houseCost, buyHouseUpgrade, QUEST_TEMPLATES, availableQuests, activeQuests, acceptQuest, abandonQuest, claimQuest, maxActiveQuests,
   grantSigils,
   isCharacterUnlocked,
+  // Iter 34 — Phase E (progression redesign)
+  isAvatarUnlocked, isAvatarUnlockable, spendEmbersForAvatar, AVATAR_UNLOCK_COSTS, getMastery,
 
   SHOP_TREE, purchaseTreeNode, nodeUnlocked, nodeOwned, sigilCount,
   addPreset, removePreset, listPresets, applyPreset,
@@ -1212,6 +1214,128 @@ function escapeHtml(s) {
   }[ch]));
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// Iter 34 — Phase E (progression redesign): avatar unlock chain.
+// ──────────────────────────────────────────────────────────────────────────
+
+/**
+ * Convert an AVATAR_UNLOCK_COSTS row into a short hint string for the
+ * carousel info panel. Examples: "150 Embers", "Defeat the first mini-boss",
+ * "Catacomb clear", "300 Embers + 100 Mastery (any avatar)".
+ */
+function formatAvatarLockHint(avatar) {
+  const cost = AVATAR_UNLOCK_COSTS[avatar.id];
+  if (!cost) return 'Locked.';
+  const parts = [];
+  if (cost.embers != null) parts.push(`${cost.embers} Embers`);
+  if (cost.mastery && cost.mastery.any != null) parts.push(`${cost.mastery.any} Mastery (any avatar)`);
+  if (cost.mastery && cost.mastery[avatar.id] != null) parts.push(`${cost.mastery[avatar.id]} Mastery on ${avatar.name}`);
+  if (cost.flag) {
+    parts.push({
+      firstMiniBossKill: 'Defeat your first mini-boss',
+      survive5MinRun:    'Survive 5 minutes in one run',
+      catacombClear:     'Clear a Catacomb dungeon',
+      finalBossWin:      'Defeat a final boss',
+      casinoJackpot:     'Hit a casino jackpot',
+    }[cost.flag] || `Condition: ${cost.flag}`);
+  }
+  return parts.length ? `Unlock: ${parts.join(' + ')}.` : 'Locked.';
+}
+
+let _avatarUnlockModal = null;
+
+function hideAvatarUnlockModal() {
+  if (_avatarUnlockModal && _avatarUnlockModal.parentNode) {
+    _avatarUnlockModal.parentNode.removeChild(_avatarUnlockModal);
+  }
+  _avatarUnlockModal = null;
+}
+
+/**
+ * Modal: shows the avatar portrait, lock condition, and an Unlock button if
+ * the spend is currently affordable. Closes on click outside / Esc / Cancel.
+ */
+function showAvatarUnlockModal(avatar) {
+  hideAvatarUnlockModal();
+  const cost = AVATAR_UNLOCK_COSTS[avatar.id] || {};
+  const affordable = isAvatarUnlockable(avatar.id) && cost.embers != null;
+  const meta = getMeta();
+  const overlay = document.createElement('div');
+  overlay.style.cssText = `
+    position:fixed; inset:0; z-index:9000;
+    display:flex; align-items:center; justify-content:center;
+    background:rgba(0,0,0,0.55); backdrop-filter:blur(4px);
+    pointer-events:auto;
+  `;
+  const card = document.createElement('div');
+  card.style.cssText = `
+    min-width:320px; max-width:480px;
+    padding:24px 28px;
+    background:linear-gradient(180deg, rgba(22,32,26,0.96), rgba(8,14,12,0.98));
+    border:1px solid rgba(255,210,127,0.55);
+    border-radius:14px;
+    box-shadow:0 24px 60px rgba(0,0,0,0.7);
+    color:#f5efe1;
+    font-family:'Crimson Text',Georgia,serif;
+  `;
+  const title = document.createElement('div');
+  title.style.cssText = 'font-size:22px;letter-spacing:0.18em;color:#ffd27f;text-align:center;';
+  title.textContent = `${avatar.icon || '◇'}  ${avatar.name}`;
+  const hint = document.createElement('div');
+  hint.style.cssText = 'margin-top:12px;text-align:center;opacity:0.85;font-size:14px;line-height:1.5;';
+  hint.textContent = formatAvatarLockHint(avatar);
+  const bal = document.createElement('div');
+  bal.style.cssText = 'margin-top:8px;text-align:center;opacity:0.7;font-size:12px;letter-spacing:0.18em;text-transform:uppercase;';
+  bal.textContent = `You hold: ${meta.embers || 0} Embers`;
+  const btnRow = document.createElement('div');
+  btnRow.style.cssText = 'margin-top:18px;display:flex;gap:10px;justify-content:center;';
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.textContent = 'Close';
+  cancelBtn.style.cssText = `
+    padding:8px 18px;border-radius:999px;cursor:pointer;
+    background:rgba(20,28,22,0.85);border:1px solid rgba(245,239,225,0.35);
+    color:#f5efe1;font-family:'Crimson Text',Georgia,serif;font-size:14px;
+  `;
+  cancelBtn.addEventListener('click', hideAvatarUnlockModal);
+  btnRow.appendChild(cancelBtn);
+  if (cost.embers != null) {
+    const unlockBtn = document.createElement('button');
+    unlockBtn.type = 'button';
+    unlockBtn.disabled = !affordable;
+    unlockBtn.textContent = affordable ? `Unlock for ${cost.embers} Embers` : `Need ${cost.embers - (meta.embers || 0)} more`;
+    unlockBtn.style.cssText = `
+      padding:8px 18px;border-radius:999px;cursor:${affordable ? 'pointer' : 'not-allowed'};
+      background:${affordable ? 'linear-gradient(180deg,#ffd27f,#c89858)' : 'rgba(60,40,30,0.55)'};
+      border:1px solid rgba(255,210,127,0.65);
+      color:${affordable ? '#1a1410' : 'rgba(245,239,225,0.55)'};
+      font-family:'Crimson Text',Georgia,serif;font-size:14px;font-weight:600;
+    `;
+    if (affordable) {
+      unlockBtn.addEventListener('click', () => {
+        if (spendEmbersForAvatar(avatar.id)) {
+          hideAvatarUnlockModal();
+          if (_charCarousel && _charCarousel.refreshUnlocks) {
+            try { _charCarousel.refreshUnlocks(); } catch (_) {}
+          }
+          showBanner(`${avatar.icon || '◇'} ${avatar.name} unlocked!`, 2.5, '#ffd27f');
+        }
+      });
+    }
+    btnRow.appendChild(unlockBtn);
+  }
+  card.appendChild(title);
+  card.appendChild(hint);
+  card.appendChild(bal);
+  card.appendChild(btnRow);
+  overlay.appendChild(card);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) hideAvatarUnlockModal(); });
+  const onEsc = (e) => { if (e.key === 'Escape') { hideAvatarUnlockModal(); window.removeEventListener('keydown', onEsc); } };
+  window.addEventListener('keydown', onEsc);
+  document.body.appendChild(overlay);
+  _avatarUnlockModal = overlay;
+}
+
 export function hideLevelUpModal() {
   if (_modalKeyHandler) {
     window.removeEventListener('keydown', _modalKeyHandler);
@@ -1268,6 +1392,14 @@ export function showDeathScreen() {
   // 2.4s delay slots after the stage banners so they don't stomp each other
   // when multiple unlocks fire from the same victory run.
   if (summary.unlockedClockwork) setTimeout(() => showBanner('★ CHARACTER UNLOCKED: CLOCKWORK', 4.0, '#7fffe4'), 2400);
+  // Iter 34 — Phase E: post-run mastery banner. recordAvatarRun returns the
+  // count earned this run (Math.floor(kills/10) + 5/mb + 15/final). Skip the
+  // banner for runs that earned 0 (short deaths) so we don't spam empty toasts.
+  if (summary.masteryGained && summary.masteryGained > 0) {
+    const av = AVATARS.find(a => a.id === summary.avatarId);
+    const label = av ? `${av.icon || '◇'} ${av.name}` : summary.avatarId;
+    setTimeout(() => showBanner(`+${summary.masteryGained} Mastery · ${label}`, 3.0, '#7fffe4'), 3000);
+  }
 
   _deathScreen = document.createElement('div');
   _deathScreen.className = 'kk-death';
@@ -1597,6 +1729,10 @@ export function showStartScreen(text) {
         _charCarousel = createCharCarousel(_startCharRowRef, {
           items: AVATARS,
           initialId: getMeta().selectedAvatar || 'kitty',
+          isUnlocked: (a) => isAvatarUnlocked(a.id),
+          formatLockHint: (a) => formatAvatarLockHint(a),
+          getMastery: (id) => getMastery(id),
+          onLockedActivate: (a) => showAvatarUnlockModal(a),
           onSelect: (id) => {
             setOption('selectedAvatar', id);
             getMeta().selectedAvatar = id;
@@ -1706,6 +1842,10 @@ export function showStartScreen(text) {
     _charCarousel = createCharCarousel(charRow, {
       items: AVATARS,
       initialId: meta.selectedAvatar || 'kitty',
+      isUnlocked: (a) => isAvatarUnlocked(a.id),
+      formatLockHint: (a) => formatAvatarLockHint(a),
+      getMastery: (id) => getMastery(id),
+      onLockedActivate: (a) => showAvatarUnlockModal(a),
       onSelect: (id) => {
         setOption('selectedAvatar', id);
         meta.selectedAvatar = id;

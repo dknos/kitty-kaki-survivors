@@ -48,6 +48,11 @@ export function createCharCarousel(host, opts) {
   const items = (opts.items || []).slice();
   const isUnlocked = opts.isUnlocked || (() => true);
   const formatLockHintFn = opts.formatLockHint || _formatLockHint;
+  // Iter 34 — Phase E hooks. The carousel calls these into the host so UI
+  // wiring stays in ui.js (modal mount, mastery query). All optional.
+  const onLockedActivate  = opts.onLockedActivate  || null;  // (item) => void
+  const getMasteryFn      = opts.getMastery        || null;  // (id) => int
+  const masteryTiers      = opts.masteryTiers      || [50, 200, 500];
   if (items.length === 0) throw new Error('charCarousel: items must be non-empty');
   // Keep `chars` alias to minimize diff against existing internal references.
   const chars = items;
@@ -328,10 +333,31 @@ export function createCharCarousel(host, opts) {
     selectedIdx = idx;
     paintInfo();
     paintPips();
-    try { onSelect(chars[selectedIdx].id); } catch (_) {}
+    // Iter 34 — Phase E: if the target is locked, fire onLockedActivate so
+    // the host can pop an unlock modal. Still emit onSelect for cosmetic
+    // preview (locked carousel still rotates the visual stage).
+    const slot = slots[selectedIdx];
+    if (slot && !slot.unlocked && onLockedActivate) {
+      try { onLockedActivate(chars[selectedIdx]); } catch (_) {}
+    } else {
+      try { onSelect(chars[selectedIdx].id); } catch (_) {}
+    }
   }
   function advance(dir) {
     setSelection(selectedIdx + dir);
+  }
+  /**
+   * Iter 34 — Phase E: refresh the slot/unlock state externally. Called by
+   * ui.js after spendEmbersForAvatar flips an unlock so the carousel rebuilds
+   * its lock visuals without a full re-mount.
+   */
+  function refreshUnlocks() {
+    for (let i = 0; i < chars.length; i++) {
+      const u = !!isUnlocked(chars[i]);
+      if (slots[i]) slots[i].unlocked = u;
+    }
+    paintInfo();
+    paintPips();
   }
 
   // ── Info panel rendering ───────────────────────────────────────────
@@ -347,6 +373,29 @@ export function createCharCarousel(host, opts) {
     const descBlock = unlocked
       ? `<div style="margin-top:6px;opacity:0.82;font-size:13px;line-height:1.4;">${escapeHtml(ch.desc || '')}</div>`
       : `<div style="margin-top:6px;opacity:0.7;font-size:13px;line-height:1.4;">${escapeHtml(formatLockHintFn(ch.unlock || ch))}</div>`;
+    // Iter 34 — Phase E: mastery progress bar under unlocked avatars.
+    // Three tiers (default 50 / 200 / 500). Bar fills toward the next tier.
+    let masteryBlock = '';
+    if (unlocked && getMasteryFn) {
+      const m = getMasteryFn(ch.id) || 0;
+      const nextTier = masteryTiers.find(t => m < t) || masteryTiers[masteryTiers.length - 1];
+      const prevTier = (() => {
+        let p = 0;
+        for (const t of masteryTiers) { if (m >= t) p = t; else break; }
+        return p;
+      })();
+      const span = Math.max(1, nextTier - prevTier);
+      const pct = Math.max(0, Math.min(1, (m - prevTier) / span));
+      const tierIdx = masteryTiers.indexOf(nextTier) + (m >= nextTier ? 1 : 0);
+      masteryBlock = `
+        <div style="margin-top:10px;font-family:${F_DISP};font-size:11px;letter-spacing:0.20em;color:rgba(245,239,225,0.55);text-transform:uppercase;">
+          Mastery · Tier ${Math.min(tierIdx + 1, masteryTiers.length + 1)}/${masteryTiers.length + 1} · ${m}/${nextTier}
+        </div>
+        <div style="margin-top:4px;width:100%;height:6px;background:rgba(20,28,22,0.85);border:1px solid rgba(127,255,228,0.22);border-radius:3px;overflow:hidden;">
+          <div style="width:${(pct * 100).toFixed(1)}%;height:100%;background:linear-gradient(90deg,#7fffe4,#ffd27f);transition:width 0.3s ease;"></div>
+        </div>
+      `;
+    }
     info.innerHTML = `
       <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;">
         <span style="font-size:22px;">${unlocked ? (ch.icon || '◇') : '🔒'}</span>
@@ -354,6 +403,7 @@ export function createCharCarousel(host, opts) {
       </div>
       ${descBlock}
       ${sigBlock}
+      ${masteryBlock}
     `;
   }
 
@@ -449,6 +499,7 @@ export function createCharCarousel(host, opts) {
       const idx = chars.findIndex(c => c.id === id);
       if (idx >= 0) setSelection(idx);
     },
+    refreshUnlocks,
     show: () => { _visible = true; lastT = performance.now(); _raf = requestAnimationFrame(tick); },
     hide: () => { _visible = false; if (_raf) cancelAnimationFrame(_raf); _raf = 0; },
     destroy: () => {
