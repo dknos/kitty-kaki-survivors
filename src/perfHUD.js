@@ -70,6 +70,50 @@ export function togglePerfHUD() {
   if (_el) _el.style.display = _on ? 'block' : 'none';
 }
 
+// iter 33o — headless harness read path. window.kkPerfSnapshot() returns a
+// shallow copy of the displayed ms breakdown + FPS/calls/tris/enemies.
+if (typeof window !== 'undefined') {
+  window.kkPerfSnapshot = () => {
+    const r = state.renderer;
+    const info = r && r.info ? r.info : null;
+    return {
+      fps: +_fps.toFixed(1),
+      ms: +_msAvg.toFixed(2),
+      calls: info ? info.render.calls : 0,
+      tris: info ? info.render.triangles : 0,
+      geoms: info ? info.memory.geometries : 0,
+      texs: info ? info.memory.textures : 0,
+      enemies: state.enemies && state.enemies.active ? state.enemies.active.length : 0,
+      breakdown: Object.assign({}, _perfDisp),
+    };
+  };
+  window.kkPerfForceOn = () => { _on = true; if (_el) _el.style.display = 'block'; };
+  window.kkState = state;
+  window.kkPoolProbe = () => {
+    const out = {};
+    const pools = (state.enemies && state.enemies.pools) || {};
+    for (const k of Object.keys(pools)) {
+      const m = pools[k][0];
+      if (!m) continue;
+      let meshN = 0, matN = 0, triN = 0;
+      const mats = new Set();
+      m.traverse((o) => {
+        if (!o.isMesh) return;
+        meshN++;
+        if (o.geometry && o.geometry.attributes && o.geometry.attributes.position) {
+          const idx = o.geometry.index;
+          triN += idx ? idx.count / 3 : o.geometry.attributes.position.count / 3;
+        }
+        const ma = Array.isArray(o.material) ? o.material : [o.material];
+        for (const x of ma) if (x) mats.add(x.uuid);
+      });
+      matN = mats.size;
+      out[k] = { meshes: meshN, mats: matN, tris: Math.round(triN) };
+    }
+    return out;
+  };
+}
+
 export function updatePerfHUD() {
   if (!_on || !_el) return;
   const now = performance.now();
