@@ -373,20 +373,15 @@ export function preloadAll() {
   // Per-avatar GLB overrides — preload only those avatars that ship a
   // dedicated mesh (`avatar.glb` set). The base 'hero' key remains the
   // canonical donor model for any avatar without an override.
-  // iter 33y — lazy-load all non-selected avatars. Boot only preloads the
-  // currently-selected avatar (read from localStorage via meta.js). The
-  // carousel calls lazyLoadGLTF for adjacents as the user slides, and the
-  // main 'hero' donor model stays as a fallback for un-loaded picks.
-  let selectedAvatarId = 'kitty';
-  try {
-    const raw = (typeof localStorage !== 'undefined') ? localStorage.getItem('kk-survivors-meta-v1') : null;
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed && parsed.selectedAvatar) selectedAvatarId = parsed.selectedAvatar;
-    }
-  } catch (_) { /* keep default */ }
+  // Phase C (Iter 34) fix: preload every avatar GLB. The earlier "only the
+  // selected avatar" path used `kk-survivors-meta-v1.selectedAvatar`, which
+  // Phase B's v2 migration stopped writing — so post-migration users always
+  // booted with `selectedAvatarId='kitty'` and cowboy/sote/etc. never had
+  // their GLB registered, falling back to the tower-castle 'hero' donor (so
+  // cowboykaki looked identical to kittykaki). 11 small GLBs is a tolerable
+  // upfront cost vs. wiring v2 reads + carousel lazy-load here.
   const avatarOverrides = (AVATARS || [])
-    .filter(a => a && a.glb && a.id === selectedAvatarId)
+    .filter(a => a && a.glb)
     .map(a => [`hero_${a.id}`, BASE + a.glb]);
   const list = [
     ['hero',     BASE + HERO.glb],

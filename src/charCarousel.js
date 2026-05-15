@@ -329,7 +329,17 @@ export function createCharCarousel(host, opts) {
   // ── Selection api ──────────────────────────────────────────────────
   function setSelection(idx) {
     idx = ((idx % chars.length) + chars.length) % chars.length;
-    if (idx === selectedIdx) { paintInfo(); paintPips(); return; }
+    if (idx === selectedIdx) {
+      // Re-clicking the already-focused slot: if it's still locked, re-fire
+      // the unlock modal. The earlier early-return swallowed the second click
+      // (user closed modal, clicked card again, nothing happened).
+      const slot = slots[selectedIdx];
+      if (slot && !slot.unlocked && onLockedActivate) {
+        try { onLockedActivate(chars[selectedIdx]); } catch (_) {}
+      }
+      paintInfo(); paintPips();
+      return;
+    }
     selectedIdx = idx;
     paintInfo();
     paintPips();
