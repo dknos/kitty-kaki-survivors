@@ -65,13 +65,12 @@ export const XP = {
 };
 
 export const SPAWN = {
-  // iter 33q — bigger waves on-screen. Was 25/18/220 with batch=4 tick=0.5,
-  // which produced ~25-35 alive even with weapons not killing fast. Hero-
-  // offset camera puts ring=32 partly off-frustum; ring=22 keeps spawns at
-  // visible edge so the screen reads "swarm" instead of "trickle".
-  targetAliveBase: 60,
-  targetAlivePerD: 30,      // alive = base + D * perD
-  targetAliveCap: 400,
+  // iter 33t — bumped further; user saw 16 alive at run start because hero
+  // kill-rate outpaced 64/sec topup. Now 213/sec topup (32 per 0.15s tick)
+  // closes the deficit before XP-rich tiers thin out.
+  targetAliveBase: 100,
+  targetAlivePerD: 40,      // alive = base + D * perD
+  targetAliveCap: 600,
   difficultyRampSec: 60,    // D goes 0→1 over first 60s
   // Cap D at 1200s = 20:00. Normal runs end at 15:00 (final boss), so this
   // puts dragon-tier (minD 7) into play during the last 3 minutes pre-boss
@@ -81,11 +80,11 @@ export const SPAWN = {
   difficultyMax: 10,
   ringRadius: 22,           // spawn distance from hero (visible edge)
   ringJitter: 5,
-  hordeIntervalSec: 60,
-  hordeCount: 50,
+  hordeIntervalSec: 45,
+  hordeCount: 70,
   bossIntervalSec: 300,
-  spawnBatchPerTick: 16,    // how many enemies can spawn in one director tick
-  tickIntervalSec: 0.25,
+  spawnBatchPerTick: 32,    // how many enemies can spawn in one director tick
+  tickIntervalSec: 0.15,
   // iter 33r — chest density was 10× too high after iter 33q spawn bump.
   // Periodic 75s + 30% elite drop dumped ~6-8 chests/min with the new alive
   // counts. 240s + 3% elite → ~1 chest/min (mini-boss + final boss still drop).
@@ -143,12 +142,14 @@ export const ENEMY_TIERS = [
 
 /** Initial roster size pre-warmed per pool to hide first-horde stall. */
 export const POOL_PREWARM = {
-  zombie: 30, goblin: 30, skeleton: 25, orc: 18, demon: 18,
-  robot: 12, mech: 8, xeno: 12, slime: 16, giant: 4, dragon: 2,
-  spider: 24, wolf: 18, wizard: 12, ghost: 12,
+  // iter 33t — sized to absorb 100-600 alive cap without mid-game cloning.
+  // Common tier counts ~2.5×; heavy tiers ~2×; rare elites 1× (low weight).
+  zombie: 70, goblin: 70, skeleton: 50, orc: 36, demon: 36,
+  robot: 24, mech: 16, xeno: 24, slime: 32, giant: 6, dragon: 3,
+  spider: 48, wolf: 36, wizard: 24, ghost: 24,
   // Forest bugs — high counts because they're the new primary tier
-  ant: 60, beetle: 40, ladybug: 30, grasshopper: 25, butterfly: 20,
-  bee: 20, cockroach: 25, wasp: 15, caterpillar: 8, mantis: 8,
+  ant: 100, beetle: 60, ladybug: 50, grasshopper: 40, butterfly: 30,
+  bee: 30, cockroach: 40, wasp: 24, caterpillar: 12, mantis: 12,
 };
 
 export const SPATIAL = {
