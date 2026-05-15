@@ -18,7 +18,7 @@ import { CHARACTERS, STAGES, AVATARS, archetypeForAvatar } from './config.js';
 import { initInput, sampleInput, getZoom, resetZoom } from './input.js';
 import { initHero, updateHero, updateDeathAnim, takeDamage as heroTakeDamage, rebuildHero } from './hero.js';
 import { initEnemies, updateEnemies, prewarmPools } from './enemies.js';
-import { initWeapons, tickWeapons, acquireWeapon, weaponChoices, _resetEvoAnnouncements } from './weapons/index.js';
+import { initWeapons, tickWeapons, acquireWeapon, weaponChoices, _resetEvoAnnouncements, REGISTRY as WEAPON_REGISTRY } from './weapons/index.js';
 import { initProjectileVisuals, releaseProjectileVisuals } from './weapons/autoAim.js';
 import { initXP, updateGems, applyLevelUpChoice } from './xp.js';
 import { initSpawnDirector, tickSpawnDirector, secondsUntilNextMiniBoss } from './spawnDirector.js';
@@ -741,10 +741,15 @@ function applyMetaUpgrades() {
     }
     state.run.character = char.id;        // archetype id (legacy field; leaderboards read this)
     state.run.avatar    = avatar.id;      // canonical identity going forward
-    state.run.starterWeapon = char.starter;
-    // Phase D/F will set state.run.signatureWeapon when bespoke modules land;
-    // until then it tracks the avatar field so weapons/index.js can branch.
-    state.run.signatureWeapon = avatar.signatureWeapon || null;
+    // Iter 34 — Phase D: if the avatar's bespoke signature weapon module is
+    // registered (cowboy/mothman/space in Phase D; rest in F), start the run
+    // with that instead of the archetype's generic starter. WEAPON_REGISTRY
+    // gates the swap so Phase-F-pending kits fall back cleanly.
+    const sigId = avatar.signatureWeapon;
+    const sigRegistered = !!(sigId && WEAPON_REGISTRY[sigId]);
+    state.run.starterWeapon = sigRegistered ? sigId : char.starter;
+    state.run.signatureWeapon = sigId || null;
+    state.run.signatureRegistered = sigRegistered;
     if (typeof char.signature === 'function') {
       try { char.signature(state.run); } catch (e) { console.warn('[char.signature]', e); }
     }

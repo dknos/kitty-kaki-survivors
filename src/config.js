@@ -305,7 +305,7 @@ export const AVATARS = [
     glb: null,                          // donor model (tower-castle-plain)
     tint: 0xffffff, scaleMul: 1.00,
     baseArchetype: 'kitty',             // Balanced (Nine Lives + orbitals)
-    signatureWeapon: 'sig/kitty_lucky_paw',
+    signatureWeapon: 'sig_kitty_lucky_paw',
     unlock: null,
   },
   {
@@ -314,7 +314,7 @@ export const AVATARS = [
     glb: 'sote.glb',
     tint: 0xffffff, scaleMul: 1.00,
     baseArchetype: 'kitty',             // Balanced base; bespoke kit lands in Phase F
-    signatureWeapon: 'sig/sote_warhowl',
+    signatureWeapon: 'sig_sote_warhowl',
     unlock: null,                       // STARTER per Phase B
   },
   {
@@ -323,7 +323,7 @@ export const AVATARS = [
     glb: 'cowboykaki.glb',
     tint: 0xffffff, scaleMul: 1.00,
     baseArchetype: 'sniper',            // Headhunter + autoaim
-    signatureWeapon: 'sig/cowboy_sixshooter',
+    signatureWeapon: 'sig_cowboy_sixshooter',
     unlock: null,                       // STARTER per Phase B
   },
   {
@@ -332,7 +332,7 @@ export const AVATARS = [
     glb: 'pipes.glb',
     tint: 0xffffff, scaleMul: 1.00,
     baseArchetype: 'boom',              // Charged Coil + chain lightning
-    signatureWeapon: 'sig/pipes_arcwrench',
+    signatureWeapon: 'sig_pipes_arcwrench',
     unlock: 'flag:pipes',
   },
   {
@@ -341,7 +341,7 @@ export const AVATARS = [
     glb: 'bomdia.glb',
     tint: 0xffffff, scaleMul: 1.00,
     baseArchetype: 'clockwork',         // Tempo + orbitals (absorbs Clockwork)
-    signatureWeapon: 'sig/bomdia_sunburst',
+    signatureWeapon: 'sig_bomdia_sunburst',
     unlock: 'flag:bomdia',
   },
   {
@@ -350,7 +350,7 @@ export const AVATARS = [
     glb: 'mothman.glb',
     tint: 0xffffff, scaleMul: 1.00,
     baseArchetype: 'webspinner',        // Lingering Silk + web
-    signatureWeapon: 'sig/mothman_dustcloak',
+    signatureWeapon: 'sig_mothman_dustcloak',
     unlock: 'flag:mothman',
   },
   {
@@ -359,7 +359,7 @@ export const AVATARS = [
     glb: 'camper.glb',
     tint: 0xffffff, scaleMul: 1.00,
     baseArchetype: 'phoenix',           // Ember Burst + autoaim (absorbs Phoenix)
-    signatureWeapon: 'sig/camper_signalfire',
+    signatureWeapon: 'sig_camper_signalfire',
     unlock: 'flag:camper',
   },
   {
@@ -368,7 +368,7 @@ export const AVATARS = [
     glb: 'spacekitty.glb',
     tint: 0xffffff, scaleMul: 1.00,
     baseArchetype: 'kitty',             // Balanced base; orbital sat kit lands Phase D
-    signatureWeapon: 'sig/space_satellites',
+    signatureWeapon: 'sig_space_satellites',
     unlock: 'flag:space',
   },
   {
@@ -377,7 +377,7 @@ export const AVATARS = [
     glb: 'radcat.glb',
     tint: 0xffffff, scaleMul: 1.00,
     baseArchetype: 'kitty',             // Balanced base; DoT zone kit lands Phase F
-    signatureWeapon: 'sig/radcat_fallout',
+    signatureWeapon: 'sig_radcat_fallout',
     unlock: 'flag:radcat',
   },
   {
@@ -386,7 +386,7 @@ export const AVATARS = [
     glb: 'mona.glb',
     tint: 0xffffff, scaleMul: 1.00,
     baseArchetype: 'kitty',             // Balanced base; paint AoE kit lands Phase F
-    signatureWeapon: 'sig/mona_brushstroke',
+    signatureWeapon: 'sig_mona_brushstroke',
     unlock: 'flag:mona',
   },
   {
@@ -395,7 +395,7 @@ export const AVATARS = [
     glb: 'bezelbug.glb',
     tint: 0xffffff, scaleMul: 1.00,
     baseArchetype: 'kitty',             // Balanced base; gem-shard kit lands Phase F
-    signatureWeapon: 'sig/bezelbug_facet',
+    signatureWeapon: 'sig_bezelbug_facet',
     unlock: 'flag:bezelbug',
   },
   {
@@ -404,7 +404,7 @@ export const AVATARS = [
     glb: 'rockerkaki.glb',
     tint: 0xffffff, scaleMul: 1.00,
     baseArchetype: 'kitty',             // Balanced base; sonic-wave kit lands Phase F
-    signatureWeapon: 'sig/rocker_powerchord',
+    signatureWeapon: 'sig_rocker_powerchord',
     unlock: 'flag:rocker',
   },
 ];

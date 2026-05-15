@@ -228,6 +228,13 @@ function findNearestEnemy(pos) {
 }
 
 
+// Exported for sig kits (Phase D) so cowboy_sixshooter etc. can drop bullets
+// through the same InstancedMesh pool instead of allocating their own draws.
+// Same signature as the historic local function — kept stable for callers.
+export function spawnAutoAimProjectile(origin, dir, level, dmg, speedMul = 1, pierceBonus = 0, owner = 'autoaim', opts = null) {
+  return spawnProjectile(origin, dir, level, dmg, speedMul, pierceBonus, owner, opts);
+}
+
 function spawnProjectile(origin, dir, level, dmg, speedMul = 1, pierceBonus = 0, owner = 'autoaim', opts = null) {
   const ice = !!(opts && opts.ice);
   const scaleMul = (opts && opts.scale) || 1;

@@ -16,6 +16,10 @@ import chain, { tickChainArcs } from './chain.js';
 import web, { tickWebs } from './web.js';
 import frostbloom from './frostbloom.js';
 import sigilbell from './sigilbell.js';
+// Iter 34 — Phase D signature weapons (1 bespoke kit per avatar; Phase F adds the rest).
+import sigCowboySixshooter from './sig/cowboy_sixshooter.js';
+import sigMothmanDustcloak from './sig/mothman_dustcloak.js';
+import sigSpaceSatellites  from './sig/space_satellites.js';
 import { passiveChoices, applyPassive, PASSIVES } from './passives.js';
 export { applyPassive, PASSIVES };
 
@@ -26,6 +30,9 @@ export const REGISTRY = {
   [web.id]:        web,
   [frostbloom.id]: frostbloom,
   [sigilbell.id]:  sigilbell,
+  [sigCowboySixshooter.id]: sigCowboySixshooter,
+  [sigMothmanDustcloak.id]: sigMothmanDustcloak,
+  [sigSpaceSatellites.id]:  sigSpaceSatellites,
 };
 
 const WORLD_BOUND = 200; // projectile cull bound (square half-extent around hero)

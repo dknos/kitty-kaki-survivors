@@ -47,6 +47,22 @@ const WEAPON_BLURBS = {
     body: (lv) => `Drops a sigil every ${lv.cooldown.toFixed(2)}s (up to ${lv.maxSigils} live at once). Each detonates after a brief pulse for ${lv.dmg} damage in a ${lv.radius.toFixed(1)}m blast that briefly stuns survivors.`,
     tags: ['Mine', 'AoE', 'Stun'],
   },
+  // ── Iter 34 — Phase D signature weapons ──
+  sig_cowboy_sixshooter: {
+    flavor: 'Six-Shooter — Hammer back, fan the trigger. A revolver dump aimed at the nearest unlucky soul.',
+    body: (lv) => `Burst-fires ${lv.count} shots every ${lv.cooldown.toFixed(2)}s at ${lv.speed}m/s, piercing ${lv.pierce} enem${lv.pierce > 1 ? 'ies' : 'y'} for ${lv.dmg} damage each.`,
+    tags: ['Burst', 'Ranged', 'Crit-friendly'],
+  },
+  sig_mothman_dustcloak: {
+    flavor: 'Dust Cloak — Spores drift from your wings; nothing that breathes it leaves.',
+    body: (lv) => `Drops a ${lv.radius.toFixed(1)}m pollen cloud every ${lv.cooldown.toFixed(2)}s. Clouds linger ${lv.duration.toFixed(1)}s and deal ${lv.dmgPerSec} dmg/s to any enemy inside. Lingering Silk healing stacks while you stand in your own cloud.`,
+    tags: ['Zone', 'DoT', 'Trap'],
+  },
+  sig_space_satellites: {
+    flavor: 'Satellites — Twin orbits, one clockwise, one counter. Small bodies, many hits.',
+    body: (lv) => `${lv.innerCount}+${lv.outerCount} sats orbit at ${lv.innerR.toFixed(1)}m / ${lv.outerR.toFixed(1)}m. Each hits for ${lv.dmg} every ${lv.dmgInterval.toFixed(2)}s per enemy.`,
+    tags: ['Orbit', 'AoE', 'Constant'],
+  },
 };
 
 // Passive copy. Each line tells the player what the number actually does to
