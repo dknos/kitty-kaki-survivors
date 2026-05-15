@@ -4,7 +4,7 @@
  */
 import * as THREE from 'three';
 import { state, resetState } from './state.js';
-import { WORLD, SPAWN, AVATARS } from './config.js';
+import { WORLD, SPAWN, AVATARS, CHARACTERS, STAGES, archetypeForAvatar } from './config.js';
 import { preloadAll, lazyLoadGLTF, disposeCachedGLTF, BASE, GLTF_CACHE } from './assets.js';
 import { createComposer, resizeComposer, BLOOM_LAYER, applyAccessibilityOptions } from './postfx.js';
 import { buildEnv } from './env.js';
@@ -12,7 +12,6 @@ import { unlockAudio, startMusic, setMusicTier, setVolume, setMasterVolume, setM
 import { getMeta, shopLevel, selectedCharacter, selectedAvatar, dailyChallengeConfig, equippedRelic, selectedStage, QUEST_TEMPLATES, weeklyMutatorConfig, commitWeeklyRun, setOption, SHOP_TREE, recordAvatarRun } from './meta.js';
 import { applyWeeklyMutator } from './weeklyMutator.js';
 import { recordRun } from './leaderboard.js';
-import { CHARACTERS, STAGES, AVATARS, archetypeForAvatar } from './config.js';
 
 // Module imports (filled in by parallel agents)
 import { initInput, sampleInput, getZoom, resetZoom } from './input.js';
