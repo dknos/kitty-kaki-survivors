@@ -66,8 +66,12 @@ const renderer = new THREE.WebGLRenderer({
   canvas, antialias: false, powerPreference: 'high-performance',
   stencil: false, depth: true, alpha: false,
 });
-// DPR cap 1.75 — bloom-pass is the bottleneck, so 1.5x→1.75x is the sweet spot
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
+// iter 33z — DPR cap dropped 1.75 → 1.25. User report: render 21.84 ms / 41 FPS
+// with 219 enemies; bloom-pass × 1.75² = 3.06× pixel cost dominated the budget.
+// 1.25 cuts rasterized pixels ~50% vs 1.75 (1.25²/1.75² = 0.51). Visual hit on
+// retina is mild because the camera is ortho — geometric edges are already
+// post-AA'd by the bloom downsample chain.
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.25));
 renderer.setSize(W, H);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 // ACES Filmic rolls highlights into warm tones — kills the "everything blooms" feel.

@@ -68,9 +68,12 @@ export const SPAWN = {
   // iter 33t — bumped further; user saw 16 alive at run start because hero
   // kill-rate outpaced 64/sec topup. Now 213/sec topup (32 per 0.15s tick)
   // closes the deficit before XP-rich tiers thin out.
+  // iter 33z — alive cap trimmed 600 → 350. User report: 219 enemies →
+  // 2.3M tris / frame / 41 FPS on a mid laptop GPU. The cap was sized for
+  // a beefier machine; 350 keeps the swarm-survivor feel at <1.5M tris.
   targetAliveBase: 100,
-  targetAlivePerD: 40,      // alive = base + D * perD
-  targetAliveCap: 600,
+  targetAlivePerD: 28,      // alive = base + D * perD  (was 40)
+  targetAliveCap: 350,
   difficultyRampSec: 60,    // D goes 0→1 over first 60s
   // Cap D at 1200s = 20:00. Normal runs end at 15:00 (final boss), so this
   // puts dragon-tier (minD 7) into play during the last 3 minutes pre-boss
