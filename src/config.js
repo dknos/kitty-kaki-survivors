@@ -333,6 +333,18 @@ export const AVATARS = [
     glb: 'spacekitty.glb',
     tint: 0xffffff, scaleMul: 1.00,
   },
+  {
+    id: 'radcat', name: 'Radcat', icon: '☢️',
+    desc: 'Geiger-line stray. Oil-slick coat, cyan spine piping, dosimeter eyes.',
+    glb: 'radcat.glb',
+    tint: 0xffffff, scaleMul: 1.00,
+  },
+  {
+    id: 'monamoth', name: 'Monamoth', icon: '🎨',
+    desc: 'Painted, not born. Madonna della Falena — the paint moved.',
+    glb: 'monamoth.glb',
+    tint: 0xffffff, scaleMul: 1.00,
+  },
 ];
 
 /**
