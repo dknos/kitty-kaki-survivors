@@ -24,6 +24,10 @@ const SIG_FILES = {
   sig_sote_warhowl:      'src/weapons/sig/sote_warhowl.js',
   sig_pipes_arcwrench:   'src/weapons/sig/pipes_arcwrench.js',
   sig_bomdia_sunburst:   'src/weapons/sig/bomdia_sunburst.js',
+  // Phase F2
+  sig_camper_signalfire: 'src/weapons/sig/camper_signalfire.js',
+  sig_radcat_fallout:    'src/weapons/sig/radcat_fallout.js',
+  sig_mona_brushstroke:  'src/weapons/sig/mona_brushstroke.js',
 };
 const REPO = new URL('../', import.meta.url);
 function read(rel) { return readFileSync(new URL(rel, REPO), 'utf8'); }
@@ -48,7 +52,8 @@ for (const [id, rel] of Object.entries(SIG_FILES)) {
 // 3: REGISTRY wire-up
 const idxSrc = read('src/weapons/index.js');
 for (const fname of ['cowboy_sixshooter', 'mothman_dustcloak', 'space_satellites',
-                     'kitty_lucky_paw', 'sote_warhowl', 'pipes_arcwrench', 'bomdia_sunburst']) {
+                     'kitty_lucky_paw', 'sote_warhowl', 'pipes_arcwrench', 'bomdia_sunburst',
+                     'camper_signalfire', 'radcat_fallout', 'mona_brushstroke']) {
   assert.ok(idxSrc.includes(`./sig/${fname}.js`),  `index.js missing import ./sig/${fname}.js`);
 }
 for (const id of Object.keys(SIG_FILES)) {
@@ -75,5 +80,16 @@ for (const id of Object.keys(SIG_FILES)) {
     `config.js: no AVATARS entry references signatureWeapon '${id}'`);
 }
 console.log('✓ AVATARS.signatureWeapon ↔ kit id bindings');
+
+// 6: Codex review (2026-05-15) flagged this gap — every sig kit AVATARS
+// references MUST be imported AND added to the REGISTRY map in index.js.
+// Static regex scan ensures the registration line exists per kit.
+for (const id of Object.keys(SIG_FILES)) {
+  const camel = id.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+  const re = new RegExp(`\\[\\s*${camel}\\.id\\s*\\]\\s*:\\s*${camel}`);
+  assert.ok(idxSrc.match(re),
+    `index.js REGISTRY missing entry for ${id} (expected: [${camel}.id]: ${camel})`);
+}
+console.log('✓ REGISTRY map populated for every sig kit (Codex 2026-05-15 fix)');
 
 console.log('\nALL CHECKS PASS');

@@ -84,6 +84,22 @@ const WEAPON_BLURBS = {
     body: (lv) => `Emits ${lv.beamCount} ${lv.length}m beams along the cardinals every ${lv.cooldown.toFixed(2)}s. Each beam slices for ${lv.dmg} damage in a ${lv.width.toFixed(1)}m-wide swath.`,
     tags: ['Beam', 'AoE', 'Tempo'],
   },
+  // ── Iter 34 — Phase F2 signature weapons ──
+  sig_camper_signalfire: {
+    flavor: 'Signal Fire — A planted ember snaps to life. Anything wandering through doesn\'t leave the same.',
+    body: (lv) => `Plants a ${lv.radius.toFixed(1)}m bonfire every ${lv.cooldown.toFixed(2)}s. Each fire burns for ${lv.duration.toFixed(1)}s, applying ${lv.dmgPerSec} dmg/s to anything inside.`,
+    tags: ['Trap', 'DoT', 'Sticky'],
+  },
+  sig_radcat_fallout: {
+    flavor: 'Fallout — Radcat\'s aura. Stay near, get sicker. There\'s no cooldown.',
+    body: (lv) => `Constant ${lv.radius.toFixed(1)}m aura around the hero. Base ${lv.dmgPerSec} dmg/s, ramping up to ×${lv.rampCap.toFixed(1)} the longer an enemy stays inside. Residual decay lingers 1.5s after exit.`,
+    tags: ['Aura', 'DoT', 'Ramp'],
+  },
+  sig_mona_brushstroke: {
+    flavor: 'Brushstroke — The paint moves and the floor takes a slash.',
+    body: (lv) => `Sweeps ${lv.count} ${lv.length}m streaks at random angles every ${lv.cooldown.toFixed(2)}s. Each cut deals ${lv.dmg} damage across a ${lv.width.toFixed(1)}m-wide swath.`,
+    tags: ['AoE', 'Burst', 'Random'],
+  },
 };
 
 // Passive copy. Each line tells the player what the number actually does to

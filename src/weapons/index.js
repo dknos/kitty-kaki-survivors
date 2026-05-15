@@ -25,6 +25,10 @@ import sigKittyLuckyPaw    from './sig/kitty_lucky_paw.js';
 import sigSoteWarhowl      from './sig/sote_warhowl.js';
 import sigPipesArcwrench   from './sig/pipes_arcwrench.js';
 import sigBomdiaSunburst   from './sig/bomdia_sunburst.js';
+// Phase F2 sig kits.
+import sigCamperSignalfire from './sig/camper_signalfire.js';
+import sigRadcatFallout    from './sig/radcat_fallout.js';
+import sigMonaBrushstroke  from './sig/mona_brushstroke.js';
 import { passiveChoices, applyPassive, PASSIVES } from './passives.js';
 export { applyPassive, PASSIVES };
 
@@ -42,6 +46,9 @@ export const REGISTRY = {
   [sigSoteWarhowl.id]:      sigSoteWarhowl,
   [sigPipesArcwrench.id]:   sigPipesArcwrench,
   [sigBomdiaSunburst.id]:   sigBomdiaSunburst,
+  [sigCamperSignalfire.id]: sigCamperSignalfire,
+  [sigRadcatFallout.id]:    sigRadcatFallout,
+  [sigMonaBrushstroke.id]:  sigMonaBrushstroke,
 };
 
 const WORLD_BOUND = 200; // projectile cull bound (square half-extent around hero)
