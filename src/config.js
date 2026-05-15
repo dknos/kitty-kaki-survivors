@@ -315,6 +315,12 @@ export const AVATARS = [
     glb: 'camper.glb',
     tint: 0xffffff, scaleMul: 1.00,
   },
+  {
+    id: 'space', name: 'Space Kitty', icon: '🚀',
+    desc: 'Space Kitty — vacuum-rated whiskers, zero-G stride.',
+    glb: 'spacekitty.glb',
+    tint: 0xffffff, scaleMul: 1.00,
+  },
 ];
 
 /**
