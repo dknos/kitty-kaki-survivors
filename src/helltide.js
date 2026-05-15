@@ -95,6 +95,8 @@ const _embers = [];          // { x, z, age, slot, value, alive }
 let _emberMatrix = new THREE.Matrix4();
 let _emberHideMat = null;
 let _emberColor = new THREE.Color();
+const _emberScale = new THREE.Vector3();
+const _pillarCamFallback = new THREE.Vector3(0, 60, 60);
 
 // Hellfire rain particles
 let _rainInst = null;
@@ -553,7 +555,7 @@ function _tickAltar(ev, dt, t, idx) {
     ev.disc.material.opacity = 0.55 + 0.35 * Math.abs(Math.sin(t * 3.0));
   }
   if (ev.pillar) {
-    ev.pillar.lookAt(state.camera ? state.camera.position : new THREE.Vector3(0, 60, 60));
+    ev.pillar.lookAt(state.camera ? state.camera.position : _pillarCamFallback);
     ev.pillar.material.opacity = 0.55 + 0.30 * Math.abs(Math.sin(t * 4.5));
   }
 }
@@ -697,7 +699,7 @@ function _tickEmbers(dt) {
     const y = 0.35 + Math.sin(t * 5 + i * 0.7) * 0.08;
     const sc = 1.0 + Math.sin(t * 7 + i * 0.5) * 0.10;
     _emberMatrix.makeRotationY(t * 1.2 + i * 0.3);
-    _emberMatrix.scale(new THREE.Vector3(sc, sc, sc));
+    _emberMatrix.scale(_emberScale.set(sc, sc, sc));
     _emberMatrix.setPosition(em.x, y, em.z);
     _emberInst.setMatrixAt(em.slot, _emberMatrix);
     dirty = true;

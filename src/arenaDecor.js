@@ -432,16 +432,21 @@ function _restoreSkybox(scene) {
 
 // ── animation tick ────────────────────────────────────────────────────────────
 let _animStart = 0;
+const _animDummy = new THREE.Object3D();
+const _animM = new THREE.Matrix4();
+const _animQ = new THREE.Quaternion();
+const _animS = new THREE.Vector3();
+const _animP = new THREE.Vector3();
 function _animLoop() {
   _rafId = requestAnimationFrame(_animLoop);
   const t = (performance.now() - _animStart) * 0.001;
-  const dummy = new THREE.Object3D();
+  const dummy = _animDummy;
   if (_bobbers && _bobbers.mesh) {
     const { mesh, baseY, phase, amp, freq } = _bobbers;
-    const m = new THREE.Matrix4();
-    const q = new THREE.Quaternion();
-    const s = new THREE.Vector3();
-    const p = new THREE.Vector3();
+    const m = _animM;
+    const q = _animQ;
+    const s = _animS;
+    const p = _animP;
     for (let i = 0; i < mesh.count; i++) {
       mesh.getMatrixAt(i, m);
       m.decompose(p, q, s);
