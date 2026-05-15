@@ -11,7 +11,7 @@ import { damageEnemy, queryRadius } from '../enemies.js';
 import { unlockZoomLevel, getMaxZoomNotch, getZoomNotchCount } from '../input.js';
 
 import orbitals from './orbitals.js';
-import autoAim, { spawnGlasswindShards } from './autoAim.js';
+import autoAim, { spawnGlasswindShards, syncProjectileVisuals, flushProjectileVisuals, releaseProjectileVisuals } from './autoAim.js';
 import chain, { tickChainArcs } from './chain.js';
 import web, { tickWebs } from './web.js';
 import frostbloom from './frostbloom.js';
@@ -97,39 +97,43 @@ function tickProjectiles(dt) {
     // Collide vs enemies
     let candidates = null;
     try { candidates = queryRadius(p.mesh.position, PROJ_HIT_RADIUS); } catch (_) { candidates = null; }
-    if (!candidates || candidates.length === 0) continue;
+    if (candidates && candidates.length > 0) {
+      let killed = false;
+      let didSplit = false;
+      for (const enemy of candidates) {
+        if (!enemy || !enemy.alive) continue;
+        if (p.hit.has(enemy)) continue;
+        damageEnemy(enemy, p.dmg, p.ownerWeapon || 'autoaim');
+        p.hit.add(enemy);
 
-    let killed = false;
-    let didSplit = false;
-    for (const enemy of candidates) {
-      if (!enemy || !enemy.alive) continue;
-      if (p.hit.has(enemy)) continue;
-      damageEnemy(enemy, p.dmg, p.ownerWeapon || 'autoaim');
-      p.hit.add(enemy);
+        // Glasswind: on the first hit, fork into 2 perpendicular ice shards that
+        // each pierce 1 enemy for 50% damage. Guard with `noSplit` so shards
+        // themselves don't recursively split.
+        if (p.splitOnHit && !p.noSplit && !didSplit) {
+          try { spawnGlasswindShards(p.mesh.position, p.vel, p.dmg); } catch (_) {}
+          didSplit = true;
+          p.splitOnHit = false;
+        }
 
-      // Glasswind: on the first hit, fork into 2 perpendicular ice shards that
-      // each pierce 1 enemy for 50% damage. Guard with `noSplit` so shards
-      // themselves don't recursively split.
-      if (p.splitOnHit && !p.noSplit && !didSplit) {
-        try { spawnGlasswindShards(p.mesh.position, p.vel, p.dmg); } catch (_) {}
-        didSplit = true;
-        p.splitOnHit = false;
+        p.pierce -= 1;
+        if (p.pierce <= 0) {
+          disposeProjectile(p, scene);
+          list.splice(i, 1);
+          killed = true;
+          break;
+        }
       }
-
-      p.pierce -= 1;
-      if (p.pierce <= 0) {
-        disposeProjectile(p, scene);
-        list.splice(i, 1);
-        killed = true;
-        break;
-      }
+      if (killed) continue;
     }
-    if (killed) continue;
+
+    // iter 33u — sync InstancedMesh slot to current proj position.
+    syncProjectileVisuals(p);
   }
+  flushProjectileVisuals();
 }
 
 function disposeProjectile(p, scene) {
-  if (p.mesh && scene) scene.remove(p.mesh);
+  releaseProjectileVisuals(p);
 }
 
 /**

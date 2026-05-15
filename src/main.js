@@ -19,6 +19,7 @@ import { initInput, sampleInput, getZoom, resetZoom } from './input.js';
 import { initHero, updateHero, updateDeathAnim, takeDamage as heroTakeDamage, rebuildHero } from './hero.js';
 import { initEnemies, updateEnemies, prewarmPools } from './enemies.js';
 import { initWeapons, tickWeapons, acquireWeapon, weaponChoices, _resetEvoAnnouncements } from './weapons/index.js';
+import { initProjectileVisuals, releaseProjectileVisuals } from './weapons/autoAim.js';
 import { initXP, updateGems, applyLevelUpChoice } from './xp.js';
 import { initSpawnDirector, tickSpawnDirector, secondsUntilNextMiniBoss } from './spawnDirector.js';
 import { initUI, updateUI, showDeathScreen, showStartScreen, hideStartScreen, showOptions, hideOptions, isOptionsOpen, showBanner, hideShop, isShopOpen, hideGrimoire, isGrimoireOpen, showHouse, hideHouse, isHouseOpen, showQuestBoard, hideQuestBoard, isQuestBoardOpen, hideCredits, isCreditsOpen, showContextLossModal, hideContextLossModal, showCasinoMenu, showCasinoSlots, showCasinoParlay } from './ui.js';
@@ -215,6 +216,7 @@ async function boot() {
   initHero(scene);
   initEnemies(scene);
   initWeapons();
+  initProjectileVisuals(scene);
   initXP(scene);
   initSpawnDirector();
 
@@ -482,8 +484,10 @@ function _teardownActiveRun() {
   if (state.enemies.spatial && typeof state.enemies.spatial.clear === 'function') {
     state.enemies.spatial.clear();
   }
-  // Clear projectiles (their meshes were added directly to scene)
+  // iter 33u — projectile meshes are off-scene position handles; visuals
+  // live in InstancedMesh slots and must be returned to the free pool.
   for (const p of state.projectiles.active) {
+    try { releaseProjectileVisuals(p); } catch (_) {}
     if (p.mesh && p.mesh.parent) p.mesh.parent.remove(p.mesh);
   }
   state.projectiles.active.length = 0;

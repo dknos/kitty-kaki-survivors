@@ -71,6 +71,133 @@ function _getCoreMatIce()   { return _coreMatIce   || (_coreMatIce   = _mkCoreMa
 function _getTrailMatIce()  { return _trailMatIce  || (_trailMatIce  = _mkTrailMatIce()); }
 const _glowFlat = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0));
 
+// ─────────────────────────────────────────────────────────────────────────────
+// iter 33u — InstancedMesh visual pool for projectiles.
+// Each projectile gets a slot in 2 capacity-256 InstancedMesh banks (normal +
+// ice variant), 3 parts each (halo, core, trail) → 6 draws total regardless of
+// projectile count. Was 3 draws/projectile, so at 91 alive saves ~270 calls.
+// Per-slot rotation+scale matrix is baked at attach time; per-frame sync just
+// rewrites the translation portion via Matrix4.setPosition().
+// ─────────────────────────────────────────────────────────────────────────────
+const CAP_PROJ = 256;
+let _projInst = null;          // { haloN, coreN, trailN, haloI, coreI, trailI }
+const _freeN = [];
+const _freeI = [];
+const _hideMat = new THREE.Matrix4();
+_hideMat.compose(new THREE.Vector3(0, -1000, 0), new THREE.Quaternion(), new THREE.Vector3(0, 0, 0));
+const _initialMat = new THREE.Matrix4();
+const _scratchPos = new THREE.Vector3();
+const _scratchScale = new THREE.Vector3();
+const _scratchQuat = new THREE.Quaternion();
+const _scratchEuler = new THREE.Euler();
+let _projDirty = false;
+
+export function initProjectileVisuals(scene) {
+  if (_projInst) return;
+  const mkInst = (geo, mat) => {
+    const im = new THREE.InstancedMesh(geo, mat, CAP_PROJ);
+    im.count = CAP_PROJ;
+    im.frustumCulled = false;
+    im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    im.layers.enable(BLOOM_LAYER);
+    for (let i = 0; i < CAP_PROJ; i++) im.setMatrixAt(i, _hideMat);
+    im.instanceMatrix.needsUpdate = true;
+    return im;
+  };
+  _projInst = {
+    haloN:  mkInst(PROJ_HALO_GEO,  _getHaloMat()),
+    coreN:  mkInst(PROJ_CORE_GEO,  _getCoreMat()),
+    trailN: mkInst(PROJ_TRAIL_GEO, _getTrailMat()),
+    haloI:  mkInst(PROJ_HALO_GEO,  _getHaloMatIce()),
+    coreI:  mkInst(PROJ_CORE_GEO,  _getCoreMatIce()),
+    trailI: mkInst(PROJ_TRAIL_GEO, _getTrailMatIce()),
+  };
+  scene.add(_projInst.haloN, _projInst.coreN, _projInst.trailN);
+  scene.add(_projInst.haloI, _projInst.coreI, _projInst.trailI);
+  for (let i = CAP_PROJ - 1; i >= 0; i--) {
+    _freeN.push(i);
+    _freeI.push(i);
+  }
+}
+
+function _attachProjectileVisuals(proj, origin, dir, ice, scaleMul) {
+  if (!_projInst) { proj._slot = -1; return; }
+  const free = ice ? _freeI : _freeN;
+  if (free.length === 0) { proj._slot = -1; return; }
+  const slot = free.pop();
+  proj._slot = slot;
+  proj._ice = ice;
+  // Halo + Core matrices: rotation x=-π/2, uniform scale.
+  _scratchQuat.setFromEuler(_scratchEuler.set(-Math.PI / 2, 0, 0, 'XYZ'));
+  const haloMat = new THREE.Matrix4();
+  _scratchScale.set(scaleMul, scaleMul, scaleMul);
+  _scratchPos.set(origin.x, 0.5 - 0.02, origin.z);
+  haloMat.compose(_scratchPos, _scratchQuat, _scratchScale);
+  const coreMat = new THREE.Matrix4();
+  _scratchPos.set(origin.x, 0.5 + 0.01, origin.z);
+  coreMat.compose(_scratchPos, _scratchQuat, _scratchScale);
+  // Trail matrix: x=-π/2 then y=atan2(dx,dz). Euler order XYZ matches Three's
+  // Object3D.rotation default — verified against enemyProjectiles' yaw pattern.
+  _scratchQuat.setFromEuler(_scratchEuler.set(-Math.PI / 2, Math.atan2(dir.x, dir.z), 0, 'XYZ'));
+  const trailMat = new THREE.Matrix4();
+  _scratchScale.set(0.45 * scaleMul, 1.9 * scaleMul, scaleMul);
+  _scratchPos.set(origin.x, 0.5 - 0.06, origin.z);
+  trailMat.compose(_scratchPos, _scratchQuat, _scratchScale);
+  proj._haloMat = haloMat;
+  proj._coreMat = coreMat;
+  proj._trailMat = trailMat;
+  const halo  = ice ? _projInst.haloI  : _projInst.haloN;
+  const core  = ice ? _projInst.coreI  : _projInst.coreN;
+  const trail = ice ? _projInst.trailI : _projInst.trailN;
+  halo.setMatrixAt(slot, haloMat);
+  core.setMatrixAt(slot, coreMat);
+  trail.setMatrixAt(slot, trailMat);
+  _projDirty = true;
+}
+
+export function syncProjectileVisuals(proj) {
+  if (!_projInst || proj._slot == null || proj._slot < 0) return;
+  const ice = proj._ice;
+  const halo  = ice ? _projInst.haloI  : _projInst.haloN;
+  const core  = ice ? _projInst.coreI  : _projInst.coreN;
+  const trail = ice ? _projInst.trailI : _projInst.trailN;
+  const px = proj.mesh.position.x;
+  const pz = proj.mesh.position.z;
+  proj._haloMat.setPosition(px, 0.5 - 0.02, pz);
+  proj._coreMat.setPosition(px, 0.5 + 0.01, pz);
+  proj._trailMat.setPosition(px, 0.5 - 0.06, pz);
+  halo.setMatrixAt(proj._slot, proj._haloMat);
+  core.setMatrixAt(proj._slot, proj._coreMat);
+  trail.setMatrixAt(proj._slot, proj._trailMat);
+  _projDirty = true;
+}
+
+export function flushProjectileVisuals() {
+  if (!_projInst || !_projDirty) return;
+  _projInst.haloN.instanceMatrix.needsUpdate = true;
+  _projInst.coreN.instanceMatrix.needsUpdate = true;
+  _projInst.trailN.instanceMatrix.needsUpdate = true;
+  _projInst.haloI.instanceMatrix.needsUpdate = true;
+  _projInst.coreI.instanceMatrix.needsUpdate = true;
+  _projInst.trailI.instanceMatrix.needsUpdate = true;
+  _projDirty = false;
+}
+
+export function releaseProjectileVisuals(proj) {
+  if (!_projInst || proj._slot == null || proj._slot < 0) return;
+  const ice = proj._ice;
+  const slot = proj._slot;
+  const halo  = ice ? _projInst.haloI  : _projInst.haloN;
+  const core  = ice ? _projInst.coreI  : _projInst.coreN;
+  const trail = ice ? _projInst.trailI : _projInst.trailN;
+  halo.setMatrixAt(slot, _hideMat);
+  core.setMatrixAt(slot, _hideMat);
+  trail.setMatrixAt(slot, _hideMat);
+  _projDirty = true;
+  (ice ? _freeI : _freeN).push(slot);
+  proj._slot = -1;
+}
+
 const SEARCH_RADIUS = 40;
 const FAN_SPREAD = 0.18; // radians between fanned projectiles
 
@@ -99,38 +226,10 @@ function findNearestEnemy(pos) {
 function spawnProjectile(origin, dir, level, dmg, speedMul = 1, pierceBonus = 0, owner = 'autoaim', opts = null) {
   const ice = !!(opts && opts.ice);
   const scaleMul = (opts && opts.scale) || 1;
+  // iter 33u — group is a position-only handle; visuals come from the
+  // InstancedMesh pool. Group itself is NOT added to scene.
   const group = new THREE.Group();
-  // Halo (big crackle disc), Core (bright sparkle), Trail (mote streak).
-  const halo  = new THREE.Mesh(PROJ_HALO_GEO,  ice ? _getHaloMatIce()  : _getHaloMat());
-  const core  = new THREE.Mesh(PROJ_CORE_GEO,  ice ? _getCoreMatIce()  : _getCoreMat());
-  const trail = new THREE.Mesh(PROJ_TRAIL_GEO, ice ? _getTrailMatIce() : _getTrailMat());
-  // Flat-on-ground: rotation.x = -π/2 places the plane facing camera (top-
-  // down ortho cam acts as natural billboard).
-  halo.rotation.x = -Math.PI / 2;
-  core.rotation.x = -Math.PI / 2;
-  trail.rotation.x = -Math.PI / 2;
-  // Trail stretched along motion vector: width=0.45, length=1.9. atan2(vx,vz)
-  // matches the world-Y rotation convention used by enemyProjectiles.js so
-  // the moteCyan bitmap's bright leading head sits in the direction of travel.
-  const yaw = Math.atan2(dir.x, dir.z);
-  trail.rotation.y = yaw;
-  trail.scale.set(0.45, 1.9, 1);
-  trail.position.set(0, -0.06, 0);
-  halo.position.set(0, -0.02, 0);
-  core.position.set(0, 0.01, 0);
-  if (scaleMul !== 1) {
-    halo.scale.multiplyScalar(scaleMul);
-    core.scale.multiplyScalar(scaleMul);
-    trail.scale.multiplyScalar(scaleMul);
-  }
-  halo.layers.enable(BLOOM_LAYER);
-  core.layers.enable(BLOOM_LAYER);
-  trail.layers.enable(BLOOM_LAYER);
-  group.add(trail);
-  group.add(halo);
-  group.add(core);
   group.position.set(origin.x, 0.5, origin.z);
-  state.scene.add(group);
   const vel = new THREE.Vector3(dir.x, 0, dir.z).multiplyScalar(level.speed * (state.hero.statMul.projSpeed || 1) * speedMul);
   const proj = {
     mesh: group,
@@ -147,6 +246,7 @@ function spawnProjectile(origin, dir, level, dmg, speedMul = 1, pierceBonus = 0,
     if (opts.pierceOverride != null) proj.pierce = opts.pierceOverride;
     if (opts.noSplit) proj.noSplit = true;
   }
+  _attachProjectileVisuals(proj, origin, dir, ice, scaleMul);
   state.projectiles.active.push(proj);
   return proj;
 }
@@ -163,34 +263,15 @@ export function spawnGlasswindShards(origin, parentVel, parentDmg) {
     const a = baseAngle + sign * 0.6;
     const dir = { x: Math.cos(a), z: Math.sin(a) };
     const group = new THREE.Group();
-    const halo  = new THREE.Mesh(PROJ_HALO_GEO,  _getHaloMatIce());
-    const core  = new THREE.Mesh(PROJ_CORE_GEO,  _getCoreMatIce());
-    const trail = new THREE.Mesh(PROJ_TRAIL_GEO, _getTrailMatIce());
-    halo.rotation.x = -Math.PI / 2;
-    core.rotation.x = -Math.PI / 2;
-    trail.rotation.x = -Math.PI / 2;
-    trail.rotation.y = Math.atan2(dir.x, dir.z);
-    trail.scale.set(0.45, 1.9, 1);
-    halo.scale.multiplyScalar(0.6);
-    core.scale.multiplyScalar(0.6);
-    trail.scale.multiplyScalar(0.6);
-    trail.position.set(0, -0.06, 0);
-    halo.position.set(0, -0.02, 0);
-    core.position.set(0, 0.01, 0);
-    halo.layers.enable(BLOOM_LAYER);
-    core.layers.enable(BLOOM_LAYER);
-    trail.layers.enable(BLOOM_LAYER);
-    group.add(trail);
-    group.add(halo);
-    group.add(core);
     group.position.set(origin.x, 0.5, origin.z);
-    state.scene.add(group);
     const vel = new THREE.Vector3(dir.x, 0, dir.z).multiplyScalar(speed * 0.9);
-    state.projectiles.active.push({
+    const proj = {
       mesh: group, vel,
       dmg: parentDmg * 0.5, ttl: 0.8, pierce: 1,
       hit: new Set(), ownerWeapon: 'glasswind', noSplit: true,
-    });
+    };
+    _attachProjectileVisuals(proj, origin, dir, true, 0.6);
+    state.projectiles.active.push(proj);
   }
 }
 
