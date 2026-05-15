@@ -239,14 +239,23 @@ export function createCharCarousel(host, opts) {
       slot.add(mesh);
     }
 
-    const mesh = cloneCached(key) || cloneCached('hero');
+    // Iter 34 fix: when `ch.glb` is set, ALWAYS prefer the avatar's own GLB.
+    // The previous `cloneCached(key) || cloneCached('hero')` fallback locked
+    // in the tower-castle 'hero' donor whenever the avatar GLB hadn't finished
+    // loading yet — and because 'hero' is always cached first, the fallback
+    // always won and the lazy-load swap branch never fired. So every avatar
+    // except the smallest (sote, which raced ahead of mount) stayed as the
+    // kittykaki-shaped donor forever. Drop 'hero' from the fallback chain for
+    // avatars with a dedicated GLB so the cone+lazy-load path is reachable.
+    const wantsOwnGLB = !!ch.glb;
+    const mesh = wantsOwnGLB ? cloneCached(key) : (cloneCached(key) || cloneCached('hero'));
     if (mesh) {
       _buildAndAdd(mesh);
     } else {
-      // Fallback cone — same approach as initHero's GLB-fail branch.
-      // When the cache miss is because the avatar GLB hasn't been fetched
-      // yet (iter 33y lazy preload), kick off the fetch and swap the cone
-      // for the real mesh when it arrives.
+      // Fallback cone — same approach as initHero's GLB-fail branch. When
+      // the cache miss is because the avatar GLB hasn't been fetched yet
+      // (iter 33y lazy preload), kick off the fetch and swap the cone for
+      // the real mesh when it arrives.
       const fb = new THREE.Mesh(
         new THREE.ConeGeometry(0.4, 1.2, 12),
         new THREE.MeshStandardMaterial({
