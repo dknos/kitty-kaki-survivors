@@ -65,6 +65,10 @@ export function initFX(scene) {
   }
   _ringInst.instanceMatrix.needsUpdate = true;
   _ringInst.layers.enable(BLOOM_LAYER);
+  // iter 33v — push behind hero + enemies. Transparent additive default-sorts
+  // AFTER opaque, so without an explicit renderOrder these rings draw on top
+  // of the hero and enemy meshes — reading as a HUD layer instead of ground FX.
+  _ringInst.renderOrder = -2;
   scene.add(_ringInst);
 
   // Magnet spark — textured billboard sparkle
@@ -89,6 +93,8 @@ export function initFX(scene) {
   }
   _sparkInst.instanceMatrix.needsUpdate = true;
   _sparkInst.layers.enable(BLOOM_LAYER);
+  // iter 33v — sparks are ground-rise sprites; keep behind hero/enemies.
+  _sparkInst.renderOrder = -2;
   scene.add(_sparkInst);
 
   // Per-instance color attribute so spawnMagnetSpark can spawn gold variants too.
@@ -121,6 +127,7 @@ export function initFX(scene) {
   }
   _ringTwinkleInst.instanceMatrix.needsUpdate = true;
   _ringTwinkleInst.layers.enable(BLOOM_LAYER);
+  _ringTwinkleInst.renderOrder = -2;
   _ringTwinkleInst.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(TWINKLE_CAP * 3), 3);
   _ringTwinkleInst.instanceColor.setUsage(THREE.DynamicDrawUsage);
   const defaultTwinkleColor = new THREE.Color(0xfff9e6);

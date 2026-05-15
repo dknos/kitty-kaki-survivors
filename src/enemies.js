@@ -533,7 +533,10 @@ export function killEnemy(enemy) {
   // Volatile-flagged elites skip the standard kill ring; the pre-detonation
   // tell below is the sole pre-pop visual so the player sees ONE ring, not
   // a stacked double-yellow.
-  if (!enemy.isFinalBoss && !enemy._volatile) {
+  // iter 33v — at 100+ kills/sec the screen was wall-to-wall yellow rings.
+  // Restrict the standard ring to elites + mini-bosses; trash kills get
+  // no ring (just the gem drop + damage number reads the kill).
+  if (!enemy.isFinalBoss && !enemy._volatile && (enemy.elite || enemy.isMiniBoss)) {
     spawnKillRing(enemy.mesh.position.x, enemy.mesh.position.z, enemy.elite);
   }
 
