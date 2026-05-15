@@ -24,6 +24,12 @@ import { BLOOM_LAYER } from './postfx.js';
 import { makeRuneRingTexture } from './enemyTells.js';
 import { cloneCached } from './assets.js';
 import { fxTex } from './fxTextures.js';
+import { tex } from './particleTextures.js';
+
+// Shared scratch matrix for catacomb mote columns. Module-level so the
+// per-frame mote update doesn't allocate; cheaper than `new Matrix4()` × 32
+// per entrance per tick.
+const _entranceM4 = new THREE.Matrix4();
 
 // Shared rune-ring texture for catacomb glyphs (entrance lip + stair foot).
 // iter 33w — prefer the hand-painted Blizzard-style portal glyph from the FX
@@ -319,9 +325,87 @@ function _makeEntranceStairs() {
   rune.userData._spin = 0.35;
   g.add(rune);
   g.userData._rune = rune;
-  // Soft glow
-  const pl = new THREE.PointLight(0xff7a3a, 1.0, 8, 2);
-  pl.position.set(0, 1.2, 0);
+
+  // iter 33x — Phase 4 portal redesign: vertical readability stack so the
+  // entrance reads from the screen edge, not just when the hero is already on
+  // top of it.
+  //
+  // Layers stacked at the entrance pivot (0, 0, -0.85):
+  //   1. inner counter-rotating sigil (Blizzard-painted glyph, half scale)
+  //   2. two crossed vertical "beam" planes — fakes a 3D light pillar from
+  //      any ortho angle without per-frame billboarding
+  //   3. mote column — 32-slot InstancedMesh, motes rise from rim and recycle
+  const innerTex = fxTex('portal_catacomb_inner');
+  if (innerTex) {
+    const innerGeo = new THREE.PlaneGeometry(0.95, 0.95);
+    innerGeo.rotateX(-Math.PI / 2);
+    const inner = new THREE.Mesh(
+      innerGeo,
+      new THREE.MeshBasicMaterial({
+        map: innerTex, color: 0xff9a55, transparent: true, opacity: 0.95,
+        depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+      }),
+    );
+    inner.position.set(0, 0.07, -0.85);
+    inner.renderOrder = -3;
+    inner.layers.enable(BLOOM_LAYER);
+    inner.userData._spin = -0.6;
+    g.add(inner);
+    g.userData._innerRune = inner;
+  }
+
+  // Vertical light pillar — additive blending, beam-shaped texture from
+  // pickup_pulse (a soft radial that fakes the falloff at the top of the
+  // beam). Two crossed planes so the beam reads from any camera angle.
+  const beamTex = fxTex('pickup_pulse') || _getRuneTex();
+  const PILLAR_H = 6.0;
+  const PILLAR_W = 1.4;
+  const beamMat = new THREE.MeshBasicMaterial({
+    map: beamTex, color: 0xff7a3a, transparent: true, opacity: 0.55,
+    depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+  });
+  const beamA = new THREE.Mesh(new THREE.PlaneGeometry(PILLAR_W, PILLAR_H), beamMat);
+  beamA.position.set(0, PILLAR_H * 0.5, -0.85);
+  beamA.layers.enable(BLOOM_LAYER);
+  g.add(beamA);
+  const beamB = new THREE.Mesh(new THREE.PlaneGeometry(PILLAR_W, PILLAR_H), beamMat);
+  beamB.position.set(0, PILLAR_H * 0.5, -0.85);
+  beamB.rotation.y = Math.PI / 2;
+  beamB.layers.enable(BLOOM_LAYER);
+  g.add(beamB);
+  g.userData._pillar = beamA; // shared material — opacity pulse drives both
+
+  // Mote column. Per-instance updates are cheap (32 slots) and only run while
+  // the hero is in run mode, gated by tickCatacombEntrance.
+  const MOTE_COUNT = 32;
+  const moteGeo = new THREE.PlaneGeometry(0.20, 0.20);
+  const moteMat = new THREE.MeshBasicMaterial({
+    map: tex('moteAmber') || tex('glowWhite'),
+    color: 0xffb070, transparent: true, opacity: 0.92,
+    depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+  });
+  const motes = new THREE.InstancedMesh(moteGeo, moteMat, MOTE_COUNT);
+  motes.frustumCulled = false;
+  motes.layers.enable(BLOOM_LAYER);
+  motes.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  motes.position.set(0, 0, -0.85);
+  const moteState = [];
+  for (let i = 0; i < MOTE_COUNT; i++) {
+    moteState.push({
+      a: Math.random() * Math.PI * 2,
+      r: 0.55 + Math.random() * 0.28,
+      y: Math.random() * PILLAR_H,
+      speed: 0.55 + Math.random() * 0.7,
+    });
+  }
+  motes.userData._state = moteState;
+  motes.userData._pillarH = PILLAR_H;
+  g.add(motes);
+  g.userData._motes = motes;
+
+  // Brighter point light, taller falloff — beacon at screen edge.
+  const pl = new THREE.PointLight(0xff8a3a, 2.4, 14, 1.6);
+  pl.position.set(0, 1.6, -0.85);
   g.add(pl);
   return g;
 }
@@ -547,6 +631,32 @@ export function tickCatacombEntrance(dt) {
   if (rune) {
     rune.material.opacity = 0.55 + 0.30 * Math.sin(state.time.real * 3.2);
     rune.rotation.y += dt * (rune.userData._spin || 0.35);
+  }
+  // iter 33x — Phase 4 portal redesign: drive the inner counter-rotating
+  // glyph, the vertical light pillar opacity, and the rising mote column.
+  const innerRune = _entranceMesh.userData._innerRune;
+  if (innerRune) {
+    innerRune.material.opacity = 0.55 + 0.30 * Math.sin(state.time.real * 3.2 + Math.PI);
+    innerRune.rotation.y += dt * (innerRune.userData._spin || -0.6);
+  }
+  const pillar = _entranceMesh.userData._pillar;
+  if (pillar) {
+    pillar.material.opacity = 0.45 + 0.12 * Math.sin(state.time.real * 1.7);
+  }
+  const motes = _entranceMesh.userData._motes;
+  if (motes) {
+    const states = motes.userData._state;
+    const H = motes.userData._pillarH || 6;
+    for (let i = 0; i < states.length; i++) {
+      const s = states[i];
+      s.y += s.speed * dt;
+      if (s.y > H) { s.y -= H; s.a = Math.random() * Math.PI * 2; s.r = 0.55 + Math.random() * 0.28; }
+      const x = Math.cos(s.a) * s.r;
+      const z = Math.sin(s.a) * s.r;
+      _entranceM4.makeTranslation(x, s.y, z);
+      motes.setMatrixAt(i, _entranceM4);
+    }
+    motes.instanceMatrix.needsUpdate = true;
   }
   const dx = state.hero.pos.x - ENTRANCE_POS.x;
   const dz = state.hero.pos.z - ENTRANCE_POS.z;
