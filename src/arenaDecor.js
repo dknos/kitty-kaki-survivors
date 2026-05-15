@@ -23,6 +23,7 @@ import * as THREE from 'three';
 import { BLOOM_LAYER } from './postfx.js';
 import { cloneCached } from './assets.js';
 import { makeRuneRingTexture } from './enemyTells.js';
+import { fxTex } from './fxTextures.js';
 
 // Active decor group + cleanup hooks, tracked module-side so clearArenaDecor
 // can be called without a handle. One group per scene is enough in this game.
@@ -147,13 +148,48 @@ function _buildTwilightDecor(group) {
   graves += _scatterGLB(group, 'kit_gravestone2', 6, 22, 56, [1.5, 2.5]);
   graves += _scatterGLB(group, 'kit_grave',       6, 22, 56, [1.5, 2.5]);
 
-  // 1) Floating crystal clusters — octahedrons that bob slowly. Emissive
-  // purple-pink on BLOOM_LAYER so they read as magic in the bloom pass.
+  // 1) Floating crystal shards (iter 34 quality pass) — replaced the old
+  // OctahedronGeometry diamonds (read as "purple squares" from iso). Now a
+  // tall hex-prism column with two stacked tip cones so each shard reads as
+  // a faceted Blizzard-style crystal even when scale shrinks them in the
+  // back of the fog. BufferGeometryUtils.mergeGeometries lets us keep one
+  // shared geo per InstancedMesh (still one draw call for all 26).
   const CRYSTALS = 26;
-  const crystGeo = new THREE.OctahedronGeometry(0.55, 0);
+  const _shardBody = new THREE.CylinderGeometry(0.22, 0.34, 1.1, 6, 1, false);
+  const _shardTipUp   = new THREE.ConeGeometry(0.22, 0.50, 6);
+  _shardTipUp.translate(0, 0.80, 0);
+  const _shardTipDown = new THREE.ConeGeometry(0.34, 0.34, 6);
+  _shardTipDown.rotateX(Math.PI);
+  _shardTipDown.translate(0, -0.72, 0);
+  const crystGeo = (() => {
+    // Manual merge — avoid adding a fresh BufferGeometryUtils import in this
+    // file (the helper is already pulled in by assets.js for static merging,
+    // but a single per-stage build doesn't need it). Push the three sub-
+    // geometries into one BufferGeometry by concatenating attributes.
+    const merge = new THREE.BufferGeometry();
+    const parts = [_shardBody, _shardTipUp, _shardTipDown];
+    let vc = 0;
+    for (const p of parts) vc += p.attributes.position.count;
+    const pos = new Float32Array(vc * 3);
+    const nrm = new Float32Array(vc * 3);
+    let off = 0;
+    for (const p of parts) {
+      const pp = p.attributes.position.array;
+      const pn = p.attributes.normal ? p.attributes.normal.array : null;
+      pos.set(pp, off);
+      if (pn) nrm.set(pn, off);
+      off += pp.length;
+    }
+    merge.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    merge.setAttribute('normal',   new THREE.BufferAttribute(nrm, 3));
+    merge.computeBoundingSphere();
+    return merge;
+  })();
+  _shardBody.dispose(); _shardTipUp.dispose(); _shardTipDown.dispose();
   const crystMat = new THREE.MeshStandardMaterial({
-    color: 0xa44dd6, emissive: 0xb054ff, emissiveIntensity: 1.2,
-    roughness: 0.4, metalness: 0.1, transparent: true, opacity: 0.92,
+    color: 0x8a3acc, emissive: 0xc070ff, emissiveIntensity: 1.4,
+    roughness: 0.22, metalness: 0.15, transparent: true, opacity: 0.92,
+    flatShading: true,   // faceted highlights — reads as cut crystal, not blob
   });
   const crystInst = new THREE.InstancedMesh(crystGeo, crystMat, CRYSTALS);
   crystInst.layers.enable(BLOOM_LAYER);
@@ -164,14 +200,24 @@ function _buildTwilightDecor(group) {
   const dummy = new THREE.Object3D();
   for (let i = 0; i < CRYSTALS; i++) {
     const { x, z } = _scatterRing(22, 58, 1.6);
-    const y = 1.0 + Math.random() * 0.6;
+    const y = 1.2 + Math.random() * 0.7;
     baseY[i] = y;
     phase[i] = Math.random() * Math.PI * 2;
     amp[i]   = 0.15 + Math.random() * 0.25;
     freq[i]  = 0.6  + Math.random() * 0.5;
     dummy.position.set(x, y, z);
-    dummy.scale.setScalar(0.8 + Math.random() * 0.7);
-    dummy.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+    // Tall shards skew slightly per-instance so the cluster reads as natural.
+    dummy.scale.set(
+      0.55 + Math.random() * 0.35,
+      0.85 + Math.random() * 0.60,
+      0.55 + Math.random() * 0.35,
+    );
+    // Tilt: small lean off vertical + free yaw. Avoids parade-line uniformity.
+    dummy.rotation.set(
+      (Math.random() - 0.5) * 0.5,
+      Math.random() * Math.PI * 2,
+      (Math.random() - 0.5) * 0.5,
+    );
     dummy.updateMatrix();
     crystInst.setMatrixAt(i, dummy.matrix);
   }
@@ -184,10 +230,15 @@ function _buildTwilightDecor(group) {
   // the ground. Stays off bloom (subtle ambient detail; bloom would smear
   // them into the fog). Swapped from RingGeometry primitive to the canonical
   // rune art so the scatter reads as inscribed glyphs, not flat outlines.
+  //
+  // Iter 34 quality pass: prefer the Vertex Imagen 4 hand-painted `ring_arcane`
+  // WebP (manifest "Hand-painted Blizzard-style ground rings") over the
+  // canvas-drawn rune so each rune reads as inked sigil art instead of a
+  // simple tinted circle when 40 of them carpet the floor.
   const RUNES = 40;
   const runeGeo = new THREE.PlaneGeometry(1.9, 1.9);
   const runeMat = new THREE.MeshBasicMaterial({
-    map: makeRuneRingTexture(),
+    map: fxTex('ring_arcane') || makeRuneRingTexture(),
     color: 0x4ce0ff, transparent: true, opacity: 0.32, side: THREE.DoubleSide,
     depthWrite: false, blending: THREE.AdditiveBlending,
   });
