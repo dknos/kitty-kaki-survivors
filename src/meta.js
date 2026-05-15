@@ -9,10 +9,40 @@
 // state.js does not import meta.js. Adding the only import in this file.
 import { state } from './state.js';
 
-const SAVE_KEY = 'kk-survivors-meta-v1';
+// Iter 34 — Phase B of progression redesign (docs/PROGRESSION_REDESIGN.md).
+// SAVE_KEY_V1 stays the rollback path: loadMeta reads v2 first, falls back to
+// v1 via migration, NEVER overwrites v1 once v2 is being written. v1 wipe-risk
+// learnings (#11-#16 in ~/.claude/.../memory/MEMORY.md) shaped this rule.
+const SAVE_KEY_V1 = 'kk-survivors-meta-v1';
+const SAVE_KEY_V2 = 'kk-survivors-meta-v2';
+const SAVE_KEY = SAVE_KEY_V2;   // current write target
+
+// Avatars that ship unlocked on a fresh profile. Locked roster + unlock costs
+// are read by Phase E UI; Phase B only enforces the gate. Keep this list and
+// AVATAR_UNLOCK_COSTS in sync with docs/PROGRESSION_REDESIGN.md §5.E.
+export const STARTER_AVATARS = ['kitty', 'sote', 'cowboy'];
+
+// Phase E will surface these in the carousel modal; Phase B exports them so
+// the API can validate ember spends. `cost` is either Embers or a sentinel
+// string describing the flag-based unlock condition.
+export const AVATAR_UNLOCK_COSTS = {
+  kitty:    { embers: 0 },                              // starter
+  sote:     { embers: 0 },                              // starter
+  cowboy:   { embers: 0 },                              // starter
+  pipes:    { embers: 80 },
+  bomdia:   { flag: 'firstMiniBossKill' },
+  mothman:  { embers: 150 },
+  camper:   { flag: 'survive5MinRun' },
+  space:    { embers: 200 },
+  radcat:   { flag: 'catacombClear' },
+  mona:     { embers: 300, mastery: { any: 100 } },     // any avatar's mastery ≥ 100
+  bezelbug: { flag: 'finalBossWin' },
+  rocker:   { flag: 'casinoJackpot' },
+};
 
 const DEFAULT = {
-  version: 1,
+  version: 1,                      // legacy field, kept for older readers
+  migrationVersion: 2,             // Phase B — bumped from 1; gates v1→v2 path
   coins: 0,
   embers: 0,          // House-upgrade currency. Scarce — ~3-6 per run.
   house: {},          // { kitchen: 2, cellar: 1, ... } owned levels
@@ -159,6 +189,34 @@ const DEFAULT = {
   // room render budget sane.
   homeUnlocks: {},
   homePlacements: [],
+  // ── Iter 34 — Phase B (progression redesign) ──
+  // avatarUnlocks: { id: { unlockedAt: timestamp, kills: N, runs: N, source: 'ember-spend'|'mastery-milestone'|'flag'|'starter' } }
+  // Truthy entry = unlocked. `undefined` (key missing) = locked. Three
+  // STARTER_AVATARS are seeded with unlockedAt: 0 (epoch) so the gate is
+  // open from the first boot.
+  avatarUnlocks: {
+    kitty:  { unlockedAt: 0, kills: 0, runs: 0, source: 'starter' },
+    sote:   { unlockedAt: 0, kills: 0, runs: 0, source: 'starter' },
+    cowboy: { unlockedAt: 0, kills: 0, runs: 0, source: 'starter' },
+  },
+  // mastery: { id: int } — per-avatar Mastery currency, accumulated from
+  // in-run kills at run-end via recordAvatarRun(). Drives signature variants
+  // and cosmetic tiers in Phase E. Never decremented.
+  mastery: {},
+  // cosmetics: { id: ['tier_a', 'tier_b', ...] } — per-avatar unlocked
+  // cosmetic skin tiers. Surfaced by Phase E carousel.
+  cosmetics: {},
+  // Lifetime flags consumed by AVATAR_UNLOCK_COSTS.flag conditions. These
+  // are set elsewhere (commitRunResults, mini-boss handler, etc.) and read
+  // here via isAvatarUnlockable(). Iter 34 adds 4 keys; the rest are
+  // already-existing flag mirrors that we just observe.
+  unlockFlags: {
+    firstMiniBossKill: false,
+    survive5MinRun:    false,
+    catacombClear:     false,
+    finalBossWin:      false,
+    casinoJackpot:     false,
+  },
 };
 
 // ── Affix relics (final boss loot) ───────────────────────────────────────────
@@ -604,6 +662,151 @@ export function grantEmbers(n) {
   return Math.floor(n);
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// Iter 34 — Phase B: avatar progression API
+// (docs/PROGRESSION_REDESIGN.md §5.B)
+//
+// These five entry points are read-mostly today. Phase C wires them into
+// hero spawn + run end; Phase E surfaces them in the carousel UI; Phase F/G
+// rely on stable contracts here. Don't widen the surface without doc update.
+// ──────────────────────────────────────────────────────────────────────────
+
+/** Current Mastery balance for an avatar id (defaults 0 for unknown ids). */
+export function getMastery(id) {
+  const meta = getMeta();
+  if (!meta.mastery) return 0;
+  return Math.floor(meta.mastery[id] || 0);
+}
+
+/**
+ * Add N Mastery to avatar `id` and persist. Returns the new balance.
+ * Negative / non-finite N is a no-op (returns current balance).
+ */
+export function grantMastery(id, n) {
+  const meta = getMeta();
+  if (!meta.mastery) meta.mastery = {};
+  if (!Number.isFinite(n) || n <= 0) return Math.floor(meta.mastery[id] || 0);
+  meta.mastery[id] = Math.floor((meta.mastery[id] || 0) + n);
+  saveMeta();
+  return meta.mastery[id];
+}
+
+/** True if avatar `id` is currently unlocked in this profile. */
+export function isAvatarUnlocked(id) {
+  const meta = getMeta();
+  if (!meta.avatarUnlocks) return false;
+  return !!meta.avatarUnlocks[id];
+}
+
+/**
+ * Unlock avatar `id`. Idempotent: if already unlocked, returns the existing
+ * record. `source` should be one of:
+ *   'starter'                 — seeded at profile creation
+ *   'ember-spend'             — paid through carousel UI
+ *   'mastery-milestone'       — reached a per-avatar mastery threshold
+ *   'flag:<flagName>'         — flag-based condition (e.g. final-boss kill)
+ *   'v1-migration:<note>'     — translated from a v1 save
+ */
+export function unlockAvatar(id, source) {
+  const meta = getMeta();
+  if (!meta.avatarUnlocks) meta.avatarUnlocks = {};
+  if (meta.avatarUnlocks[id]) return meta.avatarUnlocks[id];
+  meta.avatarUnlocks[id] = {
+    unlockedAt: Date.now(),
+    kills: 0,
+    runs:  0,
+    source: typeof source === 'string' ? source : 'unknown',
+  };
+  saveMeta();
+  return meta.avatarUnlocks[id];
+}
+
+/**
+ * Returns true if the profile satisfies the cost entry in AVATAR_UNLOCK_COSTS
+ * for `id`. Used by the carousel UI (Phase E) to gate the unlock button.
+ */
+export function isAvatarUnlockable(id) {
+  const cost = AVATAR_UNLOCK_COSTS[id];
+  if (!cost) return false;
+  const meta = getMeta();
+  if (cost.embers != null && (meta.embers || 0) < cost.embers) return false;
+  if (cost.mastery) {
+    if (cost.mastery.any != null) {
+      const m = meta.mastery || {};
+      const peak = Object.values(m).reduce((a, b) => Math.max(a, b || 0), 0);
+      if (peak < cost.mastery.any) return false;
+    }
+    if (cost.mastery[id] != null) {
+      const own = (meta.mastery && meta.mastery[id]) || 0;
+      if (own < cost.mastery[id]) return false;
+    }
+  }
+  if (cost.flag) {
+    if (!meta.unlockFlags || !meta.unlockFlags[cost.flag]) return false;
+  }
+  return true;
+}
+
+/**
+ * Spend the Ember cost for `id` and call unlockAvatar() on success. Returns
+ * true if the spend went through; false if insufficient Embers or invalid id.
+ */
+export function spendEmbersForAvatar(id) {
+  const cost = AVATAR_UNLOCK_COSTS[id];
+  if (!cost || cost.embers == null) return false;
+  const meta = getMeta();
+  if ((meta.embers || 0) < cost.embers) return false;
+  if (isAvatarUnlocked(id)) return false;
+  if (!isAvatarUnlockable(id)) return false;
+  meta.embers -= cost.embers;
+  unlockAvatar(id, 'ember-spend');   // saveMeta() inside
+  return true;
+}
+
+/**
+ * Called at run end with the kills + bossKills earned while this avatar was
+ * the active hero. Bumps kills + runs counters and grants Mastery per the
+ * conversion rate locked in PROGRESSION_REDESIGN.md §6:
+ *   1 Mastery per 10 enemy kills + 5 per mini-boss + 15 per final boss.
+ * Returns the Mastery gained for the death-screen banner.
+ */
+export function recordAvatarRun(id, { kills = 0, miniBossKills = 0, finalBossKills = 0 } = {}) {
+  if (!id) return 0;
+  const meta = getMeta();
+  if (!meta.avatarUnlocks) meta.avatarUnlocks = {};
+  // If this avatar isn't tracked yet (active but somehow not unlocked),
+  // seed a record so the kill/run counters still advance.
+  if (!meta.avatarUnlocks[id]) {
+    meta.avatarUnlocks[id] = { unlockedAt: 0, kills: 0, runs: 0, source: 'implicit' };
+  }
+  const rec = meta.avatarUnlocks[id];
+  rec.kills = (rec.kills || 0) + Math.max(0, Math.floor(kills));
+  rec.runs  = (rec.runs  || 0) + 1;
+  const masteryGained = Math.floor(kills / 10)
+                       + Math.max(0, Math.floor(miniBossKills)) * 5
+                       + Math.max(0, Math.floor(finalBossKills)) * 15;
+  if (!meta.mastery) meta.mastery = {};
+  if (masteryGained > 0) {
+    meta.mastery[id] = Math.floor((meta.mastery[id] || 0) + masteryGained);
+  }
+  saveMeta();
+  return masteryGained;
+}
+
+/**
+ * Set an unlock flag (consumed by AVATAR_UNLOCK_COSTS[id].flag). Idempotent.
+ * Drivers: enemies.js (miniboss kills), spawnDirector.js (final boss),
+ * catacomb.js (clears), casino.js (jackpots), main.js (5-min survive).
+ */
+export function setUnlockFlag(name) {
+  const meta = getMeta();
+  if (!meta.unlockFlags) meta.unlockFlags = {};
+  if (meta.unlockFlags[name]) return false;
+  meta.unlockFlags[name] = true;
+  saveMeta();
+  return true;
+}
+
 export function buyHouseUpgrade(id) {
   const meta = getMeta();
   const upg = HOUSE_UPGRADES.find(u => u.id === id);
@@ -933,40 +1136,100 @@ export function applyPreset(id) {
 
 let _data = null;
 
+/**
+ * v1 → v2 migration. Pure function for testability — takes a parsed v1 JSON,
+ * returns a new v2-shaped object. Does NOT touch localStorage.
+ *
+ * Contract:
+ *   - All v1 keys flow through unchanged (additive migration).
+ *   - migrationVersion is bumped to 2.
+ *   - STARTER_AVATARS seeded into avatarUnlocks at epoch.
+ *   - If v1 had `unlockedClockwork: true`, also seed Bom Dia (`bomdia`) as
+ *     unlocked — Phase C maps Clockwork's Tempo signature onto Bom Dia, so a
+ *     v1 player who earned Clockwork keeps roster access without re-grinding.
+ *     Also grants +50 starting Mastery on Bom Dia + a one-time +50 Ember
+ *     transition gift (called out in PROGRESSION_REDESIGN.md §9 #4).
+ */
+function migrateV1ToV2(v1) {
+  const out = { ...DEFAULT, ...v1 };
+  // Force overwrite of fields where DEFAULT must win over a missing-or-stale
+  // v1 value: migrationVersion, and any subfields we want to backfill.
+  out.migrationVersion = 2;
+  // avatarUnlocks: spread DEFAULT.avatarUnlocks under v1's (which is empty in
+  // any v1 save) so the three starters are always seeded.
+  out.avatarUnlocks = { ...DEFAULT.avatarUnlocks, ...(v1.avatarUnlocks || {}) };
+  out.mastery       = { ...(v1.mastery   || {}) };
+  out.cosmetics     = { ...(v1.cosmetics || {}) };
+  out.unlockFlags   = { ...DEFAULT.unlockFlags, ...(v1.unlockFlags || {}) };
+
+  if (v1.unlockedClockwork === true) {
+    out.avatarUnlocks.bomdia = {
+      unlockedAt: Date.now(),
+      kills: 0,
+      runs:  0,
+      source: 'v1-migration:clockwork',
+    };
+    out.mastery.bomdia = (out.mastery.bomdia || 0) + 50;
+    out.embers = (out.embers || 0) + 50;
+  }
+  return out;
+}
+
 export function loadMeta() {
   if (_data) return _data;
+  // ── 1. v2 path: read current key, apply legacy mini-migrations, return.
   try {
-    const raw = localStorage.getItem(SAVE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      // ── Iter 10a migration ──
-      // Detect legacy single-slider saves: optVolume present, new Master/
-      // Music/SFX keys absent. Must inspect `parsed` BEFORE the spread —
-      // otherwise DEFAULT seeds the new keys and we lose the signal.
-      const hasLegacy = (parsed.optVolume !== undefined)
-        && (parsed.optMasterVolume === undefined)
-        && (parsed.optMusicVolume  === undefined)
-        && (parsed.optSfxVolume    === undefined);
+    const rawV2 = localStorage.getItem(SAVE_KEY_V2);
+    if (rawV2) {
+      const parsed = JSON.parse(rawV2);
       _data = { ...DEFAULT, ...parsed };
-      // Iter 32 migration: 'sote' was an archetype briefly; it's now an
-      // avatar. Move legacy saves over so they don't fall back to 'kitty'.
+      // Legacy mini-migrations still apply on top of v2 reads.
       if (_data.selectedChar === 'sote') {
         _data.selectedAvatar = 'sote';
         _data.selectedChar = 'kitty';
       }
-      if (hasLegacy) {
+      return _data;
+    }
+  } catch (e) {
+    console.warn('[meta] v2 load failed', e);
+  }
+  // ── 2. v1 → v2 migration path: read v1, translate, write v2, leave v1 alone.
+  try {
+    const rawV1 = localStorage.getItem(SAVE_KEY_V1);
+    if (rawV1) {
+      const parsed = JSON.parse(rawV1);
+      // Iter 10a audio mini-migration (legacy single optVolume slider).
+      const hasLegacyAudio = (parsed.optVolume !== undefined)
+        && (parsed.optMasterVolume === undefined)
+        && (parsed.optMusicVolume  === undefined)
+        && (parsed.optSfxVolume    === undefined);
+      const v2 = migrateV1ToV2(parsed);
+      if (v2.selectedChar === 'sote') {
+        v2.selectedAvatar = 'sote';
+        v2.selectedChar = 'kitty';
+      }
+      if (hasLegacyAudio) {
         const v = Number(parsed.optVolume);
         if (Number.isFinite(v)) {
-          _data.optMasterVolume = Math.max(0, Math.min(1, v));
-          _data.optMusicVolume  = Math.max(0, Math.min(1, v * 0.6));
-          _data.optSfxVolume    = Math.max(0, Math.min(1, v));
+          v2.optMasterVolume = Math.max(0, Math.min(1, v));
+          v2.optMusicVolume  = Math.max(0, Math.min(1, v * 0.6));
+          v2.optSfxVolume    = Math.max(0, Math.min(1, v));
         }
+      }
+      _data = v2;
+      // Only write v2 AFTER successful translation. v1 stays put — rollback
+      // path. saveMeta() targets SAVE_KEY (= SAVE_KEY_V2) only.
+      try {
+        localStorage.setItem(SAVE_KEY_V2, JSON.stringify(_data));
+      } catch (e) {
+        console.warn('[meta] v2 write after migration failed (will retry on next save)', e);
       }
       return _data;
     }
   } catch (e) {
-    console.warn('[meta] load failed, using defaults', e);
+    console.warn('[meta] v1 migration failed, using defaults', e);
   }
+  // ── 3. Fresh profile.
   _data = { ...DEFAULT };
   return _data;
 }
