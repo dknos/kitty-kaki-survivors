@@ -303,6 +303,12 @@ export const AVATARS = [
     glb: 'cowboykaki.glb',
     tint: 0xffffff, scaleMul: 1.00,
   },
+  {
+    id: 'kaki3', name: 'Kaki 3', icon: '✨',
+    desc: 'Placeholder name. Newly Rodin-baked silhouette.',
+    glb: 'kaki3.glb',
+    tint: 0xffffff, scaleMul: 1.00,
+  },
 ];
 
 /**
