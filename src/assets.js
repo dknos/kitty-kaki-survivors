@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { HERO, AVATARS } from './config.js';
 
 export const BASE = 'assets/breakroom/';
@@ -158,6 +159,72 @@ function _injectVertAnim(mat, kind) {
     mat.userData._vertAnimShader = shader;
   };
   mat.needsUpdate = true;
+}
+
+/**
+ * iter 33p — collapse non-skinned child Mesh primitives that share a source
+ * material into a single merged Mesh per material. Cuts draw calls + scene-
+ * graph traversal cost for GLBs authored as many small primitives (Wolf has
+ * 21 prims / 4 materials → 4 draws/instance instead of 21).
+ *
+ * Safe to call on cloned scenes only. Bails if any SkinnedMesh is present
+ * (bone-aware merging is a different problem). Returns count of primitives
+ * collapsed; 0 means no-op.
+ */
+export function collapseStaticMeshes(root) {
+  if (!root) return 0;
+  let hasSkin = false;
+  root.traverse((o) => { if (o.isSkinnedMesh) hasSkin = true; });
+  if (hasSkin) return 0;
+
+  root.updateMatrixWorld(true);
+  const rootInv = new THREE.Matrix4().copy(root.matrixWorld).invert();
+  // Bucket meshes by source material UUID. Each bucket merges to one Mesh.
+  const buckets = new Map();
+  const candidates = [];
+  root.traverse((o) => {
+    if (!o.isMesh || o.isSkinnedMesh) return;
+    if (!o.geometry || !o.material) return;
+    if (Array.isArray(o.material)) return;
+    candidates.push(o);
+  });
+  if (candidates.length < 2) return 0;
+
+  for (const o of candidates) {
+    const mat = o.material;
+    const geo = o.geometry.clone();
+    const toRootLocal = new THREE.Matrix4().multiplyMatrices(rootInv, o.matrixWorld);
+    geo.applyMatrix4(toRootLocal);
+    if (!geo.attributes.normal) geo.computeVertexNormals();
+    let b = buckets.get(mat.uuid);
+    if (!b) { b = { mat, geoms: [], originals: [] }; buckets.set(mat.uuid, b); }
+    b.geoms.push(geo);
+    b.originals.push(o);
+  }
+
+  let collapsed = 0;
+  for (const { mat, geoms, originals } of buckets.values()) {
+    if (geoms.length < 2) { for (const g of geoms) g.dispose(); continue; }
+    let mergedGeo;
+    try { mergedGeo = mergeGeometries(geoms, false); }
+    catch (e) { mergedGeo = null; }
+    if (!mergedGeo) {
+      for (const g of geoms) g.dispose();
+      continue;
+    }
+    for (const o of originals) {
+      if (o.parent) o.parent.remove(o);
+      if (o.geometry && o.geometry !== mergedGeo) o.geometry.dispose();
+    }
+    for (const g of geoms) if (g !== mergedGeo) g.dispose();
+    const m = new THREE.Mesh(mergedGeo, mat);
+    m.name = '_collapsed_' + originals[0].name;
+    m.castShadow = false;
+    m.receiveShadow = false;
+    root.add(m);
+    collapsed += originals.length;
+  }
+  return collapsed;
 }
 
 /**

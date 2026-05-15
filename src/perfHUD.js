@@ -95,20 +95,31 @@ if (typeof window !== 'undefined') {
     for (const k of Object.keys(pools)) {
       const m = pools[k][0];
       if (!m) continue;
-      let meshN = 0, matN = 0, triN = 0;
+      let meshN = 0, matN = 0, triN = 0, tinyN = 0;
       const mats = new Set();
+      const submeshes = [];
       m.traverse((o) => {
         if (!o.isMesh) return;
         meshN++;
+        let tris = 0;
         if (o.geometry && o.geometry.attributes && o.geometry.attributes.position) {
           const idx = o.geometry.index;
-          triN += idx ? idx.count / 3 : o.geometry.attributes.position.count / 3;
+          tris = idx ? idx.count / 3 : o.geometry.attributes.position.count / 3;
+          triN += tris;
         }
+        const bb = (o.geometry && (o.geometry.boundingBox || (o.geometry.computeBoundingBox(), o.geometry.boundingBox))) || null;
+        let diag = 0;
+        if (bb) {
+          const dx = bb.max.x - bb.min.x, dy = bb.max.y - bb.min.y, dz = bb.max.z - bb.min.z;
+          diag = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        }
+        if (tris < 40 || diag < 0.05) tinyN++;
+        submeshes.push({ name: o.name || '?', tris: Math.round(tris), diag: +diag.toFixed(3), skinned: !!o.isSkinnedMesh });
         const ma = Array.isArray(o.material) ? o.material : [o.material];
         for (const x of ma) if (x) mats.add(x.uuid);
       });
       matN = mats.size;
-      out[k] = { meshes: meshN, mats: matN, tris: Math.round(triN) };
+      out[k] = { meshes: meshN, mats: matN, tris: Math.round(triN), tiny: tinyN, submeshes };
     }
     return out;
   };

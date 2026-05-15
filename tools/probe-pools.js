@@ -53,15 +53,20 @@ async function main() {
   const probe = await page.evaluate(() => window.kkPoolProbe());
   console.log('\n=== POOL PROBE ===');
   const rows = Object.entries(probe).sort((a, b) => b[1].meshes - a[1].meshes);
-  console.log('pool         meshes  mats  tris');
+  console.log('pool         meshes  mats  tris  tiny');
   for (const [k, v] of rows) {
-    console.log(`${k.padEnd(12)} ${String(v.meshes).padStart(6)}  ${String(v.mats).padStart(4)}  ${String(v.tris).padStart(5)}`);
+    console.log(`${k.padEnd(12)} ${String(v.meshes).padStart(6)}  ${String(v.mats).padStart(4)}  ${String(v.tris).padStart(5)}  ${String(v.tiny || 0).padStart(4)}`);
   }
   // Total mesh→draw-call burden scaling estimate
   const totals = rows.reduce((acc, [, v]) => ({ meshes: acc.meshes + v.meshes, mats: acc.mats + v.mats }), { meshes: 0, mats: 0 });
   console.log(`\ntotal across pools: meshes=${totals.meshes} mats=${totals.mats}`);
   const avg = rows.length > 0 ? (totals.meshes / rows.length).toFixed(2) : 'n/a';
   console.log(`avg draw-cost per enemy if scene-graph traverse drives calls: ~${avg} calls/enemy`);
+  try {
+    const outPath = path.join(__dirname, 'probe-detail.json');
+    fs.writeFileSync(outPath, JSON.stringify(probe, null, 2));
+    console.log(`\nwrote detail: ${outPath}`);
+  } catch (e) { console.error('write detail failed', e.message); }
   await browser.close();
   server.close();
 }

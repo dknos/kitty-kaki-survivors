@@ -11,7 +11,7 @@
 import * as THREE from 'three';
 import { state } from './state.js';
 import { ENEMY_TIERS, POOL_PREWARM, SPATIAL, SPAWN, DAMAGE } from './config.js';
-import { cloneCached, GLTF_CACHE, getClips, findClip, upgradeMaterials, injectVertAnim } from './assets.js';
+import { cloneCached, GLTF_CACHE, getClips, findClip, upgradeMaterials, injectVertAnim, collapseStaticMeshes } from './assets.js';
 import { takeDamage as heroTakeDamage } from './hero.js';
 import { dropGem } from './xp.js';
 import { spawnDamageNumber } from './damageNumbers.js';
@@ -175,6 +175,16 @@ function _makePooledMesh(glbKey, scale) {
   if (tierCfg && tierCfg.elite) rough = 0.55;            // elite = glossier
   else if (tierCfg && tierCfg.procAnim) rough = 0.65;    // bugs = mid-gloss chitin
   upgradeMaterials(mesh, 0.55, rough);     // Lambert/Phong → Standard + envMap
+
+  // iter 33p — collapse same-material child primitives into one Mesh each.
+  // Static GLBs only (skipped if SkinnedMesh present). Cuts draw calls per
+  // instance: Wolf 21→4, Bee 16→3, bugs typically 1→1 (no-op).
+  const _collapsed = collapseStaticMeshes(mesh);
+  if (_collapsed > 0 && !_loggedSizes) _loggedSizes = {};
+  if (_collapsed > 0 && _loggedSizes && !_loggedSizes['_col_' + glbKey]) {
+    _loggedSizes['_col_' + glbKey] = true;
+    console.log(`[enemy:${glbKey}] collapsed ${_collapsed} primitives → merged groups`);
+  }
 
   // Per-pool-mesh material clones — required for per-instance damage flash
   // (cloneCached shares materials across instances by default).
