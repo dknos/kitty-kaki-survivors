@@ -289,80 +289,141 @@ export const CHARACTERS = [
  * donor model with optional tint. When set, preloadAll registers it as
  * `hero_${id}` and hero.js pulls that key.
  */
+// Iter 34 — Phase C (progression redesign): each avatar carries its own
+// gameplay identity. `baseArchetype` points to a CHARACTERS row whose
+// statMul/hpMax/starter/signature get applied at run start; the original
+// 6 archetypes (Balanced / Boom / Webspinner / Sniper / Phoenix / Clockwork)
+// are mapped onto the avatars they "absorb" per docs/PROGRESSION_REDESIGN.md
+// §5.C. `signatureWeapon` is the bespoke weapon id assigned to the avatar
+// — until Phase D/F lands the module, it falls back to baseArchetype.starter.
+// `unlock` follows the same shape as CHARACTERS.unlock (null = free; an
+// achievement id, 'sigils:N', or 'flag:fieldName').
 export const AVATARS = [
   {
     id: 'kitty', name: 'Kitty Kaki', icon: '🐱',
     desc: 'The original. Plush, pink-eared, ready for mayhem.',
     glb: null,                          // donor model (tower-castle-plain)
     tint: 0xffffff, scaleMul: 1.00,
+    baseArchetype: 'kitty',             // Balanced (Nine Lives + orbitals)
+    signatureWeapon: 'sig/kitty_lucky_paw',
+    unlock: null,
   },
   {
     id: 'sote',  name: 'Sote',       icon: '🐺',
     desc: 'Heavy-built Rodin-baked silhouette. Same gameplay, new look.',
     glb: 'sote.glb',
     tint: 0xffffff, scaleMul: 1.00,
+    baseArchetype: 'kitty',             // Balanced base; bespoke kit lands in Phase F
+    signatureWeapon: 'sig/sote_warhowl',
+    unlock: null,                       // STARTER per Phase B
   },
   {
     id: 'cowboy', name: 'CowboyKaki', icon: '🤠',
     desc: 'Spurs, brim, and a slow draw. Same kitty, frontier loadout.',
     glb: 'cowboykaki.glb',
     tint: 0xffffff, scaleMul: 1.00,
+    baseArchetype: 'sniper',            // Headhunter + autoaim
+    signatureWeapon: 'sig/cowboy_sixshooter',
+    unlock: null,                       // STARTER per Phase B
   },
   {
     id: 'pipes', name: 'Pipes', icon: '🥸',
     desc: 'Team-lead avatar. Mustache, red shirt, runs the room.',
     glb: 'pipes.glb',
     tint: 0xffffff, scaleMul: 1.00,
+    baseArchetype: 'boom',              // Charged Coil + chain lightning
+    signatureWeapon: 'sig/pipes_arcwrench',
+    unlock: 'flag:pipes',
   },
   {
     id: 'bomdia', name: 'Bom Dia', icon: '☀️',
     desc: 'Bom Dia — green twin-tails, idol energy at sunrise.',
     glb: 'bomdia.glb',
     tint: 0xffffff, scaleMul: 1.00,
+    baseArchetype: 'clockwork',         // Tempo + orbitals (absorbs Clockwork)
+    signatureWeapon: 'sig/bomdia_sunburst',
+    unlock: 'flag:bomdia',
   },
   {
     id: 'mothman', name: 'Mothman', icon: '🦋',
     desc: 'Mothman — pink-winged cryptid, eyes like brake lights.',
     glb: 'mothman.glb',
     tint: 0xffffff, scaleMul: 1.00,
+    baseArchetype: 'webspinner',        // Lingering Silk + web
+    signatureWeapon: 'sig/mothman_dustcloak',
+    unlock: 'flag:mothman',
   },
   {
     id: 'camper', name: 'Camper', icon: '⛺',
     desc: 'Camper — blue pigtails, bedroll, never lost in the woods.',
     glb: 'camper.glb',
     tint: 0xffffff, scaleMul: 1.00,
+    baseArchetype: 'phoenix',           // Ember Burst + autoaim (absorbs Phoenix)
+    signatureWeapon: 'sig/camper_signalfire',
+    unlock: 'flag:camper',
   },
   {
     id: 'space', name: 'Space Kitty', icon: '🚀',
     desc: 'Space Kitty — vacuum-rated whiskers, zero-G stride.',
     glb: 'spacekitty.glb',
     tint: 0xffffff, scaleMul: 1.00,
+    baseArchetype: 'kitty',             // Balanced base; orbital sat kit lands Phase D
+    signatureWeapon: 'sig/space_satellites',
+    unlock: 'flag:space',
   },
   {
     id: 'radcat', name: 'Radcat', icon: '☢️',
     desc: 'Geiger-line stray. Oil-slick coat, cyan spine piping, dosimeter eyes.',
     glb: 'radcat.glb',
     tint: 0xffffff, scaleMul: 1.00,
+    baseArchetype: 'kitty',             // Balanced base; DoT zone kit lands Phase F
+    signatureWeapon: 'sig/radcat_fallout',
+    unlock: 'flag:radcat',
   },
   {
     id: 'mona', name: 'Mona', icon: '🎨',
     desc: 'Painted, not born. Madonna della Falena — the paint moved.',
     glb: 'mona.glb',
     tint: 0xffffff, scaleMul: 1.00,
+    baseArchetype: 'kitty',             // Balanced base; paint AoE kit lands Phase F
+    signatureWeapon: 'sig/mona_brushstroke',
+    unlock: 'flag:mona',
   },
   {
     id: 'bezelbug', name: 'BezelBug', icon: '💎',
     desc: 'BezelBug — gem-encrusted exoskeleton, rivet-set wings.',
     glb: 'bezelbug.glb',
     tint: 0xffffff, scaleMul: 1.00,
+    baseArchetype: 'kitty',             // Balanced base; gem-shard kit lands Phase F
+    signatureWeapon: 'sig/bezelbug_facet',
+    unlock: 'flag:bezelbug',
   },
   {
     id: 'rocker', name: 'RockerKaki', icon: '🎸',
     desc: 'RockerKaki — leathers, hair-spray halo, amp turned to eleven.',
     glb: 'rockerkaki.glb',
     tint: 0xffffff, scaleMul: 1.00,
+    baseArchetype: 'kitty',             // Balanced base; sonic-wave kit lands Phase F
+    signatureWeapon: 'sig/rocker_powerchord',
+    unlock: 'flag:rocker',
   },
 ];
+
+/**
+ * Avatar→archetype apply helper. Reads CHARACTERS row that the avatar's
+ * baseArchetype points at, then returns its statMul/hpMax/starter/signature
+ * fields composed onto a fresh object. Phase C uses this to remove the
+ * "two-axis selection" UI: only the avatar is chosen, gameplay derives.
+ *
+ * Phase D/F will replace `baseArchetype` lookups with the avatar's own
+ * bespoke fields. Until then this shim keeps existing archetype signatures
+ * (Nine Lives, Headhunter, Tempo, etc.) intact while the kit registry fills.
+ */
+export function archetypeForAvatar(avatar) {
+  if (!avatar) return CHARACTERS[0];
+  const arch = CHARACTERS.find(c => c.id === avatar.baseArchetype);
+  return arch || CHARACTERS[0];
+}
 
 /**
  * Selectable stages. Stage 1 is the default; Stage 2 unlocks on first victory

@@ -1331,11 +1331,30 @@ export function commitRunResults({ timeSurvived, kills, dmgDealt, level, victory
       stage: stageId || meta.selectedStage,
     });
   }
+  // Iter 34 — Phase C: avatar mastery + unlock-flag bookkeeping. The avatar
+  // id comes from state.run.avatar (set in main.js applyMetaUpgrades). If
+  // missing (older callers), fall back to selectedAvatar so the counters
+  // still advance.
+  const avatarId = (state && state.run && state.run.avatar) || meta.selectedAvatar || 'kitty';
+  const miniBossKills = (state && state.run && state.run.miniBossKills) || 0;
+  const finalBossKills = victory ? 1 : 0;
+  let masteryGained = 0;
+  try {
+    masteryGained = recordAvatarRun(avatarId, { kills, miniBossKills, finalBossKills });
+  } catch (e) { console.warn('[recordAvatarRun]', e); }
+  // Unlock-flag mirrors for AVATAR_UNLOCK_COSTS.flag conditions (Phase E
+  // consumes these). Mini-boss flag flips on first MB kill of any run;
+  // 5-min survival flips on first ≥300s run; catacomb/final/jackpot flags
+  // are set by their respective subsystems.
+  if (miniBossKills > 0) setUnlockFlag('firstMiniBossKill');
+  if (timeSurvived >= 300) setUnlockFlag('survive5MinRun');
+  if (victory) setUnlockFlag('finalBossWin');
   saveMeta();
   return {
     coinsEarned, embersEarned, sigilsEarned, isBestTime, isBestKills,
     unlockedHyper, unlockedEndless, unlockedCinder, unlockedClockwork,
     unlockedVoid,
+    masteryGained, avatarId,
     weeklyResult,
   };
 }

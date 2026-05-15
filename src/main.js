@@ -9,10 +9,10 @@ import { preloadAll, lazyLoadGLTF, disposeCachedGLTF, BASE, GLTF_CACHE } from '.
 import { createComposer, resizeComposer, BLOOM_LAYER, applyAccessibilityOptions } from './postfx.js';
 import { buildEnv } from './env.js';
 import { unlockAudio, startMusic, setMusicTier, setVolume, setMasterVolume, setMusicVolume, setSfxVolume, suspendAudio, resumeAudio, sfx } from './audio.js';
-import { getMeta, shopLevel, selectedCharacter, dailyChallengeConfig, equippedRelic, selectedStage, QUEST_TEMPLATES, weeklyMutatorConfig, commitWeeklyRun, setOption, SHOP_TREE } from './meta.js';
+import { getMeta, shopLevel, selectedCharacter, selectedAvatar, dailyChallengeConfig, equippedRelic, selectedStage, QUEST_TEMPLATES, weeklyMutatorConfig, commitWeeklyRun, setOption, SHOP_TREE, recordAvatarRun } from './meta.js';
 import { applyWeeklyMutator } from './weeklyMutator.js';
 import { recordRun } from './leaderboard.js';
-import { CHARACTERS, STAGES } from './config.js';
+import { CHARACTERS, STAGES, AVATARS, archetypeForAvatar } from './config.js';
 
 // Module imports (filled in by parallel agents)
 import { initInput, sampleInput, getZoom, resetZoom } from './input.js';
@@ -719,7 +719,15 @@ function applyMetaUpgrades() {
   // switch back; we just suppress the others for this run.
   const weeklyOn = !!(meta && meta.optWeekly);
   const dailyOn = !weeklyOn && !!(meta && meta.optDaily);
-  let char = selectedCharacter(CHARACTERS);
+  // Iter 34 — Phase C: gameplay derives from the selected avatar's
+  // baseArchetype, not from a separate "selectedChar" archetype pick. The
+  // archetype lookup table (CHARACTERS) still holds the signature functions
+  // until Phase D/F replaces them with per-avatar bespoke kits. Daily
+  // challenge still uses the legacy archetype-id pool — it shuffles WHICH
+  // archetype the run is locked to, so we override avatar.baseArchetype just
+  // for this run.
+  const avatar = selectedAvatar(AVATARS) || AVATARS[0];
+  let char = archetypeForAvatar(avatar);
   let dailyCfg = null;
   if (dailyOn) {
     dailyCfg = dailyChallengeConfig(CHARACTERS.map(c => c.id));
@@ -731,10 +739,12 @@ function applyMetaUpgrades() {
     for (const k of Object.keys(char.statMul || {})) {
       h.statMul[k] = (h.statMul[k] || 1) * char.statMul[k];
     }
-    state.run.character = char.id;
+    state.run.character = char.id;        // archetype id (legacy field; leaderboards read this)
+    state.run.avatar    = avatar.id;      // canonical identity going forward
     state.run.starterWeapon = char.starter;
-    // Character signature mechanic — stamps state.run.signature_* fields read
-    // by hero.js / enemies.js / weapons. See ITER_789_BRIEFS.md iter-7 7a/7b.
+    // Phase D/F will set state.run.signatureWeapon when bespoke modules land;
+    // until then it tracks the avatar field so weapons/index.js can branch.
+    state.run.signatureWeapon = avatar.signatureWeapon || null;
     if (typeof char.signature === 'function') {
       try { char.signature(state.run); } catch (e) { console.warn('[char.signature]', e); }
     }

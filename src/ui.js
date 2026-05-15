@@ -2514,7 +2514,11 @@ export function showStartScreen(text) {
   _startPresetRowRef = presetRow;
 
   _selectPanel.appendChild(charRow);
-  _selectPanel.appendChild(archRow);
+  // Iter 34 — Phase C: archetype chip row deleted. Gameplay derives from the
+  // avatar carousel selection via AVATARS[].baseArchetype. The `archRow` DOM
+  // element is still constructed above for now (so `paintArchetypes()` calls
+  // elsewhere don't crash); it just isn't mounted into the start panel. Phase
+  // F prunes the dead construction once CHARACTERS is removed.
   _selectPanel.appendChild(modeRow);
 
   // ── Select panel footer: Start Run + Back to Menu ──

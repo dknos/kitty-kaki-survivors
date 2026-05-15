@@ -3,7 +3,7 @@
  */
 import * as THREE from 'three';
 import { state, xpForLevel } from './state.js';
-import { HERO, DASH, JUMP, CHARACTERS, AVATARS } from './config.js';
+import { HERO, DASH, JUMP, CHARACTERS, AVATARS, archetypeForAvatar } from './config.js';
 import { cloneCached, upgradeMaterials } from './assets.js';
 import { selectedCharacter, selectedAvatar } from './meta.js';
 import { sfx } from './audio.js';
@@ -104,11 +104,13 @@ export function initHero(scene) {
     const rawBox = new THREE.Box3().setFromObject(mesh);
     const rawSize = rawBox.getSize(new THREE.Vector3());
     const autoFit = rawSize.y > 1e-6 ? HERO.targetHeight / rawSize.y : 1;
-    // Iter 32: tint comes from the ARCHETYPE (selectedCharacter), but only
-    // when the avatar has no dedicated mesh — tinting a Sote-baked model
-    // would look wrong (his textures are already authored). Avatars w/ their
-    // own GLB render unaltered regardless of archetype color.
-    const char = selectedCharacter(CHARACTERS);
+    // Iter 32: tint comes from the ARCHETYPE block, but only when the avatar
+    // has no dedicated mesh — tinting a Sote-baked model would look wrong
+    // (his textures are already authored). Avatars w/ their own GLB render
+    // unaltered regardless of archetype color.
+    // Iter 34: archetype derives from the avatar's baseArchetype field
+    // (Phase C of progression redesign), not from a separate selectedChar.
+    const char = archetypeForAvatar(_avatar);
     const avatarScale = _avatar && _avatar.scaleMul ? _avatar.scaleMul : 1;
     const charScale = char && char.scaleMul ? char.scaleMul : 1;
     const applyArchetypeTint = !(_avatar && _avatar.glb);
