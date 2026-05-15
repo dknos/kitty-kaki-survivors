@@ -63,6 +63,27 @@ const WEAPON_BLURBS = {
     body: (lv) => `${lv.innerCount}+${lv.outerCount} sats orbit at ${lv.innerR.toFixed(1)}m / ${lv.outerR.toFixed(1)}m. Each hits for ${lv.dmg} every ${lv.dmgInterval.toFixed(2)}s per enemy.`,
     tags: ['Orbit', 'AoE', 'Constant'],
   },
+  // ── Iter 34 — Phase F1 signature weapons ──
+  sig_kitty_lucky_paw: {
+    flavor: 'Lucky Paw — Soft pads, random strikes. Whoever\'s unlucky on the roll bleeds first.',
+    body: (lv) => `Hits ${lv.count} random visible enemies for ${lv.dmg} damage every ${lv.cooldown.toFixed(2)}s.`,
+    tags: ['Random', 'Quick', 'AoE'],
+  },
+  sig_sote_warhowl: {
+    flavor: 'War Howl — A throat-deep cry rolls out from the wolf and the ground gives.',
+    body: (lv) => `Emits a ${lv.radius}m shockwave every ${lv.cooldown.toFixed(2)}s. The wave hits each enemy ONCE for ${lv.dmg} damage as it expands past them.`,
+    tags: ['Shockwave', 'AoE', 'Burst'],
+  },
+  sig_pipes_arcwrench: {
+    flavor: 'Arc Wrench — The wrench bites, the bolt flies, and a line of foes pop in sequence.',
+    body: (lv) => `Fires a line-pierce bolt every ${lv.cooldown.toFixed(2)}s at ${lv.speed}m/s. Drills through ${lv.pierce} enemies for ${lv.dmg} damage each, leaving a ${lv.dotDps}/s shock DoT.`,
+    tags: ['Pierce', 'DoT', 'Line'],
+  },
+  sig_bomdia_sunburst: {
+    flavor: 'Sunburst — Bom Dia at sunrise — the sky lights up at every compass.',
+    body: (lv) => `Emits ${lv.beamCount} ${lv.length}m beams along the cardinals every ${lv.cooldown.toFixed(2)}s. Each beam slices for ${lv.dmg} damage in a ${lv.width.toFixed(1)}m-wide swath.`,
+    tags: ['Beam', 'AoE', 'Tempo'],
+  },
 };
 
 // Passive copy. Each line tells the player what the number actually does to

@@ -20,6 +20,11 @@ import sigilbell from './sigilbell.js';
 import sigCowboySixshooter from './sig/cowboy_sixshooter.js';
 import sigMothmanDustcloak from './sig/mothman_dustcloak.js';
 import sigSpaceSatellites  from './sig/space_satellites.js';
+// Phase F1 sig kits.
+import sigKittyLuckyPaw    from './sig/kitty_lucky_paw.js';
+import sigSoteWarhowl      from './sig/sote_warhowl.js';
+import sigPipesArcwrench   from './sig/pipes_arcwrench.js';
+import sigBomdiaSunburst   from './sig/bomdia_sunburst.js';
 import { passiveChoices, applyPassive, PASSIVES } from './passives.js';
 export { applyPassive, PASSIVES };
 
@@ -33,6 +38,10 @@ export const REGISTRY = {
   [sigCowboySixshooter.id]: sigCowboySixshooter,
   [sigMothmanDustcloak.id]: sigMothmanDustcloak,
   [sigSpaceSatellites.id]:  sigSpaceSatellites,
+  [sigKittyLuckyPaw.id]:    sigKittyLuckyPaw,
+  [sigSoteWarhowl.id]:      sigSoteWarhowl,
+  [sigPipesArcwrench.id]:   sigPipesArcwrench,
+  [sigBomdiaSunburst.id]:   sigBomdiaSunburst,
 };
 
 const WORLD_BOUND = 200; // projectile cull bound (square half-extent around hero)

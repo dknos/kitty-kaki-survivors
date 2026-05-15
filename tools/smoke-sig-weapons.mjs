@@ -15,9 +15,15 @@ import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 
 const SIG_FILES = {
+  // Phase D
   sig_cowboy_sixshooter: 'src/weapons/sig/cowboy_sixshooter.js',
   sig_mothman_dustcloak: 'src/weapons/sig/mothman_dustcloak.js',
   sig_space_satellites:  'src/weapons/sig/space_satellites.js',
+  // Phase F1
+  sig_kitty_lucky_paw:   'src/weapons/sig/kitty_lucky_paw.js',
+  sig_sote_warhowl:      'src/weapons/sig/sote_warhowl.js',
+  sig_pipes_arcwrench:   'src/weapons/sig/pipes_arcwrench.js',
+  sig_bomdia_sunburst:   'src/weapons/sig/bomdia_sunburst.js',
 };
 const REPO = new URL('../', import.meta.url);
 function read(rel) { return readFileSync(new URL(rel, REPO), 'utf8'); }
@@ -41,7 +47,8 @@ for (const [id, rel] of Object.entries(SIG_FILES)) {
 
 // 3: REGISTRY wire-up
 const idxSrc = read('src/weapons/index.js');
-for (const fname of ['cowboy_sixshooter', 'mothman_dustcloak', 'space_satellites']) {
+for (const fname of ['cowboy_sixshooter', 'mothman_dustcloak', 'space_satellites',
+                     'kitty_lucky_paw', 'sote_warhowl', 'pipes_arcwrench', 'bomdia_sunburst']) {
   assert.ok(idxSrc.includes(`./sig/${fname}.js`),  `index.js missing import ./sig/${fname}.js`);
 }
 for (const id of Object.keys(SIG_FILES)) {
