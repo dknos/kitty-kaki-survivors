@@ -30,6 +30,8 @@ import { disposeBossTelegraphs } from './bossTelegraphs.js';
 const _tmpDir   = new THREE.Vector3();
 const _tmpPush  = new THREE.Vector3();
 const _tmpDelta = new THREE.Vector3();
+// iter 33n — separation neighbor buffer; cleared+filled each query.
+const _sepBuf   = [];
 
 const HERO_RADIUS = 0.4;
 const ENEMY_RADIUS = 0.5;            // flat per spec
@@ -119,7 +121,16 @@ class SpatialHash {
    * Iterates all cells overlapping the bounding box of the circle.
    */
   queryRadius(pos, r) {
-    const out = [];
+    return this.queryRadiusInto(pos, r, []);
+  }
+
+  /**
+   * iter 33n — fill `out` (cleared first) with active enemies within r of pos.
+   * Hot callers (per-enemy separation) reuse a module-scope buffer to
+   * eliminate ~N array allocs/frame at high enemy counts.
+   */
+  queryRadiusInto(pos, r, out) {
+    out.length = 0;
     const cs = this.cellSize;
     const minCX = Math.floor((pos.x - r) / cs);
     const maxCX = Math.floor((pos.x + r) / cs);
@@ -907,13 +918,16 @@ export function updateEnemies(dt) {
   const heroPos = state.hero.pos;
   const active = state.enemies.active;
   const spatial = state.enemies.spatial;
+  // iter 33n — hoist per-frame constants (was recomputed inside loop branches).
+  const _now = state.time.game;
+  const _knockDecay = Math.pow(0.0008, dt);
 
   // ── Iter 8: drain queued Volatile explosions (entries whose t <= now).
   // Done BEFORE the main loop so the active set is stable while we iterate.
   // damageEnemy → killEnemy → push new entry is fine (next frame at earliest).
   const pv = state.fx && state.fx.pendingVolatile;
   if (pv && pv.length > 0) {
-    const now = state.time.game;
+    const now = _now;
     // Walk backwards so swap-pop is safe.
     for (let pi = pv.length - 1; pi >= 0; pi--) {
       const v = pv[pi];
@@ -979,7 +993,7 @@ export function updateEnemies(dt) {
     // ── Damage flash: white emissive briefly on hit ──
     const flashMats = e.mesh.userData && e.mesh.userData.flashMats;
     if (flashMats) {
-      const isFlashing = e._flashUntil && state.time.game < e._flashUntil;
+      const isFlashing = e._flashUntil && _now < e._flashUntil;
       if (isFlashing !== e._wasFlashing) {
         for (const fm of flashMats) {
           if (!fm.mat || !fm.mat.emissive) continue;
@@ -1017,7 +1031,7 @@ export function updateEnemies(dt) {
 
     // ── Frost / stun: restore spd when freeze expires (Frostbloom + Sigil Bell) ──
     if (e._frozenUntil) {
-      if (state.time.game >= e._frozenUntil) {
+      if (_now >= e._frozenUntil) {
         if (e._frozenWasSpd !== undefined) {
           e.spd = e._frozenWasSpd;
           e._frozenWasSpd = undefined;
@@ -1058,7 +1072,7 @@ export function updateEnemies(dt) {
 
       // Walk (scaled by slow + rangedAI behavior + Cursed Bell enrage).
       // _flee inverts the seek direction (used by Treasure Goblin mini-event).
-      const enrage = (e._enrageUntil && state.time.game < e._enrageUntil) ? 1.5 : 1.0;
+      const enrage = (e._enrageUntil && _now < e._enrageUntil) ? 1.5 : 1.0;
       const fleeMul = e._flee ? -1 : 1;
       const step = e.spd * slow * enrage * dt * walkScale * fleeMul;
       ep.x += dx * step;
@@ -1070,7 +1084,7 @@ export function updateEnemies(dt) {
     }
 
     // ── Poison DoT (Toxic Halo) ──
-    if (e._dotUntil && state.time.game < e._dotUntil) {
+    if (e._dotUntil && _now < e._dotUntil) {
       damageEnemy(e, (e._dotDps || 0) * dt, e._dotSource || 'orbitals');
       if (!e.alive) continue;
     }
@@ -1149,17 +1163,19 @@ export function updateEnemies(dt) {
     if (e.knockVx !== 0 || e.knockVz !== 0) {
       ep.x += e.knockVx * dt;
       ep.z += e.knockVz * dt;
-      // Exponential decay (fast — ~85% per frame at 60fps)
-      const decay = Math.pow(0.0008, dt);
-      e.knockVx *= decay;
-      e.knockVz *= decay;
+      // Exponential decay (fast — ~85% per frame at 60fps).
+      // iter 33n — _knockDecay hoisted to once-per-frame at top of updateEnemies.
+      e.knockVx *= _knockDecay;
+      e.knockVz *= _knockDecay;
       if (Math.abs(e.knockVx) < 0.05) e.knockVx = 0;
       if (Math.abs(e.knockVz) < 0.05) e.knockVz = 0;
     }
 
     // ── Light separation ──
     // Query a small radius and push apart from up to 3 nearest neighbors.
-    const neighbors = spatial.queryRadius(ep, SEPARATION_DIST);
+    // iter 33n — queryRadiusInto reuses _sepBuf instead of allocating a fresh
+    // array per enemy per frame (~N allocs/frame eliminated at high counts).
+    const neighbors = spatial.queryRadiusInto(ep, SEPARATION_DIST, _sepBuf);
     let pushed = 0;
     _tmpPush.set(0, 0, 0);
     for (let k = 0; k < neighbors.length && pushed < SEPARATION_NEIGHBORS; k++) {
@@ -1192,7 +1208,7 @@ export function updateEnemies(dt) {
     _tmpDelta.set(heroPos.x - ep.x, 0, heroPos.z - ep.z);
     const contactSq = _tmpDelta.x * _tmpDelta.x + _tmpDelta.z * _tmpDelta.z;
     if (contactSq <= CONTACT_DIST_SQ && e.contactCooldown <= 0) {
-      const dmgMul = (e._enrageUntil && state.time.game < e._enrageUntil) ? 1.25 : 1.0;
+      const dmgMul = (e._enrageUntil && _now < e._enrageUntil) ? 1.25 : 1.0;
       heroTakeDamage(e.dmg * dmgMul);
       e.contactCooldown = CONTACT_CD;
     }

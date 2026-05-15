@@ -48,16 +48,13 @@ export function initBlobShadows(scene) {
     color: 0xffffff,
   });
   _inst = new THREE.InstancedMesh(geo, mat, CAP);
-  _inst.count = CAP;
+  // iter 33n — drive count from per-frame fill (was always CAP, GPU drew all
+  // 320 instances each frame even with 10 enemies on screen).
+  _inst.count = 0;
   _inst.frustumCulled = false;
   _inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   // Render shadows BEFORE the colored meshes so transparency sorts cleanly.
   _inst.renderOrder = -1;
-  for (let i = 0; i < CAP; i++) {
-    _m4.compose(_v3.set(0, -1000, 0), _flatX, _zeroScale);
-    _inst.setMatrixAt(i, _m4);
-  }
-  _inst.instanceMatrix.needsUpdate = true;
   scene.add(_inst);
 }
 
@@ -89,10 +86,8 @@ export function updateBlobShadows() {
     _m4.compose(_v3, _flatX, _tmpScale.set(r, r, r));
     _inst.setMatrixAt(i++, _m4);
   }
-  // Hide unused slots
-  for (; i < CAP; i++) {
-    _m4.compose(_v3.set(0, -1000, 0), _flatX, _zeroScale);
-    _inst.setMatrixAt(i, _m4);
-  }
+  // iter 33n — set count to live fill instead of hiding unused slots; GPU
+  // skips vertex shader runs for indices >= count.
+  _inst.count = i;
   _inst.instanceMatrix.needsUpdate = true;
 }
