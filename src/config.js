@@ -340,9 +340,15 @@ export const AVATARS = [
     tint: 0xffffff, scaleMul: 1.00,
   },
   {
-    id: 'monamoth', name: 'Monamoth', icon: '🎨',
+    id: 'mona', name: 'Mona', icon: '🎨',
     desc: 'Painted, not born. Madonna della Falena — the paint moved.',
-    glb: 'monamoth.glb',
+    glb: 'mona.glb',
+    tint: 0xffffff, scaleMul: 1.00,
+  },
+  {
+    id: 'bezelbug', name: 'BezelBug', icon: '💎',
+    desc: 'BezelBug — gem-encrusted exoskeleton, rivet-set wings.',
+    glb: 'bezelbug.glb',
     tint: 0xffffff, scaleMul: 1.00,
   },
 ];
