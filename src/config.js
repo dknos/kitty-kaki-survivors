@@ -65,9 +65,13 @@ export const XP = {
 };
 
 export const SPAWN = {
-  targetAliveBase: 25,
-  targetAlivePerD: 18,      // alive = base + D * perD
-  targetAliveCap: 220,
+  // iter 33q — bigger waves on-screen. Was 25/18/220 with batch=4 tick=0.5,
+  // which produced ~25-35 alive even with weapons not killing fast. Hero-
+  // offset camera puts ring=32 partly off-frustum; ring=22 keeps spawns at
+  // visible edge so the screen reads "swarm" instead of "trickle".
+  targetAliveBase: 60,
+  targetAlivePerD: 30,      // alive = base + D * perD
+  targetAliveCap: 400,
   difficultyRampSec: 60,    // D goes 0→1 over first 60s
   // Cap D at 1200s = 20:00. Normal runs end at 15:00 (final boss), so this
   // puts dragon-tier (minD 7) into play during the last 3 minutes pre-boss
@@ -75,13 +79,13 @@ export const SPAWN = {
   // t=15:00 → D = 1 + (900-60)/1140 * 9 ≈ 7.6 (just enables dragon).
   difficultyMaxSec: 1200,
   difficultyMax: 10,
-  ringRadius: 32,           // spawn distance from hero
-  ringJitter: 4,
-  hordeIntervalSec: 90,
-  hordeCount: 30,
+  ringRadius: 22,           // spawn distance from hero (visible edge)
+  ringJitter: 5,
+  hordeIntervalSec: 60,
+  hordeCount: 50,
   bossIntervalSec: 300,
-  spawnBatchPerTick: 4,     // how many enemies can spawn in one director tick
-  tickIntervalSec: 0.5,
+  spawnBatchPerTick: 16,    // how many enemies can spawn in one director tick
+  tickIntervalSec: 0.25,
   chestIntervalSec: 75,     // periodic chest spawn near hero
   chestEliteDropChance: 0.30, // probability an elite drop also spawns a chest
   // Iter 33l — time-based HP/dmg ramp coefficients (iter 33d originally inlined).
