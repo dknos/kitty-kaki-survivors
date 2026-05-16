@@ -48,6 +48,7 @@ import { initEnemyTells, updateEnemyTells, resetEnemyTells } from './enemyTells.
 import { initStageHazards, tickStageHazards, resetStageHazards } from './stageHazards.js';
 import { applyStageRule, tickStageRule, clearStageRule } from './stageRules.js';
 import { loadArenaDecor, clearArenaDecor } from './arenaDecor.js';
+import { loadForestAmber, tickForestAmber, clearForestAmber } from './forestAmber.js';
 import { initMiniEvents, tickMiniEvents, resetMiniEvents, teardownMiniEvents } from './miniEvents.js';
 import { initArenaProps, spawnArenaProps, tickArenaProps, resetArenaProps } from './arenaProps.js';
 import { notifyTutorialEvent } from './tutorial.js';
@@ -522,6 +523,8 @@ function _teardownActiveRun() {
   if (state.scene) clearArenaDecor(state.scene);
   // Stop the stage ambient bed — re-armed when the next run picks its stage.
   playStageAmbient(null);
+  // Tear down forest amber alongside decor (no-op on non-forest stages).
+  if (state.scene) clearForestAmber(state.scene);
 
   // Finalize Helltide BEFORE resetState wipes its state. teardownHelltide
   // reads state.run.helltideActive + helltideEmbersBanked to credit lifetime
@@ -900,6 +903,19 @@ function applyMetaUpgrades() {
   // on top of the tint so each arena reads visually distinct, not just recolored.
   if (stage && state.scene) {
     loadArenaDecor(stage.id, state.scene);
+    // Phase-2 swarm: forest-only Explosive Amber interactables. Fire-and-forget
+    // — applyMetaUpgrades is sync; amber spawning a frame late is invisible to
+    // the player. clearForestAmber is invariant: safe to no-op on non-forest.
+    if (stage.id === 'forest') {
+      loadForestAmber(state.scene).catch((e) => {
+        console.warn('[main] loadForestAmber failed:', e);
+      });
+    } else {
+      // Defensive: stage transition from forest → other should drop amber too.
+      // resetState() path already calls clearForestAmber via the block above,
+      // but applyMetaUpgrades runs on stage select without a reset (mid-run).
+      clearForestAmber(state.scene);
+    }
   }
   // Per-stage ambient bed (loop). Currently only `forest` ships an ambient
   // file (assets/audio/forest/forest_ambient.ogg); other stages no-op until
@@ -1250,6 +1266,11 @@ function frame(now) {
   _p=perfStart(); tickBells(logicDt);             perfMark('bells', _p);
   _p=perfStart(); updateEnemyTells(logicDt);      perfMark('enemyTells', _p);
   _p=perfStart(); tickStageHazards(logicDt);      perfMark('hazards', _p);
+  // Forest-only: Explosive Amber interactables (Phase-2 swarm). No-op on
+  // other stages — tickForestAmber bails when _entities is empty.
+  if (state.run && state.run.stage && state.run.stage.id === 'forest') {
+    _p=perfStart(); tickForestAmber(logicDt, state); perfMark('forestAmber', _p);
+  }
   _p=perfStart(); tickStageRule(state, logicDt);  perfMark('stageRule', _p);
   _p=perfStart(); tickMiniEvents(logicDt);        perfMark('miniEvents', _p);
   _p=perfStart(); tickArenaProps(logicDt);        perfMark('arenaProps', _p);
