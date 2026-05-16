@@ -46,6 +46,15 @@
  * If `pad.pairWith` is unset, pick the nearest OTHER pad whose
  * cooldownUntil <= state.time.game. Ties broken by lower seed.
  *
+ * === TWO-PASS TICK (LOCKED): pulse → activation ===
+ * Pulse update + cooldown timer + voidPadReady chime run in PASS 1 for all
+ * pads, BEFORE PASS 2 (proximity + activation). This guarantees that when
+ * the origin pad teleports to a destination pad later in the array, the
+ * destination's flash emissive isn't overwritten by its own pulse update
+ * on the same tick — both origin + dest read slot-7 flash on the rendered
+ * frame as spec §3 requires ("single-frame peak 3.5 on origin AND
+ * destination on the same frame").
+ *
  * Palette (8-color void, locked):
  *   slot 1 #040208 — obsidian black (pad base undertone)
  *   slot 2 #1a0a3a — deep violet abyss (cooldown ring overlay, bloom OFF)
@@ -95,6 +104,8 @@ export const COOLDOWN_RING_OPACITY_MAX = 0.85;
 
 // Disc Y-bob.
 const DISC_BOB_AMP = 0.02;
+const DISC_BOB_HZ = 0.5;
+const DISC_BASE_Y = 0.08;                  // disc rests ~0.08u above tile plane
 
 // ─── palette color constants (void, locked) ──────────────────────────────────
 export const COLOR_OBSIDIAN_BLACK = 0x040208;   // slot 1
@@ -119,10 +130,6 @@ function _seededRand(seed) {
 }
 
 // ─── geometry builders (shared across all pads) ──────────────────────────────
-// TODO(Phase-2 Pads Agent): wire these into the per-entity assembly group in
-// loadVoidTeleportPads. Disc + rim are shared geometries; emissive material
-// is per-entity so the idle pulse + teleport flash can lerp independently.
-//
 // Disc — thin cylinder lying flat. Slot 5/6 emissive (per-entity), slot 4
 // chrome-white edge highlight as an inset secondary mesh.
 function _buildDiscGeometry() {
@@ -152,7 +159,7 @@ function _spawnCooldownRing(parentGroup) {
     blending: THREE.AdditiveBlending,   // bloom OFF — additive but no BLOOM_LAYER enable
   });
   const mesh = new THREE.Mesh(geo, mat);
-  mesh.position.y = 0.06;               // sits flush atop the disc
+  mesh.position.y = 0.09;               // sits just above the disc (0.08 base + 0.06 height/2)
   mesh.frustumCulled = false;
   // NOTE: do NOT enable BLOOM_LAYER. Cooldown is a state, not a celebration.
   parentGroup.add(mesh);
@@ -161,10 +168,9 @@ function _spawnCooldownRing(parentGroup) {
 
 // ─── teleport flash ring (slot 7, bloom ON) ──────────────────────────────────
 // Short-lived expanding ring spawned at origin + destination on activation.
-// TODO(Phase-2 Pads Agent): expansion behavior is "thin line that grows
-// outward and fades" — mirror the forest_amber shockwave ring growth curve
-// (life-driven scale, opacity fade-out). Decor + line-weight values locked
-// above.
+// Mirrors the forest_amber shockwave: scale ramps 1.0 → 2.5 over the life
+// window, opacity fades 1.0 → 0.0 linearly. Cheaper than reflowing the ring
+// geometry every frame; we just scale the mesh.
 function _spawnFlashRing(scene, x, z) {
   const inner = FLASH_RING_INNER_R;
   const outer = inner + FLASH_RING_LINE_WIDTH;
@@ -179,7 +185,7 @@ function _spawnFlashRing(scene, x, z) {
     blending: THREE.AdditiveBlending,
   });
   const mesh = new THREE.Mesh(geo, mat);
-  mesh.position.set(x, 0.08, z);
+  mesh.position.set(x, 0.10, z);
   mesh.frustumCulled = false;
   mesh.layers.enable(BLOOM_LAYER);
   scene.add(mesh);
@@ -213,23 +219,18 @@ export async function loadVoidTeleportPads(scene, hotspotsUrl = 'assets/void_tel
   _group = new THREE.Group();
   _group.name = '__voidTeleportPads';
 
-  // TODO(Phase-2 Pads Agent): build shared disc/rim geometries here, register
-  // them in _disposables, then per-entity assemble:
-  //   - entGroup at (h.x, 0, h.z) scaled by h.scale
-  //   - discMesh (shared geo + per-entity emissive material on slot 5)
-  //   - rimMesh (shared geo + shared chrome-white material on slot 4)
-  //   - cooldown ring spawned via _spawnCooldownRing(entGroup) — opacity 0
-  //     by default, ramped only during cooldown
-  //   - optional per-entity ambient slot-8 star-point particles (≤8/pad)
-  //
-  // Disc emissive material: NEW per-entity MeshStandardMaterial with
-  //   color: COLOR_PORTAL_IDLE,
-  //   emissive: COLOR_PORTAL_IDLE,
-  //   emissiveIntensity: IDLE_EMISSIVE_MIN,
-  //   transparent: true, opacity: 0.95,
-  //   roughness: 0.30, metalness: 0.20.
-  // Enable BLOOM_LAYER on disc mesh. Rim mesh: bloom OFF (chrome edge is
-  // diffuse highlight only).
+  // Shared geometries — disposed in clearVoidTeleportPads.
+  const discGeo = _buildDiscGeometry();
+  const rimGeo  = _buildRimGeometry();
+  _disposables.push(discGeo, rimGeo);
+
+  // Shared chrome-white rim material (slot 4, bloom OFF — diffuse highlight only).
+  const rimMat = new THREE.MeshStandardMaterial({
+    color: COLOR_CHROME_WHITE,
+    roughness: 0.30, metalness: 0.55,
+    flatShading: true,
+  });
+  _disposables.push(rimMat);
 
   for (const h of hotspots) {
     const s = h.scale || 1;
@@ -242,8 +243,32 @@ export async function loadVoidTeleportPads(scene, hotspotsUrl = 'assets/void_tel
     entGroup.position.set(h.x, 0, h.z);
     entGroup.scale.setScalar(s);
 
-    // TODO(Phase-2 Pads Agent): add disc + rim meshes here. Cooldown ring
-    // overlay should be spawned but kept opacity-0 until cooldown starts.
+    // Per-entity disc material — its emissive lerps independently for the
+    // idle pulse AND gets spiked to slot-7 flash on teleport activation.
+    const discMat = new THREE.MeshStandardMaterial({
+      color: COLOR_PORTAL_IDLE,
+      emissive: COLOR_PORTAL_IDLE,
+      emissiveIntensity: IDLE_EMISSIVE_MIN,
+      transparent: true,
+      opacity: 0.95,
+      roughness: 0.30,
+      metalness: 0.20,
+      flatShading: true,
+    });
+    const discMesh = new THREE.Mesh(discGeo, discMat);
+    discMesh.position.y = DISC_BASE_Y;
+    discMesh.frustumCulled = false;
+    discMesh.layers.enable(BLOOM_LAYER);
+    entGroup.add(discMesh);
+
+    // Shared chrome-white rim (slot 4, bloom OFF).
+    const rimMesh = new THREE.Mesh(rimGeo, rimMat);
+    rimMesh.position.y = DISC_BASE_Y;
+    rimMesh.frustumCulled = false;
+    entGroup.add(rimMesh);
+
+    // Cooldown overlay ring — opacity 0 by default, ramped up on cooldown entry.
+    const cooldownRing = _spawnCooldownRing(entGroup);
 
     _group.add(entGroup);
 
@@ -253,12 +278,15 @@ export async function loadVoidTeleportPads(scene, hotspotsUrl = 'assets/void_tel
       localStepGuard: 0,                // re-entry guard (set on destination after teleport)
       pulsePhase: rng() * Math.PI * 2,  // desync per pad
       bobPhase: rng() * Math.PI * 2,
-      // Phase-2 fills these after building meshes:
+      // Per-pad flag: prevents sfx.voidPadReady() from firing every tick once
+      // cooldown expires. Flips true on cooldown entry, false the tick we play
+      // the ready chime.
+      cooldownActive: false,
       entGroup,
-      discMesh: null,
-      discMat: null,
-      rimMesh: null,
-      cooldownRing: null,               // { mesh, mat, geo } from _spawnCooldownRing
+      discMesh,
+      discMat,
+      rimMesh,
+      cooldownRing,                     // { mesh, mat, geo } from _spawnCooldownRing
       rng,
     });
   }
@@ -268,35 +296,42 @@ export async function loadVoidTeleportPads(scene, hotspotsUrl = 'assets/void_tel
 }
 
 // ─── helper: destination resolution ──────────────────────────────────────────
-// TODO(Phase-2 Pads Agent): called inside tickVoidTeleportPads on a successful
-// step trigger. Returns { destPad, suppressed } — destPad === null means the
-// teleport could not resolve (paired pad in cooldown OR only 1 pad ready)
-// and should be SUPPRESSED for this tick (no flash, no SFX, no pos mutation).
-// The step trigger is still considered consumed — caller does NOT re-check
-// proximity until the player physically leaves and re-enters.
+// Called inside tickVoidTeleportPads on a successful step trigger. Returns
+// { destPad, suppressed } — destPad === null means the teleport could not
+// resolve (paired pad in cooldown OR only 1 pad ready) and should be
+// SUPPRESSED for this tick (no flash, no SFX, no pos mutation). The step
+// trigger is still considered consumed — caller does NOT re-check proximity
+// until the player physically leaves and re-enters (caller sets the origin
+// pad's localStepGuard on suppression).
 //
-// Implementation sketch (LOCKED — do not redesign):
-//   1) if (pad.pairWith != null) {
-//        const target = _pads.find(p => p.seed === pad.pairWith);
-//        if (!target) return { destPad: null, suppressed: true };       // bad config
-//        if (target.cooldownUntil > tNow) return { destPad: null, suppressed: true };
-//        return { destPad: target, suppressed: false };
-//      }
-//   2) auto-nearest fallback:
-//        let best = null, bestD2 = Infinity;
-//        for (const p of _pads) {
-//          if (p === pad) continue;
-//          if (p.cooldownUntil > tNow) continue;
-//          const dx = p.x - pad.x, dz = p.z - pad.z;
-//          const d2 = dx*dx + dz*dz;
-//          if (d2 < bestD2 || (d2 === bestD2 && p.seed < best.seed)) {
-//            best = p; bestD2 = d2;
-//          }
-//        }
-//        return { destPad: best, suppressed: best === null };
+// Per spec §4:
+//   - pairWith set: ALWAYS resolve to seed-matched pad. Suppress if that
+//     pad is in cooldown. Suppress (and warn) if seed is missing.
+//   - pairWith unset: nearest OTHER pad whose cooldownUntil <= tNow.
+//     Ties broken by lower seed.
 function _resolveDestination(originPad, tNow) {
-  // TODO(Phase-2 Pads Agent): implement per the sketch above.
-  return { destPad: null, suppressed: true };
+  if (originPad.pairWith != null) {
+    const target = _pads.find((p) => p.seed === originPad.pairWith);
+    if (!target) return { destPad: null, suppressed: true };           // bad config
+    if (target === originPad) return { destPad: null, suppressed: true }; // self-pair guard
+    if (target.cooldownUntil > tNow) return { destPad: null, suppressed: true };
+    return { destPad: target, suppressed: false };
+  }
+  // Auto-nearest fallback.
+  let best = null;
+  let bestD2 = Infinity;
+  for (const p of _pads) {
+    if (p === originPad) continue;
+    if (p.cooldownUntil > tNow) continue;
+    const dx = p.x - originPad.x;
+    const dz = p.z - originPad.z;
+    const d2 = dx * dx + dz * dz;
+    if (d2 < bestD2 || (d2 === bestD2 && best && p.seed < best.seed)) {
+      best = p;
+      bestD2 = d2;
+    }
+  }
+  return { destPad: best, suppressed: best === null };
 }
 
 // ─── public: tick ────────────────────────────────────────────────────────────
@@ -309,88 +344,136 @@ export function tickVoidTeleportPads(dt, state) {
   const heroPos = hero && hero.pos;
   const heroAlive = !!(hero && hero.hp > 0 && !state.gameOver);
 
-  // ── 1) Per-pad update ──────────────────────────────────────────────────────
+  // ── PASS 1: idle pulse + cooldown timer/visual + ready chime ─────────────
+  // Runs for ALL pads BEFORE Pass 2's activation. Critical: if origin
+  // teleports to a dest pad that appears later in _pads, Pass 1 has
+  // already settled dest's pulse for the tick, so Pass 2's flash
+  // emissive write is the LAST thing touching dest.discMat this tick.
   for (const pad of _pads) {
-    // TODO(Phase-2 Pads Agent): per-pad work outline. Fill once meshes exist.
-    //
-    // a) Idle pulse: advance pad.pulsePhase by dt * 2π * IDLE_PULSE_HZ.
-    //    Lerp pad.discMat.emissiveIntensity between IDLE_EMISSIVE_MIN and
-    //    IDLE_EMISSIVE_MAX using 0.5 + 0.5*sin(pulsePhase). At pulse peak
-    //    (e.g. k > 0.95), set discMat.emissive to COLOR_PORTAL_ACTIVE,
-    //    otherwise COLOR_PORTAL_IDLE. Disc Y-bob from bobPhase at DISC_BOB_AMP.
-    //
-    // b) Cooldown overlay update: if pad.cooldownUntil > tNow, set
-    //    cooldownRing.mat.opacity to COOLDOWN_RING_OPACITY_MAX * remaining/6.
-    //    When cooldownUntil <= tNow AND opacity > 0, snap opacity to 0 and
-    //    fire sfx.voidPadReady() ONCE (use a per-pad flag `_lastCooldownState`
-    //    to avoid re-firing every tick once ready).
-    //
-    // c) Re-entry guard: if pad.localStepGuard > tNow, skip the step
-    //    proximity check below (player is standing on the destination pad
-    //    after teleport — must walk off first).
-    //
-    // d) Step proximity: if heroAlive AND heroPos AND pad.cooldownUntil <= tNow
-    //    AND pad.localStepGuard <= tNow AND dist²(hero, pad) <= PROXIMITY_R2,
-    //    resolve destination via _resolveDestination(pad, tNow) and execute
-    //    the activation frame below.
-    //
-    // === ACTIVATION FRAME (single tick — locked per spec §3) ===
-    //    const { destPad, suppressed } = _resolveDestination(pad, tNow);
-    //    if (suppressed || !destPad) {
-    //      // Step was consumed but teleport could not resolve. Set the
-    //      // re-entry guard on THIS pad so player has to step off and back on.
-    //      pad.localStepGuard = tNow + LOCAL_STEP_GUARD;
-    //      continue;
-    //    }
-    //    // 1) Origin flash + ring at pad position.
-    //    pad.discMat.emissive.setHex(COLOR_TELEPORT_FLASH);
-    //    pad.discMat.emissiveIntensity = TELEPORT_FLASH_EMISSIVE;
-    //    _flashRings.push(_spawnFlashRing(scene, pad.x, pad.z));
-    //    // 2) Player position snap (direct mutation — NOT through state.run).
-    //    state.hero.pos.x = destPad.x;
-    //    state.hero.pos.z = destPad.z;
-    //    if (state.hero.mesh) {
-    //      state.hero.mesh.position.x = destPad.x;
-    //      state.hero.mesh.position.z = destPad.z;
-    //    }
-    //    // 3) iFrames on arrival.
-    //    state.hero.iFramesUntil = Math.max(
-    //      state.hero.iFramesUntil || 0,
-    //      tNow + IFRAMES_ON_ARRIVAL
-    //    );
-    //    // 4) Destination flash + ring at destPad position.
-    //    destPad.discMat.emissive.setHex(COLOR_TELEPORT_FLASH);
-    //    destPad.discMat.emissiveIntensity = TELEPORT_FLASH_EMISSIVE;
-    //    _flashRings.push(_spawnFlashRing(scene, destPad.x, destPad.z));
-    //    // 5) Cooldown on ORIGIN only (destination stays ready).
-    //    pad.cooldownUntil = tNow + COOLDOWN_DURATION;
-    //    if (pad.cooldownRing) pad.cooldownRing.mat.opacity = COOLDOWN_RING_OPACITY_MAX;
-    //    // 6) Re-entry guard on DESTINATION.
-    //    destPad.localStepGuard = tNow + LOCAL_STEP_GUARD;
-    //    // 7) SFX — single play (origin + destination share).
-    //    try { sfx.voidTeleport && sfx.voidTeleport(); } catch (_) {}
+    // (a) Idle pulse on disc emissive (slot 5 baseline; slot 6 at peak).
+    pad.pulsePhase += dt * (Math.PI * 2 * IDLE_PULSE_HZ);
+    const k = 0.5 + 0.5 * Math.sin(pad.pulsePhase);
+    if (pad.discMat) {
+      pad.discMat.emissiveIntensity = IDLE_EMISSIVE_MIN
+        + (IDLE_EMISSIVE_MAX - IDLE_EMISSIVE_MIN) * k;
+      // Peak frame swap: slot 6 at the crest of the pulse, slot 5 otherwise.
+      if (k > 0.95) pad.discMat.emissive.setHex(COLOR_PORTAL_ACTIVE);
+      else          pad.discMat.emissive.setHex(COLOR_PORTAL_IDLE);
+    }
+
+    // Disc Y-bob (cosmetic — disc only, not rim or cooldown ring).
+    pad.bobPhase += dt * (Math.PI * 2 * DISC_BOB_HZ);
+    if (pad.discMesh) {
+      pad.discMesh.position.y = DISC_BASE_Y + Math.sin(pad.bobPhase) * DISC_BOB_AMP;
+    }
+
+    // (b) Cooldown overlay update + ready chime on transition.
+    if (pad.cooldownActive) {
+      const remaining = pad.cooldownUntil - tNow;
+      if (remaining > 0) {
+        // Opacity ramps COOLDOWN_RING_OPACITY_MAX → 0 linearly over duration.
+        const frac = Math.max(0, Math.min(1, remaining / COOLDOWN_DURATION));
+        if (pad.cooldownRing) pad.cooldownRing.mat.opacity = COOLDOWN_RING_OPACITY_MAX * frac;
+      } else {
+        // Cooldown expired this tick — snap overlay off, fire ready chime ONCE.
+        if (pad.cooldownRing) pad.cooldownRing.mat.opacity = 0;
+        pad.cooldownActive = false;
+        try { sfx.voidPadReady && sfx.voidPadReady(); } catch (_) {}
+      }
+    }
   }
 
-  // ── 2) Tick flash rings (expand + fade + dispose on expiry) ───────────────
-  // TODO(Phase-2 Pads Agent): mirror forest_amber shockwave / twilight aura
-  // ring lifecycle. Sketch:
-  //   for (let i = _flashRings.length - 1; i >= 0; i--) {
-  //     const r = _flashRings[i];
-  //     r.t += dt;
-  //     const k = Math.min(1, r.t / r.life);
-  //     // Expand scale 1.0 → 2.5 over the life window.
-  //     const scl = 1.0 + 1.5 * k;
-  //     r.group.scale.set(scl, 1, scl);
-  //     // Linear opacity fade 1.0 → 0.0.
-  //     r.mats[0].opacity = r.baseOpacity * (1 - k);
-  //     if (k >= 1) {
-  //       if (r.group.parent) r.group.parent.remove(r.group);
-  //       else if (scene) scene.remove(r.group);
-  //       for (const g of r.geos) { try { g.dispose(); } catch (_) {} }
-  //       for (const m of r.mats) { try { m.dispose(); } catch (_) {} }
-  //       _flashRings.splice(i, 1);
-  //     }
-  //   }
+  // ── PASS 2: re-entry guard + proximity + activation ──────────────────────
+  if (heroAlive && heroPos) {
+    for (const pad of _pads) {
+      // Cooldown gate: stepping on a cooling-down pad does nothing.
+      if (pad.cooldownUntil > tNow) continue;
+      // Re-entry guard: player just teleported here — must walk off first.
+      if (pad.localStepGuard > tNow) continue;
+
+      const dx = heroPos.x - pad.x;
+      const dz = heroPos.z - pad.z;
+      if (dx * dx + dz * dz > PROXIMITY_R2) continue;
+
+      // Player is within proximity AND pad is ready AND guard expired.
+      // Resolve destination.
+      const { destPad, suppressed } = _resolveDestination(pad, tNow);
+
+      if (suppressed || !destPad) {
+        // Step consumed but teleport could not resolve. Set the re-entry
+        // guard on THIS pad so the player has to step off and back on
+        // to retry. NO cooldown, NO flash, NO SFX.
+        pad.localStepGuard = tNow + LOCAL_STEP_GUARD;
+        continue;
+      }
+
+      // === ACTIVATION FRAME (single tick — spec §3) ===
+      // (1) Origin flash — disc emissive spike + slot-7 expanding ring.
+      if (pad.discMat) {
+        pad.discMat.emissive.setHex(COLOR_TELEPORT_FLASH);
+        pad.discMat.emissiveIntensity = TELEPORT_FLASH_EMISSIVE;
+      }
+      _flashRings.push(_spawnFlashRing(scene, pad.x, pad.z));
+
+      // (2) Player position snap (direct mutation — NOT through state.run).
+      //     Mesh + pos snap in the same tick so the mesh doesn't lag a frame.
+      state.hero.pos.x = destPad.x;
+      state.hero.pos.z = destPad.z;
+      if (state.hero.mesh) {
+        state.hero.mesh.position.x = destPad.x;
+        state.hero.mesh.position.z = destPad.z;
+      }
+
+      // (3) iFrames on arrival (preserve any existing longer iFrame window).
+      state.hero.iFramesUntil = Math.max(
+        state.hero.iFramesUntil || 0,
+        tNow + IFRAMES_ON_ARRIVAL
+      );
+
+      // (4) Destination flash — disc emissive spike + slot-7 ring at new pos.
+      if (destPad.discMat) {
+        destPad.discMat.emissive.setHex(COLOR_TELEPORT_FLASH);
+        destPad.discMat.emissiveIntensity = TELEPORT_FLASH_EMISSIVE;
+      }
+      _flashRings.push(_spawnFlashRing(scene, destPad.x, destPad.z));
+
+      // (5) Cooldown on ORIGIN only (destination stays ready).
+      pad.cooldownUntil = tNow + COOLDOWN_DURATION;
+      pad.cooldownActive = true;
+      if (pad.cooldownRing) pad.cooldownRing.mat.opacity = COOLDOWN_RING_OPACITY_MAX;
+
+      // (6) Re-entry guard on DESTINATION — prevents bounce-back next tick.
+      destPad.localStepGuard = tNow + LOCAL_STEP_GUARD;
+
+      // (7) SFX — single play, origin + destination share the one sound.
+      try { sfx.voidTeleport && sfx.voidTeleport(); } catch (_) {}
+
+      // Hero has been teleported away — break so we don't double-trigger
+      // any other ready pad that happens to coincide with the destination
+      // position this same tick (defense-in-depth alongside destination's
+      // localStepGuard which already guards that pad).
+      break;
+    }
+  }
+
+  // ── PASS 3: tick flash rings (expand + fade + dispose on expiry) ─────────
+  for (let i = _flashRings.length - 1; i >= 0; i--) {
+    const r = _flashRings[i];
+    r.t += dt;
+    const k = Math.min(1, r.t / r.life);
+    // Expand scale 1.0 → 2.5 over the life window.
+    const scl = 1.0 + 1.5 * k;
+    r.group.scale.set(scl, 1, scl);
+    // Linear opacity fade 1.0 → 0.0.
+    r.mats[0].opacity = r.baseOpacity * (1 - k);
+    if (k >= 1) {
+      if (r.group.parent) r.group.parent.remove(r.group);
+      else if (scene) scene.remove(r.group);
+      for (const g of r.geos) { try { g.dispose(); } catch (_) {} }
+      for (const m of r.mats) { try { m.dispose(); } catch (_) {} }
+      _flashRings.splice(i, 1);
+    }
+  }
 }
 
 // ─── public: clear ───────────────────────────────────────────────────────────
