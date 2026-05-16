@@ -46,7 +46,7 @@ import { initTotems, tickTotems, resetTotems } from './totems.js';
 import { initPylons, tickPylons, resetPylons } from './pylons.js';
 import { initBells, tickBells, resetBells } from './bells.js';
 import { initEnemyTells, updateEnemyTells, resetEnemyTells } from './enemyTells.js';
-import { initStageHazards, tickStageHazards, resetStageHazards, loadForestHazards, clearForestHazards, loadTwilightHazards, clearTwilightHazards, loadCinderHazards, clearCinderHazards } from './stageHazards.js';
+import { initStageHazards, tickStageHazards, resetStageHazards, loadForestHazards, clearForestHazards, loadTwilightHazards, clearTwilightHazards, loadCinderHazards, clearCinderHazards, loadVoidHazards, clearVoidHazards } from './stageHazards.js';
 import { applyStageRule, tickStageRule, clearStageRule } from './stageRules.js';
 import { loadArenaDecor, clearArenaDecor } from './arenaDecor.js';
 import { loadForestAmber, tickForestAmber, clearForestAmber } from './forestAmber.js';
@@ -948,6 +948,7 @@ function applyMetaUpgrades() {
       clearCinderBallistas(state.scene);
       clearCinderHazards(state.scene);
       clearVoidTeleportPads(state.scene);
+      clearVoidHazards(state.scene);
     } else if (stage.id === 'twilight') {
       // Phase-2 swarm: Blood/Light Fountains — proximity drink → 1.75× move
       // speed for 4s, 30s per-fountain cooldown. Fire-and-forget; hero.js
@@ -968,6 +969,7 @@ function applyMetaUpgrades() {
       clearCinderBallistas(state.scene);
       clearCinderHazards(state.scene);
       clearVoidTeleportPads(state.scene);
+      clearVoidHazards(state.scene);
     } else if (stage.id === 'cinder') {
       // Phase-2 swarm: Cinder Ballistas — proximity-triggered 10s repair →
       // permanent auto-fire piercing bolts. Fire-and-forget; tickCinderBallistas
@@ -989,6 +991,7 @@ function applyMetaUpgrades() {
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearVoidTeleportPads(state.scene);
+      clearVoidHazards(state.scene);
     } else if (stage.id === 'void') {
       // Phase-2 swarm: Void Teleport Pads — proximity-triggered (≤1.2u) instant
       // pad-to-pad teleport with 6s per-pad cooldown + 0.4s iFrames on arrival.
@@ -1000,6 +1003,15 @@ function applyMetaUpgrades() {
       // back on to retry.
       loadVoidTeleportPads(state.scene).catch((e) => {
         console.warn('[main] loadVoidTeleportPads failed:', e);
+      });
+      // B3: Void chasm hazards — pre-existing tile-gap damage zones (5 dmg/s,
+      // iframe-respecting so teleport-arrival doesn't punish). Fire-and-forget;
+      // the per-frame check in tickStageHazards short-circuits on null until
+      // state.run.voidChasms is published, so a frame-late load is invisible.
+      // Mirrors the cinder lava pattern minus the arming flash — chasms are
+      // visible geometry, not a telegraphed spawn.
+      loadVoidHazards(state.scene).catch((e) => {
+        console.warn('[main] loadVoidHazards failed:', e);
       });
       // Defensive: forest/twilight/cinder decor must be gone on void.
       clearForestAmber(state.scene);
@@ -1019,6 +1031,7 @@ function applyMetaUpgrades() {
       clearCinderBallistas(state.scene);
       clearCinderHazards(state.scene);
       clearVoidTeleportPads(state.scene);
+      clearVoidHazards(state.scene);
     }
   }
   // Per-stage ambient bed (loop). `forest` and `twilight` ship ambient files

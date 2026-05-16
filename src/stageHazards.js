@@ -27,6 +27,13 @@ import { spawnMagnetSpark } from './fx.js';
 
 const POLLEN_CAP = 32;
 const LAVA_CAP = 18;
+// B3: void chasm hazards — pre-existing geometry (no telegraph / arming flash),
+// 5 dmg/s on contact. Cap matches the regen tool's 14-zone upper band with
+// 2 slots of headroom in case future runs need to dial up.
+const VOID_CHASM_CAP = 16;
+// B3: per-second damage rate for void chasms. Slightly higher than cinder
+// lava's 3 dmg/s to reflect void being the escalation-tier stage.
+const VOID_CHASM_DMG_PER_SEC = 5;
 
 const _m4 = new THREE.Matrix4();
 const _v3 = new THREE.Vector3();
@@ -39,6 +46,12 @@ let _scene = null;
 let _pollenInst = null;
 let _lavaInst = null;
 let _twilightFogPlane = null;
+// B3: void chasms — InstancedMesh pool for the cyan-rim damage discs +
+// in-memory roster {x, z, r2, dmgPerSec} for the per-frame hero-inside check.
+// Published to state.run.voidChasms so other systems (analytics, enemies)
+// can read without an import cycle.
+let _voidChasmInst = null;
+let _voidChasms = null;
 
 // Forest chokepoint slow-zones — derived once from the same hotspot JSON the
 // Amber agent reads. Stored module-side as `{x, z, r2, mul}` (r² precomputed so
@@ -143,6 +156,23 @@ export function initStageHazards(scene) {
   _twilightFogPlane.position.y = 0.5;
   _twilightFogPlane.visible = false;
   scene.add(_twilightFogPlane);
+  // B3: void chasms — additive cyan glow disc, instance color tinted from
+  // the locked 8-color void palette. Using tex('glowWhite') keeps the texture
+  // pure (radial alpha falloff) so per-instance color (slot 5 #00d4ff) is
+  // the only thing setting hue — palette discipline holds. NOTE: this
+  // intentionally OVERRIDES docs/VOID_VISUAL_STYLE.md §"Missing Floor Tile
+  // Hazard Spec" which prior to B3 said "VISUAL only — NO damage". B3
+  // adds the damage rule; the doc's tile-gap decals from arenaDecor remain
+  // visual-only and are independent of these chasm zones.
+  const chasmGeo = new THREE.PlaneGeometry(3.0, 3.0);
+  const chasmMat = new THREE.MeshBasicMaterial({
+    map: tex('glowWhite'),
+    color: 0xffffff,             // white tint base — per-instance color picks the slot
+    transparent: true, opacity: 0.85,
+    depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+  _voidChasmInst = _mkInst(chasmGeo, chasmMat, VOID_CHASM_CAP);
+  scene.add(_voidChasmInst);
 }
 
 function _writeMatrix(inst, i, x, y, z, scale, color) {
@@ -374,6 +404,30 @@ export function tickStageHazards(dt) {
     }
   }
 
+  // ── Void chasms (B3) ──
+  // Pre-existing geometry — no arming flash (chasms are visible from the
+  // moment you enter the stage). Hero standing inside a chasm takes
+  // VOID_CHASM_DMG_PER_SEC damage per second, iframe-gated so a recently
+  // teleported hero doesn't get punished on arrival (voidTeleportPads sets
+  // state.hero.iFramesUntil = tNow + 0.4 on teleport — see voidTeleportPads.js).
+  if (stageId === 'void' && _voidChasms) {
+    for (let i = 0; i < _voidChasms.length; i++) {
+      const c = _voidChasms[i];
+      // Damage check — only if hero NOT in iFrames (teleport-arrival guard).
+      const dx = heroX - c.x, dz = heroZ - c.z;
+      if (dx * dx + dz * dz < c.r2) {
+        if (state.time.game >= (state.hero.iFramesUntil || 0)) {
+          try { heroTakeDamage(c.dmgPerSec * dt); } catch (_) {}
+        }
+      }
+    }
+  } else if (_voidChasmInst && stageId !== 'void' && _voidChasms !== null) {
+    // Leaving void — hide all chasm instances (matrices already parked under
+    // the world from teardown, but defense-in-depth).
+    for (let i = 0; i < VOID_CHASM_CAP; i++) _hide(_voidChasmInst, i);
+    _voidChasmInst.instanceMatrix.needsUpdate = true;
+  }
+
   // Apply pollen slow by multiplying hero speed for this frame.
   // Read by hero.js if we expose state.hero.hazardSlow.
   state.hero.hazardSlow = pollenSlow;
@@ -386,6 +440,9 @@ export function resetStageHazards() {
   _lavaCD = 0;
   if (_pollenInst) { for (let i = 0; i < POLLEN_CAP; i++) _hide(_pollenInst, i); _pollenInst.instanceMatrix.needsUpdate = true; }
   if (_lavaInst)   { for (let i = 0; i < LAVA_CAP; i++)   _hide(_lavaInst, i);   _lavaInst.instanceMatrix.needsUpdate = true; }
+  if (_voidChasmInst) { for (let i = 0; i < VOID_CHASM_CAP; i++) _hide(_voidChasmInst, i); _voidChasmInst.instanceMatrix.needsUpdate = true; }
+  _voidChasms = null;
+  if (state.run) state.run.voidChasms = null;
   if (_twilightFogPlane) _twilightFogPlane.visible = false;
   if (state.hero) state.hero.hazardSlow = 1.0;
   // Drop any forest slow-zones too. The visual marker (if ever shipped)
@@ -524,4 +581,73 @@ export async function loadCinderHazards(scene, hotspotsUrl = 'assets/cinder_slow
 export function clearCinderHazards(_scene) {
   _cinderSlowZones = null;
   if (state.run) state.run.cinderSlowZones = null;
+}
+
+// ─── Void chasm damage zones (B3) ────────────────────────────────────────────
+// Missing-floor-tile chasms that deal damage-over-time when the hero stands
+// inside one. Mirrors the cinder lava semantics (per-frame circle check +
+// iframe-respecting heroTakeDamage) but:
+//   - NO arming flash — chasms are pre-existing geometry, visible from
+//     stage-enter (cinder lava telegraphs because puddles spawn mid-run).
+//   - Palette-locked rim glow (slot 5 cyan #00d4ff) instead of cinder's
+//     red→yellow ramp.
+//   - Higher dmg/s (5 vs 3) because void is the escalation tier.
+// Hotspots are mulberry32(0xC0DE99 ^ 0x40000) — co-derived from the same
+// root seed as the visible tile-gap decals in arenaDecor._buildVoidDecor,
+// so the chasms feel co-authored with the missing-tile fiction without
+// requiring 1:1 overlap (the regen tool produces 10-14, decor scatters 5-8).
+//
+// NOTE: this overrides docs/VOID_VISUAL_STYLE.md §"Missing Floor Tile Hazard
+// Spec" which prior to B3 said tile gaps were VISUAL only. B3 adds the
+// damage rule via this independent chasm layer; the doc's tile-gap decals
+// in arenaDecor remain visual-only.
+export async function loadVoidHazards(scene, hotspotsUrl = 'assets/void_chasm_hotspots.json') {
+  // Idempotent: nuke any prior roster + hide instances before rebuilding.
+  clearVoidHazards(scene);
+  let hotspots = null;
+  try {
+    const res = await fetch(hotspotsUrl);
+    hotspots = await res.json();
+  } catch (e) {
+    console.warn('[stageHazards] void chasm fetch failed:', e);
+    return 0;
+  }
+  if (!Array.isArray(hotspots) || hotspots.length === 0) return 0;
+  if (!_voidChasmInst) {
+    console.warn('[stageHazards] void chasm InstancedMesh not initialized — initStageHazards() must run first');
+    return 0;
+  }
+  // Precompute r² for the per-frame hero-inside check.
+  _voidChasms = hotspots.slice(0, VOID_CHASM_CAP).map((h) => ({
+    x: h.x, z: h.z,
+    r2: (h.radius || 1.6) * (h.radius || 1.6),
+    dmgPerSec: VOID_CHASM_DMG_PER_SEC,
+  }));
+  // Place instanced visuals — disc lies flat on tile plane (y=0.04, same
+  // height as cinder lava). Color is slot 5 portal cyan idle (#00d4ff).
+  // Scale matches the chasm zone radius so the cyan rim glow visually
+  // brackets the damage circle.
+  for (let i = 0; i < VOID_CHASM_CAP; i++) {
+    if (i < _voidChasms.length) {
+      const h = hotspots[i];
+      const r = h.radius || 1.6;
+      _writeMatrix(_voidChasmInst, i, h.x, 0.04, h.z, r, 0x00d4ff);
+    } else {
+      _hide(_voidChasmInst, i);
+    }
+  }
+  _voidChasmInst.instanceMatrix.needsUpdate = true;
+  _voidChasmInst.instanceColor.needsUpdate = true;
+  // Publish so other systems can read without an import cycle.
+  if (state.run) state.run.voidChasms = _voidChasms;
+  return _voidChasms.length;
+}
+
+export function clearVoidHazards(_scene) {
+  _voidChasms = null;
+  if (state.run) state.run.voidChasms = null;
+  if (_voidChasmInst) {
+    for (let i = 0; i < VOID_CHASM_CAP; i++) _hide(_voidChasmInst, i);
+    _voidChasmInst.instanceMatrix.needsUpdate = true;
+  }
 }
