@@ -984,24 +984,16 @@ function applyMetaUpgrades() {
       // FE-C3B: 3 outbound + 3 return amber-tinted portals between Glade and
       // the 3 puzzle rooms (saphollow / crystalchoir / amberlabyrinth) +
       // pollen breadcrumbs from world origin to each outbound portal.
-      // Fire-and-forget; tickForestPortals bails on empty state.
-      loadForestPortals(state.scene).catch((e) => {
-        console.warn('[main] loadForestPortals failed:', e);
-      });
+      // Sync loaders — try/catch since they don't return Promises.
+      try { loadForestPortals(state.scene); } catch (e) { console.warn('[main] loadForestPortals failed:', e); }
       // FE-C3C: puzzle rooms — Flow Weaver (Sap Hollow) / Harmonic Alignment
       // (Crystal Choir) / Prism Lock (Amber Labyrinth). Each load* instantiates
       // the puzzle's meshes; puzzleSystem.startPuzzle(id) activates one when
       // hero enters the matching room. Module-load already called registerPuzzle
       // via the new imports above; load* just builds the scene objects.
-      loadFlowWeaver(state.scene).catch((e) => {
-        console.warn('[main] loadFlowWeaver failed:', e);
-      });
-      loadHarmonicAlignment(state.scene).catch((e) => {
-        console.warn('[main] loadHarmonicAlignment failed:', e);
-      });
-      loadPrismLock(state.scene).catch((e) => {
-        console.warn('[main] loadPrismLock failed:', e);
-      });
+      try { loadFlowWeaver(state.scene); } catch (e) { console.warn('[main] loadFlowWeaver failed:', e); }
+      try { loadHarmonicAlignment(state.scene); } catch (e) { console.warn('[main] loadHarmonicAlignment failed:', e); }
+      try { loadPrismLock(state.scene); } catch (e) { console.warn('[main] loadPrismLock failed:', e); }
       // Defensive: re-entering forest should drop any leftover twilight FX.
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
