@@ -55,6 +55,10 @@ import { loadArenaDecor, clearArenaDecor } from './arenaDecor.js';
 import { loadForestAmber, tickForestAmber, clearForestAmber } from './forestAmber.js';
 import { tickPuzzleSystem } from './puzzleSystem.js';
 import { detectRoom, FOREST_ROOMS } from './forestRooms.js';
+import { loadForestPortals, tickForestPortals, clearForestPortals } from './forestPortals.js';
+import { loadFlowWeaver, disposeFlowWeaver } from './puzzleFlowWeaver.js';
+import { loadHarmonicAlignment, disposeHarmonicAlignment } from './puzzleHarmonicAlignment.js';
+import { loadPrismLock, disposePrismLock } from './puzzlePrismLock.js';
 import { loadTwilightFountains, tickTwilightFountains, clearTwilightFountains } from './twilightFountains.js';
 import { loadCinderBallistas, tickCinderBallistas, clearCinderBallistas } from './cinderBallistas.js';
 import { loadVoidTeleportPads, tickVoidTeleportPads, clearVoidTeleportPads } from './voidTeleportPads.js';
@@ -547,6 +551,12 @@ function _teardownActiveRun() {
   // Drop forest slow-zones too — paired with amber since both key off the
   // same hotspot JSON. No-op on non-forest stages.
   if (state.scene) clearForestHazards(state.scene);
+  // FE-C3B + FE-C3C: forest portals + 3 puzzle scenes — same teardown contract
+  // as amber/hazards, no-op on non-forest stages.
+  if (state.scene) clearForestPortals(state.scene);
+  if (state.scene) disposeFlowWeaver(state.scene);
+  if (state.scene) disposeHarmonicAlignment(state.scene);
+  if (state.scene) disposePrismLock(state.scene);
   // Tear down twilight fountains (no-op on non-twilight stages). Mirrors
   // the forestAmber teardown shape; clear path also nulls
   // state.run.fountainSpeedBuff so the buff can't leak across runs.
@@ -971,6 +981,27 @@ function applyMetaUpgrades() {
       loadForestHazards(state.scene).catch((e) => {
         console.warn('[main] loadForestHazards failed:', e);
       });
+      // FE-C3B: 3 outbound + 3 return amber-tinted portals between Glade and
+      // the 3 puzzle rooms (saphollow / crystalchoir / amberlabyrinth) +
+      // pollen breadcrumbs from world origin to each outbound portal.
+      // Fire-and-forget; tickForestPortals bails on empty state.
+      loadForestPortals(state.scene).catch((e) => {
+        console.warn('[main] loadForestPortals failed:', e);
+      });
+      // FE-C3C: puzzle rooms — Flow Weaver (Sap Hollow) / Harmonic Alignment
+      // (Crystal Choir) / Prism Lock (Amber Labyrinth). Each load* instantiates
+      // the puzzle's meshes; puzzleSystem.startPuzzle(id) activates one when
+      // hero enters the matching room. Module-load already called registerPuzzle
+      // via the new imports above; load* just builds the scene objects.
+      loadFlowWeaver(state.scene).catch((e) => {
+        console.warn('[main] loadFlowWeaver failed:', e);
+      });
+      loadHarmonicAlignment(state.scene).catch((e) => {
+        console.warn('[main] loadHarmonicAlignment failed:', e);
+      });
+      loadPrismLock(state.scene).catch((e) => {
+        console.warn('[main] loadPrismLock failed:', e);
+      });
       // Defensive: re-entering forest should drop any leftover twilight FX.
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
@@ -995,6 +1026,10 @@ function applyMetaUpgrades() {
       // Defensive: forest decor must be gone on twilight.
       clearForestAmber(state.scene);
       clearForestHazards(state.scene);
+      clearForestPortals(state.scene);
+      disposeFlowWeaver(state.scene);
+      disposeHarmonicAlignment(state.scene);
+      disposePrismLock(state.scene);
       clearCinderBallistas(state.scene);
       clearCinderHazards(state.scene);
       clearVoidTeleportPads(state.scene);
@@ -1017,6 +1052,10 @@ function applyMetaUpgrades() {
       // Defensive: forest/twilight decor must be gone on cinder.
       clearForestAmber(state.scene);
       clearForestHazards(state.scene);
+      clearForestPortals(state.scene);
+      disposeFlowWeaver(state.scene);
+      disposeHarmonicAlignment(state.scene);
+      disposePrismLock(state.scene);
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearVoidTeleportPads(state.scene);
@@ -1045,6 +1084,10 @@ function applyMetaUpgrades() {
       // Defensive: forest/twilight/cinder decor must be gone on void.
       clearForestAmber(state.scene);
       clearForestHazards(state.scene);
+      clearForestPortals(state.scene);
+      disposeFlowWeaver(state.scene);
+      disposeHarmonicAlignment(state.scene);
+      disposePrismLock(state.scene);
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearCinderBallistas(state.scene);
@@ -1055,6 +1098,10 @@ function applyMetaUpgrades() {
       // but applyMetaUpgrades runs on stage select without a reset (mid-run).
       clearForestAmber(state.scene);
       clearForestHazards(state.scene);
+      clearForestPortals(state.scene);
+      disposeFlowWeaver(state.scene);
+      disposeHarmonicAlignment(state.scene);
+      disposePrismLock(state.scene);
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearCinderBallistas(state.scene);
@@ -1518,6 +1565,9 @@ function frame(now) {
     // so a fast hero crossing portals doesn't strand a stale currentRoom.
     _p=perfStart(); tickPuzzleSystem(logicDt); perfMark('puzzleSystem', _p);
     _p=perfStart(); _tickForestRoomTransition(logicDt); perfMark('roomTransition', _p);
+    // FE-C3B — hub portals: drives interact-key teleport, cooldown ring, and
+    // pollen breadcrumb bob. Bails when no portals registered.
+    _p=perfStart(); tickForestPortals(logicDt); perfMark('forestPortals', _p);
   }
   // Twilight-only: Blood/Light Fountains. No-op on other stages —
   // tickTwilightFountains bails when _fountains is empty.
