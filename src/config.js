@@ -143,6 +143,56 @@ export const ENEMY_TIERS = [
   { glb: 'mantis',      hp: 45,  spd: 2.0, dmg: 12, minD: 3.0, weight: 4,  scale: 1.00, procAnim: 'crawl' },
 ];
 
+/**
+ * Nemesis Elite (C3) — Butcher-style hunter that spawns OUTSIDE the standard
+ * wave system. Intentionally exported as a sibling constant, NOT added to
+ * ENEMY_TIERS — the spawnDirector tier filters (allowedTiers / elite pool /
+ * final-boss reduce) would otherwise eat this row and break the contract
+ * ("ignores standard wave-spawning logic"). Only spawnDirector.spawnNemesis
+ * and enemies.killEnemy (via isNemesis branch) ever reference it.
+ *
+ * `spd` is absolute units/sec like every ENEMY_TIERS row. ~1.5× a baseline
+ * mob (zombie 2.2, skeleton 2.4, mid pack ~2.6) → 4.0 reads as "faster than
+ * anything else in the swarm but still dodgeable by a clean dash".
+ *
+ * `hp` here is the BASELINE — spawnDirector multiplies by the current
+ * difficulty ramp + stage HP mul at spawn time so late-game nemesis HP scales
+ * with the rest of the swarm. ~8-10× a robust mid-tier (orc 28, robot 50,
+ * mech 90) → 800 baseline. At t=15:00 D≈7.6, that's 800×(1+0.6·7.6) ≈ 4448
+ * raw HP (Cinder 1.6× → ~7100), enough that the player has to commit a
+ * volley but not so much that a focused signature run can't burst it.
+ *
+ * `glowColor` is the bloom-tagged red core inset in the obsidian body. Mesh
+ * builder lives in enemies.js (spawnNemesisMesh) so flash mats + procedural
+ * geometry stay co-located with the other procedural enemy meshes.
+ */
+export const NEMESIS_TIER = {
+  glb: '__nemesis__',         // sentinel; mesh is procedural, never loaded
+  hp: 800,                    // baseline; difficulty + stage mults applied at spawn
+  spd: 4.0,                   // absolute units/sec. 1.5× a baseline mob.
+  dmg: 22,                    // 1.5× a robust mid-tier contact dmg
+  scale: 1.4,                 // 1.4× visual silhouette (taller, broader)
+  radius: 0.7,                // contact radius hint (current contact pipeline is flat)
+  color: 0x222226,            // obsidian body
+  glowColor: 0xff2020,        // red eye/core (bloom-layer tagged)
+  xp: 50,                     // chunky gem on kill
+  isElite: true,              // metadata; spawn director keys off isNemesis flag, not this
+};
+
+/**
+ * Spawn cadence (sec) for the Nemesis Elite. First spawn in [first.min, first.max],
+ * subsequent spawns in [respawn.min, respawn.max] measured from the kill time.
+ * Single-active rule: if a nemesis is still alive when the timer fires, the
+ * tick is skipped (no doubling up).
+ */
+export const NEMESIS_SPAWN = {
+  firstMinSec: 90,
+  firstJitterSec: 30,         // first spawn ∈ [90, 120]
+  respawnMinSec: 120,
+  respawnJitterSec: 60,       // post-kill ∈ [120, 180]
+  spawnRadius: 50,            // distance from hero (well off-screen)
+};
+
 /** Initial roster size pre-warmed per pool to hide first-horde stall. */
 export const POOL_PREWARM = {
   // iter 33y — trimmed ~40% from iter 33t. Pools auto-grow on miss (one-shot

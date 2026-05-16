@@ -10,7 +10,8 @@
  */
 import * as THREE from 'three';
 import { state } from './state.js';
-import { ENEMY_TIERS, POOL_PREWARM, SPATIAL, SPAWN, DAMAGE } from './config.js';
+import { ENEMY_TIERS, POOL_PREWARM, SPATIAL, SPAWN, DAMAGE, NEMESIS_TIER } from './config.js';
+import { BLOOM_LAYER } from './postfx.js';
 import { cloneCached, GLTF_CACHE, getClips, findClip, upgradeMaterials, injectVertAnim, collapseStaticMeshes } from './assets.js';
 import { takeDamage as heroTakeDamage } from './hero.js';
 import { dropGem } from './xp.js';
@@ -423,6 +424,172 @@ export function spawnEnemy(tierConfig, x, z) {
   return enemy;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Nemesis Elite (C3) — procedural mesh + custom spawn (bypasses pool path)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// The Nemesis flows through updateEnemies for movement/contact/damage (so
+// the hunter behaviour falls out of the existing seek-hero loop for free at
+// the configured spd) but is NOT a pooled GLB clone — the procedural body
+// keeps the obsidian + bloom-glow silhouette under our control and lets the
+// core stay layer-tagged across the flash/freeze/debuff mutations (those
+// touch material.emissive / spd, never mesh.layers, so a one-shot enable at
+// build time survives). The mesh is disposed in onNemesisKilled, not pooled.
+function _buildNemesisMesh() {
+  const g = new THREE.Group();
+  // Body: chunky obsidian torso. ConeGeometry inverted (apex down) reads as
+  // a hulking forward-leaning silhouette from the iso camera.
+  const body = new THREE.Mesh(
+    new THREE.ConeGeometry(0.9, 2.4, 6),
+    new THREE.MeshStandardMaterial({
+      color: NEMESIS_TIER.color,
+      roughness: 0.45,
+      metalness: 0.35,
+      emissive: 0x000000,
+      emissiveIntensity: 0,
+    }),
+  );
+  body.position.y = 1.2;
+  body.castShadow = true;
+  g.add(body);
+
+  // Shoulders: two squat boxes flanking the body to break the cone read.
+  const shoulderMat = new THREE.MeshStandardMaterial({
+    color: 0x18181c, roughness: 0.55, metalness: 0.30,
+  });
+  for (const dx of [-0.55, 0.55]) {
+    const sh = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.5, 0.7), shoulderMat);
+    sh.position.set(dx, 1.8, 0);
+    sh.castShadow = true;
+    g.add(sh);
+  }
+
+  // Glowing core: small inset emissive sphere at chest height. Bloom-layer
+  // enabled so the post-fx pipeline picks it up. setHex with emissive +
+  // toneMapped: false keeps the red brilliant under HDR composite.
+  const coreMat = new THREE.MeshStandardMaterial({
+    color: NEMESIS_TIER.glowColor,
+    emissive: NEMESIS_TIER.glowColor,
+    emissiveIntensity: 2.4,
+    roughness: 0.2,
+    metalness: 0.0,
+    toneMapped: false,
+  });
+  const core = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 8), coreMat);
+  core.position.set(0, 1.6, 0.55);   // pushed forward as "chest eye"
+  core.layers.enable(BLOOM_LAYER);
+  g.add(core);
+
+  // Twin pin-prick eyes on the upper body — same emissive material so the
+  // bloom pass treats them as one continuous glow.
+  for (const ex of [-0.18, 0.18]) {
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 6), coreMat);
+    eye.position.set(ex, 2.05, 0.50);
+    eye.layers.enable(BLOOM_LAYER);
+    g.add(eye);
+  }
+
+  // Subtle red rim light at the base — sits low so it pools around the feet
+  // for the silhouette to read in dark stages. Bloom-tagged.
+  const rim = new THREE.Mesh(
+    new THREE.RingGeometry(0.55, 0.85, 16),
+    new THREE.MeshBasicMaterial({
+      color: NEMESIS_TIER.glowColor,
+      transparent: true,
+      opacity: 0.45,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    }),
+  );
+  rim.rotation.x = -Math.PI / 2;
+  rim.position.y = 0.04;
+  rim.layers.enable(BLOOM_LAYER);
+  g.add(rim);
+
+  // Scale to NEMESIS_TIER.scale (1.4× silhouette).
+  g.scale.setScalar(NEMESIS_TIER.scale);
+  g.userData._isNemesisMesh = true;
+  g.userData._nemesisCore = core;
+  // Flash mats: include only the obsidian body parts. Excluding the red core/
+  // eyes/rim is deliberate — the damage flash path mutates material.emissive
+  // back-and-forth, and toggling those mats would briefly white-out the
+  // glowing core (kills the silhouette read mid-fight). Body + shoulders get
+  // the white emissive flash like every other enemy.
+  const flashMats = [];
+  g.traverse(o => {
+    if (!o.isMesh || !o.material) return;
+    // Skip bloom-tagged glow meshes (core + eyes + rim).
+    if (o.layers && o.layers.mask & (1 << BLOOM_LAYER)) return;
+    if (!o.material.emissive) return;
+    flashMats.push({
+      mat: o.material,
+      origEmissive: o.material.emissive.getHex(),
+      origIntensity: o.material.emissiveIntensity || 0,
+    });
+  });
+  g.userData.flashMats = flashMats;
+  return g;
+}
+
+/**
+ * Spawn the singleton Nemesis. Called from spawnDirector.spawnNemesis() once
+ * per cycle. Does NOT push into a pool — mesh is freshly built, disposed on
+ * kill. Returns the enemy-shaped object (or null if scene not initialised).
+ *
+ * Difficulty / stage HP multipliers are replicated here because we bypass the
+ * pooled spawnEnemy() block at line 340-358. Without this, late-game nemesis
+ * HP stays at the 800 baseline while standard mobs are 6× scaled.
+ */
+export function spawnNemesis(x, z) {
+  if (!_scene) return null;
+  const mesh = _buildNemesisMesh();
+  mesh.position.set(x, 0, z);
+  _scene.add(mesh);
+
+  // Mirror the multiplier block from spawnEnemy(). Hyper/daily/stage/weekly
+  // + the time-based difficulty ramp all apply to the nemesis the same way
+  // they apply to every other enemy at spawn time.
+  const hyper    = state.modes && state.modes.hyper ? 1.5 : 1;
+  const dailyHp  = state.run && state.run.dailyHpMul ? state.run.dailyHpMul : 1;
+  const stageHp  = state.run && state.run.stageHpMul ? state.run.stageHpMul : 1;
+  const weeklyHp = state.run && state.run.weeklyEnemyHpMul ? state.run.weeklyEnemyHpMul : 1;
+  const weeklyDg = state.run && state.run.weeklyEnemyDmgMul ? state.run.weeklyEnemyDmgMul : 1;
+  const _D       = _computeDifficulty(state.time && state.time.game ? state.time.game : 0);
+  const rampHp   = 1 + SPAWN.rampHpPerD  * _D;
+  const rampDmg  = 1 + SPAWN.rampDmgPerD * _D;
+  const hpMul    = hyper * dailyHp * stageHp * weeklyHp * rampHp;
+
+  const enemy = {
+    mesh,
+    glbKey: '__nemesis__',
+    hp: NEMESIS_TIER.hp * hpMul,
+    hpMax: NEMESIS_TIER.hp * hpMul,
+    spd: NEMESIS_TIER.spd * hyper,
+    dmg: NEMESIS_TIER.dmg * hyper * weeklyDg * rampDmg,
+    contactCooldown: 0,
+    elite: true,                  // treated as elite by killEnemy drop tables
+    isFinalBoss: false,
+    isMiniBoss: false,
+    isNemesis: true,              // gates the custom kill branch + skips affix roll
+    faceYaw: 0,
+    alive: true,
+    _spatialKey: null,
+    knockVx: 0, knockVz: 0,
+    slowMul: 1,
+    _dotDps: 0, _dotUntil: 0,
+    _flashUntil: 0, _wasFlashing: false,
+    _vulnerableUntil: 0, _vulnerableMul: 1.0,
+    procAnim: null, ranged: null, rangedCD: 0,
+    _animPhase: 0,
+    _baseY: 0,
+    _baseScale: NEMESIS_TIER.scale,
+  };
+
+  state.enemies.spatial.insert(enemy);
+  state.enemies.active.push(enemy);
+  return enemy;
+}
+
 // Procedural body anim for static GLBs that have no AnimationMixer clip.
 // Drives whole-mesh transform — no skeleton required.
 function _applyProcAnim(e) {
@@ -519,6 +686,24 @@ export function killEnemy(enemy) {
     const idx = state.enemies.active.indexOf(enemy);
     if (idx >= 0) state.enemies.active.splice(idx, 1);
     import('./bells.js').then(({ onBellKilled }) => onBellKilled(enemy));
+    return;
+  }
+  // Nemesis branch (C3): same shape — custom procedural mesh + bespoke
+  // reward bundle. spawnDirector owns the schedule reset + banner + drops
+  // (single-active rule lives there), this branch just tears down the mesh
+  // and notifies. Kill ring fires before this so the player gets the
+  // elite-scale red flash on the killing blow. XP gem and run.kills bump
+  // are intentionally still credited via the standard tail of killEnemy —
+  // we splice here and dropGem is replicated in onNemesisKilled.
+  if (enemy.isNemesis) {
+    spawnKillRing(enemy.mesh.position.x, enemy.mesh.position.z, true);
+    state.fx.shake = Math.max(state.fx.shake || 0, 0.45);
+    state.fx.bloomBoost = Math.max(state.fx.bloomBoost || 0, 0.7);
+    if (sfx && sfx.eliteDeath) sfx.eliteDeath();
+    state.enemies.spatial.remove(enemy);
+    const idx = state.enemies.active.indexOf(enemy);
+    if (idx >= 0) state.enemies.active.splice(idx, 1);
+    import('./spawnDirector.js').then(({ onNemesisKilled }) => onNemesisKilled(enemy));
     return;
   }
 
