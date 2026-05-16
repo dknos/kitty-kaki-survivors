@@ -390,6 +390,14 @@ export function spawnEnemy(tierConfig, x, z) {
     // yOffset is already in world units (computed post-scale at pool time)
     _baseY: (mesh.userData && mesh.userData.yOffset ? mesh.userData.yOffset : 0),
     _baseScale: (mesh.userData && mesh.userData.baseFit ? mesh.userData.baseFit : 1) * tierConfig.scale,
+    // FE-C3A — room-scope despawn tag. Stamp the room the enemy spawned in
+    // so updateEnemies can silently retire enemies from rooms the player
+    // has left (>60u from hero). 'arena' for non-Forest stages so the
+    // despawn check can early-out on stage mismatch. Bosses/elites are
+    // exempt at the despawn site, not here, so the tag stays uniform.
+    room: (state.run && state.run.stage && state.run.stage.id === 'forest')
+      ? (state.run.currentRoom || 'glade')
+      : 'arena',
   };
 
   // If the mesh was just retrieved from pool with stale flash state, restore mats
@@ -584,6 +592,12 @@ export function spawnNemesis(x, z) {
     _animPhase: 0,
     _baseY: 0,
     _baseScale: NEMESIS_TIER.scale,
+    // FE-C3A — room tag. Nemesis is exempt from room-scope despawn at the
+    // despawn site (it's a boss-tier hunter that should follow the player
+    // across rooms), but the field is stamped for symmetry with spawnEnemy.
+    room: (state.run && state.run.stage && state.run.stage.id === 'forest')
+      ? (state.run.currentRoom || 'glade')
+      : 'arena',
   };
 
   state.enemies.spatial.insert(enemy);
@@ -1216,6 +1230,48 @@ export function updateEnemies(dt) {
   // _frostAura enemy is within range. hero.js currently does NOT read this
   // (flagged as a divergence in the agent report).
   state.run.affix_frostSlow = 1;
+
+  // ── FE-C3A — Forest room-scope despawn ───────────────────────────────────
+  // When the hero changes Forest rooms, any standard enemy whose room tag
+  // disagrees with the hero's current room AND is >60u away gets silently
+  // pool-returned. Bosses, mini-bosses and the Nemesis are exempt so a
+  // mid-fight teleport doesn't lose the boss. Non-Forest stages skip the
+  // entire block so other stages pay zero cost.
+  const _stageId = state.run && state.run.stage && state.run.stage.id;
+  if (_stageId === 'forest') {
+    const _curRoom = (state.run && state.run.currentRoom) || 'glade';
+    // 60u² to avoid sqrt; bounds check uses distance to HERO, not room
+    // boundary, per spec ("distance from current player > 60u").
+    const ROOM_DESPAWN_R2 = 60 * 60;
+    for (let i = active.length - 1; i >= 0; i--) {
+      const e = active[i];
+      if (!e.alive) continue;
+      if (e.isFinalBoss || e.isMiniBoss || e.isNemesis) continue;
+      if (!e.room || e.room === _curRoom) continue;
+      const ep = e.mesh && e.mesh.position;
+      if (!ep) continue;
+      const dx = ep.x - heroPos.x;
+      const dz = ep.z - heroPos.z;
+      if (dx * dx + dz * dz <= ROOM_DESPAWN_R2) continue;
+      // Silent pool-return. Mirrors killEnemy's tail (lines ~899-907): hide
+      // mesh, push to pool, remove from spatial + active. NO drops, NO SFX,
+      // NO banner — this is a quiet retirement, not a death.
+      e.alive = false;
+      if (e.mesh) e.mesh.visible = false;
+      const _pool = state.enemies.pools[e.glbKey] || (state.enemies.pools[e.glbKey] = []);
+      // Don't push the procedural nemesis mesh into the pool (defensive
+      // even though we exempted .isNemesis above — guards against future
+      // refactors that strip the flag).
+      if (e.mesh && !(e.mesh.userData && e.mesh.userData._isNemesisMesh)) {
+        _pool.push(e.mesh);
+      }
+      try { state.enemies.spatial.remove(e); } catch (_) {}
+      // swap-pop (active is the live array; safe because we walk backwards)
+      const _last = active.length - 1;
+      if (i !== _last) active[i] = active[_last];
+      active.pop();
+    }
+  }
 
   // Iterate backwards so killEnemy splices are safe (it uses swap-pop too,
   // but backward iteration plays nicest with any future direct splicing).

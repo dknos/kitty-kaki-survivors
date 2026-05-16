@@ -25,6 +25,8 @@ import { shopLevel, getMeta } from './meta.js';
 import { nameForMiniBoss, FINAL_BOSS_NAME } from './bossTelegraphs.js';
 import { spawnHeart, spawnStar } from './pickups.js';
 import { dropGem } from './xp.js';
+import { endPuzzleEarly } from './puzzleSystem.js';
+import { FOREST_ROOMS } from './forestRooms.js';
 
 // ── Module-local director state ──────────────────────────────────────────────
 let _acc = 0;
@@ -35,6 +37,28 @@ let _finalBossWarned = false;
 let _finalBossSpawned = false;
 let _miniBossIdx = 0;
 let _miniBossWarnedFor = -1;
+
+// ── Forest puzzle pause/resume (FE-C3A) ──────────────────────────────────────
+// When state.run.roomState === 'PUZZLE_ACTIVE', the entire spawn pipeline is
+// frozen:
+//   - _acc does NOT advance, so the SPAWN.tickIntervalSec slice never fires.
+//   - All scheduled times (_nextHorde, _nextChest, mini-boss sched, final
+//     boss, nemesis) get shifted forward by the paused duration on resume.
+// On resume we ALSO run a 30-second density smoothing ramp so D(t) doesn't
+// dump 60s of backlog spawns at once (per FOREST_EXPANSION_PLAN §5 risk 2:
+// horde clock desync). The ramp is linear 0.6 → 1.0 applied as a multiplier
+// to the target alive cap.
+//
+// The pause/resume edge is detected purely from state.run.roomState — we
+// don't subscribe to puzzleSystem events. _pausedAtGameTime is the
+// state.time.game instant the pause started; null when not paused. On the
+// resume frame we compute paused-duration = now - _pausedAtGameTime, shift
+// every scheduled timer, set _smoothingUntil = now + 30, and clear
+// _pausedAtGameTime so the next frame runs normally.
+let _pausedAtGameTime = null;       // null when not paused, else state.time.game at pause start
+let _smoothingUntil = 0;            // state.time.game at which the 0.6→1.0 ramp completes
+const SMOOTHING_WINDOW_SEC = 30;    // 30s ramp per spec
+const SMOOTHING_FLOOR = 0.6;        // density floor at t=0 of smoothing ramp
 
 // Nemesis Elite (C3 + Punch List #2) — singleton hunter that spawns outside
 // the standard wave / boss schedule. `active` holds the live enemy object
@@ -127,6 +151,10 @@ export function initSpawnDirector() {
   _nemesisState.nextSpawnAt = _firstNemesisSpawnAt();
   _nemesisState.telegraphed = false;
   _nemesisState.angle = 0;
+  // FE-C3A — clear puzzle pause/smoothing so a fresh run can't inherit a
+  // mid-puzzle paused state from a prior crashed run.
+  _pausedAtGameTime = null;
+  _smoothingUntil = 0;
   try { hideNemesisArrow(); } catch (_) {}
 }
 
@@ -265,9 +293,46 @@ export function tickSpawnDirector(dt) {
     _nemesisState.nextSpawnAt = _firstNemesisSpawnAt();
     _nemesisState.telegraphed = false;
     _nemesisState.angle = 0;
+    // FE-C3A — drop any in-flight puzzle pause across restart.
+    _pausedAtGameTime = null;
+    _smoothingUntil = 0;
     try { hideNemesisArrow(); } catch (_) {}
   }
   _lastSeenTime = t;
+
+  // ── Puzzle pause/resume (FE-C3A) ──
+  // Detect the PUZZLE_ACTIVE edge. While paused: record pause time once and
+  // bail BEFORE any schedule advances or spawn work runs. Updating
+  // _lastSeenTime above (BEFORE this bail) is mandatory so the restart-rewind
+  // branch doesn't trip on every paused frame.
+  const _roomState = state.run && state.run.roomState;
+  if (_roomState === 'PUZZLE_ACTIVE') {
+    if (_pausedAtGameTime == null) _pausedAtGameTime = t;
+    return; // hard freeze: no horde/chest/miniboss/finalboss/nemesis logic, no top-up
+  }
+  // Resume edge: a puzzle just ended. Shift every scheduled timer forward by
+  // the paused duration so D(t)-derived events don't dump a backlog at once.
+  // Then arm the 30s density smoothing ramp (applied below in the swarmMul
+  // chain). _pausedAtGameTime is the per-pause anchor; we treat it as the
+  // "now" before pause started, so shift = t - _pausedAtGameTime.
+  if (_pausedAtGameTime != null) {
+    const pausedDur = t - _pausedAtGameTime;
+    if (pausedDur > 0) {
+      _nextHorde += pausedDur;
+      _nextChest += pausedDur;
+      // Mini-boss + final-boss schedules are absolute game-time values stored
+      // in STAGE.miniBossSchedule / config; we can't mutate those, but we
+      // CAN bump the warn/spawn watermarks indirectly by leaving them alone
+      // (the schedule will simply fire later relative to wall-clock). For
+      // continuous-flow consistency though, we DO advance the Nemesis next-
+      // spawn watermark since it's an absolute timestamp:
+      if (Number.isFinite(_nemesisState.nextSpawnAt)) {
+        _nemesisState.nextSpawnAt += pausedDur;
+      }
+    }
+    _smoothingUntil = t + SMOOTHING_WINDOW_SEC;
+    _pausedAtGameTime = null;
+  }
 
   // Boss-rush mode compresses the boss schedule and pauses the cannon-fodder
   // swarm to focus entirely on boss fights. Stage 2+ can also shift the
@@ -330,6 +395,35 @@ export function tickSpawnDirector(dt) {
   }
   if (!_finalBossSpawned && t >= finalBossAt) {
     _finalBossSpawned = true;
+    // FE-C3A — boss force-return rule. If the hero is anywhere but the Glade
+    // arena when the final boss is due (mid-puzzle, mid-transition, inside a
+    // puzzle room), force-end the puzzle (no unlock), teleport hero to the
+    // Glade center, fire a banner, then spawn the boss. Gated to Forest
+    // stage so other stages keep their original boss-spawn flow.
+    const onForest = !!(state.run && state.run.stage && state.run.stage.id === 'forest');
+    const _curRoomState = state.run && state.run.roomState;
+    if (onForest && _curRoomState !== 'ARENA') {
+      try { endPuzzleEarly(); } catch (_) {}
+      // Even if endPuzzleEarly didn't fire (e.g. no active puzzle but still
+      // mid-transition), reset roomState explicitly so the spawn-pause path
+      // can't re-engage while the boss is alive.
+      state.run.roomState  = 'ARENA';
+      state.run.currentRoom = 'glade';
+      state.run.activePuzzle = null;
+      // Teleport hero to glade center. FOREST_ROOMS.glade.center is {x,z}.
+      const gladeCenter = FOREST_ROOMS.glade && FOREST_ROOMS.glade.center;
+      if (gladeCenter && state.hero && state.hero.pos) {
+        state.hero.pos.x = gladeCenter.x;
+        state.hero.pos.z = gladeCenter.z;
+        if (state.hero.mesh && state.hero.mesh.position) {
+          state.hero.mesh.position.x = gladeCenter.x;
+          state.hero.mesh.position.z = gladeCenter.z;
+        }
+      }
+      // Palette-locked banner — C.amber-ish '#ffd27f' for "warning" hue per
+      // existing FE banner conventions; '#ff5e5e' is C.red for danger weight.
+      try { showBanner('⚠ FINAL BOSS — RETURNED TO GLADE', 4.0, '#ff5e5e'); } catch (_) {}
+    }
     spawnFinalBoss();
     showBanner(`${FINAL_BOSS_NAME.name} — ${FINAL_BOSS_NAME.subtitle.toUpperCase()}`, 3.0, '#ffe14a');
   }
@@ -414,10 +508,21 @@ export function tickSpawnDirector(dt) {
   // the duration of the event. Composed with daily/rule/weekly so we
   // never compound past targetAliveCap (still hard-capped below).
   const helltideMul = state.run && state.run.helltideSpawnMul ? state.run.helltideSpawnMul : 1;
+  // FE-C3A — Forest puzzle resume smoothing. For SMOOTHING_WINDOW_SEC after a
+  // puzzle ends, lerp density 0.6 → 1.0 so the just-resumed horde clock
+  // doesn't dump a giant wave on the player who just walked out of a 75s
+  // puzzle. Forest-stage gated so other stages pay zero cost.
+  let _puzzleSmoothMul = 1;
+  if (_smoothingUntil > 0 && t < _smoothingUntil
+      && state.run && state.run.stage && state.run.stage.id === 'forest') {
+    const remaining = _smoothingUntil - t;
+    const k = 1 - Math.max(0, Math.min(1, remaining / SMOOTHING_WINDOW_SEC));
+    _puzzleSmoothMul = SMOOTHING_FLOOR + (1 - SMOOTHING_FLOOR) * k;
+  }
   // Weekly DOUBLE_SPAWNS multiplies the target alive cap. Compose with daily +
   // stage-rule swarms so a Daily SWARM_DAY happening to be Weekly DOUBLE_SPAWNS
   // doesn't compound past targetAliveCap (still hard-capped below).
-  const swarmMul = dailyMul * ruleMul * weeklyMul * helltideMul;
+  const swarmMul = dailyMul * ruleMul * weeklyMul * helltideMul * _puzzleSmoothMul;
   // Boss rush: tiny ambient swarm (3-4 alive) so the player still has XP and
   // pickups, but the focus is the bosses.
   const target = bossRush
