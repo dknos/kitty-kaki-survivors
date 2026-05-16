@@ -20,3 +20,11 @@ node_modules/
 # AI-gen texture candidates (winners get promoted into assets/fx/)
 assets/fx/_candidates/
 
+# Local-only tooling artifacts (Codex 2026-05-15). Smoke screenshots,
+# thumbnails, and probe outputs are point-in-time diagnostic evidence, not
+# source — keep tools/ for scripts, not their outputs, so they never ship
+# to the GitHub Pages root.
+tools/_thumb_*.png
+tools/smoke-*.png
+tools/probe-detail.json
+tools/probe-report.txt
