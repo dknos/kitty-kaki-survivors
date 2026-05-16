@@ -376,6 +376,11 @@ export function spawnEnemy(tierConfig, x, z) {
     _dotUntil: 0,
     _flashUntil: 0,
     _wasFlashing: false,
+    // Vulnerability debuff (A3): incoming dmg multiplier active until _vulnerableUntil.
+    // Mirrors _frozenUntil pattern. Stacking rule (see applyVulnerability): max mul wins,
+    // longest duration wins, so a stronger debuff can't be overridden by a weaker one.
+    _vulnerableUntil: 0,
+    _vulnerableMul: 1.0,
     procAnim: tierConfig.procAnim || null,
     ranged: tierConfig.ranged || null,
     rangedCD: tierConfig.ranged ? (Math.random() * tierConfig.ranged.cooldown) : 0,
@@ -729,8 +734,33 @@ let _enemyHurtCounter = 0;
 // ─────────────────────────────────────────────────────────────────────────────
 // Damage interface (called by weapons)
 // ─────────────────────────────────────────────────────────────────────────────
+
+// A3 — Stacking vulnerability debuff.
+// Any weapon/effect can call `applyVulnerability(enemy, mul, duration)` to mark
+// `enemy` as taking `mul`× incoming damage for `duration` seconds. Stacking
+// rule: highest multiplier wins, longest expiry wins — so a stronger or
+// longer-lasting debuff is never clobbered by a weaker/shorter one.
+// Mirrors the `_frozenUntil` pattern; checked inside damageEnemy() as a single
+// branch (cheap per-tick cost, no allocations).
+export function applyVulnerability(enemy, mul, duration) {
+  if (!enemy || !enemy.alive) return;
+  const now = (state.time && state.time.game) ? state.time.game : 0;
+  const m = (typeof mul === 'number' && mul > 1) ? mul : 1;
+  const d = (typeof duration === 'number' && duration > 0) ? duration : 0;
+  if (m > (enemy._vulnerableMul || 1)) enemy._vulnerableMul = m;
+  const expiry = now + d;
+  if (expiry > (enemy._vulnerableUntil || 0)) enemy._vulnerableUntil = expiry;
+}
+
 export function damageEnemy(enemy, dmg, source) {
   if (!enemy || !enemy.alive) return;
+  // ── A3 vulnerability debuff ──
+  // Single-branch incoming-damage multiplier. Applied FIRST so every downstream
+  // multiplier (signature, passive, crit, variance) composes on top of it.
+  // Generic hook — any weapon/effect can call applyVulnerability() to feed this.
+  if (enemy._vulnerableUntil && state.time.game < enemy._vulnerableUntil) {
+    dmg *= enemy._vulnerableMul;
+  }
   // ── Iter 7 character signature multipliers ──
   // Phoenix Ember Burst calls in with source='phoenix' and we skip these so the
   // burst stays a flat 200 baseline (and avoids any future recursive surprises).

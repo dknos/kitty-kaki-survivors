@@ -21,9 +21,10 @@
  *   into every projectile path).
  * - Chain-detonation defers next-tick: collected transitions are applied
  *   after the main loop so a dense cluster doesn't cascade in one frame.
- * - Vulnerability debuff: enemies.js does NOT expose a debuff system as of
- *   2026-05-15 (only `_frozenUntil` for freeze). The spec says "skip cleanly
- *   if unsupported" — we skip and document. See VULN_DEBUFF_SUPPORTED below.
+ * - Vulnerability debuff: A3 landed — enemies.js now exposes
+ *   `applyVulnerability(enemy, mul, duration)` (mirrors `_frozenUntil`).
+ *   Detonation applies 1.25× incoming-damage for 0.8s to each enemy caught in
+ *   the 4u AoE. Any future weapon/effect can use the same hook.
  * - Chain-lightning arcs: mirrors src/weapons/chain.js double-tube TubeGeometry
  *   pattern (palette-locked to slot 8 cyan-white). chain.js helpers are
  *   module-private so we duplicate ~40 lines rather than touch a weapon file.
@@ -36,7 +37,7 @@
  */
 import * as THREE from 'three';
 import { BLOOM_LAYER } from './postfx.js';
-import { damageEnemy, queryRadius } from './enemies.js';
+import { damageEnemy, queryRadius, applyVulnerability } from './enemies.js';
 import { sfx } from './audio.js';
 
 // ─── module state ─────────────────────────────────────────────────────────────
@@ -49,10 +50,11 @@ const _disposables = [];     // geos/mats tracked for clearForestAmber
 // { group, mats, geos, t, life }
 const _arcs = [];
 
-// Vulnerability debuff is unsupported (no incomingDmgMul/_vulnerableUntil in
-// enemies.js as of this writing). Flip to true and implement application if
-// the debuff system ever lands.
-const VULN_DEBUFF_SUPPORTED = false;
+// Vulnerability debuff (A3): backed by enemies.js applyVulnerability(enemy, mul, duration).
+// Any future weapon/effect can apply the same debuff via that helper — stacking
+// is handled there (max mul wins, longest expiry wins). Existing freeze logic
+// stays on its own `_frozenUntil` path; this is additive, not a refactor.
+const VULN_DEBUFF_SUPPORTED = true;
 
 // Re-usable scratch objects (avoid per-tick GC pressure).
 const _scratchVec = new THREE.Vector3();
@@ -328,13 +330,11 @@ function _resolveDetonation(scene, entity) {
       const dz = e.mesh.position.z - cz;
       if (dx * dx + dz * dz <= r2) {
         try { damageEnemy(e, DET_AOE_DAMAGE, 'forest_amber'); } catch (_) {}
-        // Vulnerability debuff: enemies.js has no incoming-damage-mul system,
-        // so we skip cleanly per spec. If VULN_DEBUFF_SUPPORTED ever flips,
-        // apply enemy._vulnerableUntil = state.time.game + VULN_DURATION here.
+        // A3 vulnerability debuff — applied AFTER the AoE damage tick so the
+        // direct hit lands at its baseline and the buff window benefits any
+        // subsequent damage source (chain arcs, other weapons) for 0.8s.
         if (VULN_DEBUFF_SUPPORTED) {
-          // intentionally unreachable today — placeholder for the future hook
-          // so the constants don't read as dead docs.
-          void VULN_DURATION; void VULN_INCOMING_MUL;
+          try { applyVulnerability(e, VULN_INCOMING_MUL, VULN_DURATION); } catch (_) {}
         }
       }
     }
