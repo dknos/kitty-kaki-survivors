@@ -16,13 +16,15 @@
  *   - Boss    every SPAWN.bossIntervalSec   → one elite at 5× HP on a wider ring.
  */
 import { state } from './state.js';
-import { ENEMY_TIERS, SPAWN, STAGE } from './config.js';
-import { spawnEnemy } from './enemies.js';
+import { ENEMY_TIERS, SPAWN, STAGE, NEMESIS_SPAWN } from './config.js';
+import { spawnEnemy, spawnNemesis } from './enemies.js';
 import { showBanner } from './ui.js';
 import { sfx } from './audio.js';
 import { spawnChestNearHero } from './chest.js';
 import { shopLevel } from './meta.js';
 import { nameForMiniBoss, FINAL_BOSS_NAME } from './bossTelegraphs.js';
+import { spawnHeart, spawnStar } from './pickups.js';
+import { dropGem } from './xp.js';
 
 // ── Module-local director state ──────────────────────────────────────────────
 let _acc = 0;
@@ -33,6 +35,24 @@ let _finalBossWarned = false;
 let _finalBossSpawned = false;
 let _miniBossIdx = 0;
 let _miniBossWarnedFor = -1;
+
+// Nemesis Elite (C3) — singleton hunter that spawns outside the standard
+// wave / boss schedule. `active` holds the live enemy object (null when no
+// nemesis is on the field); `nextSpawnAt` is the absolute state.time.game
+// instant the next nemesis is allowed to spawn. Single-active rule: if the
+// timer fires while a nemesis is still alive, we SKIP the spawn (no
+// doubling up) but don't push the timer back — the next clean check after
+// the kill will respect the post-kill cooldown.
+function _rollNemesisFirstSpawn() {
+  return NEMESIS_SPAWN.firstMinSec + Math.random() * NEMESIS_SPAWN.firstJitterSec;
+}
+function _rollNemesisRespawn(now) {
+  return now + NEMESIS_SPAWN.respawnMinSec + Math.random() * NEMESIS_SPAWN.respawnJitterSec;
+}
+const _nemesisState = {
+  active: null,
+  nextSpawnAt: _rollNemesisFirstSpawn(),
+};
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function weightedPick(tiers) {
@@ -79,6 +99,9 @@ export function initSpawnDirector() {
   _finalBossSpawned = false;
   _miniBossIdx = 0;
   _miniBossWarnedFor = -1;
+  _nemesisState.active = null;
+  _nemesisState.nextSpawnAt = _rollNemesisFirstSpawn();
+  _nemesisState.telegraphedFor = -1;
 }
 
 function spawnMiniBoss() {
@@ -103,6 +126,75 @@ function spawnMiniBoss() {
 }
 
 export function resetSpawnDirector() { initSpawnDirector(); }
+
+/**
+ * Called from enemies.killEnemy when the Nemesis dies. Drops the bonus
+ * reward bundle (3 hearts + gem cluster), tears down the procedural mesh
+ * (it's NOT pooled — built fresh per spawn), bumps the kill counter, and
+ * schedules the next nemesis 120-180s out. The single-active rule means
+ * this is the ONLY place that re-arms the schedule from a kill — the
+ * fallback safety check in tickSpawnDirector covers defensive cases only.
+ */
+export function onNemesisKilled(enemy) {
+  if (!enemy) return;
+  const ex = enemy.mesh ? enemy.mesh.position.x : 0;
+  const ez = enemy.mesh ? enemy.mesh.position.z : 0;
+
+  // Reward bundle: 3 hearts arrayed around the death point + 5 gem cluster
+  // (small-value gems for visual splash + the standard elite XP bump).
+  try {
+    spawnHeart(ex - 1.2, ez);
+    spawnHeart(ex + 1.2, ez);
+    spawnHeart(ex, ez - 1.2);
+    spawnStar(ex, ez + 1.4);
+  } catch (_) {}
+
+  // Gem cluster — 6 small gems scattered. Uses enemy.mesh.position directly
+  // (already a THREE.Vector3) so dropGem.clone() works without an import.
+  // The single big XP gem matches NEMESIS_TIER.xp = 50.
+  try {
+    if (enemy.mesh && enemy.mesh.position) {
+      dropGem(enemy.mesh.position.clone(), 50);
+      // Six small surround gems so the kill feels like loot rain.
+      const tmp = enemy.mesh.position.clone();
+      for (let i = 0; i < 6; i++) {
+        const a = (i / 6) * Math.PI * 2 + Math.random() * 0.5;
+        tmp.set(ex + Math.cos(a) * 1.6, enemy.mesh.position.y, ez + Math.sin(a) * 1.6);
+        dropGem(tmp.clone(), 3);
+      }
+    }
+  } catch (_) {}
+
+  // Banner + small camera punch — the player should feel the kill.
+  try { showBanner('NEMESIS SLAIN', 3.0, '#ffd24a'); } catch (_) {}
+  state.fx.bloomBoost = Math.max(state.fx.bloomBoost || 0, 0.9);
+  state.fx.shake = Math.max(state.fx.shake || 0, 0.55);
+
+  // Tear down the custom mesh (NOT pooled). traverse() so geometries +
+  // materials get released — the procedural mesh has 1 group + ~5 child
+  // meshes, lightweight but worth disposing so a long run doesn't slowly
+  // leak per-nemesis assets.
+  if (enemy.mesh) {
+    if (enemy.mesh.parent) enemy.mesh.parent.remove(enemy.mesh);
+    enemy.mesh.traverse(o => {
+      if (o.isMesh) {
+        if (o.geometry) o.geometry.dispose();
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        for (const m of mats) { if (m && m.dispose) m.dispose(); }
+      }
+    });
+  }
+
+  // Kill bookkeeping — mirrors the tail of killEnemy() that we early-returned
+  // past. Run kills/dmg/quest counters all bump here so the nemesis counts.
+  state.run.kills++;
+  state.run.noDmgKills = (state.run.noDmgKills || 0) + 1;
+
+  // Reschedule + clear the active slot. Doing this LAST so any throw above
+  // doesn't leave the schedule armed against a dangling mesh.
+  _nemesisState.active = null;
+  _nemesisState.nextSpawnAt = _rollNemesisRespawn(state.time.game);
+}
 
 /** Returns seconds-until next mini-boss, or null if all 3 are done / final boss next. */
 export function secondsUntilNextMiniBoss() {
@@ -143,6 +235,9 @@ export function tickSpawnDirector(dt) {
     _finalBossSpawned = false;
     _miniBossIdx = 0;
     _miniBossWarnedFor = -1;
+    _nemesisState.active = null;
+    _nemesisState.nextSpawnAt = _rollNemesisFirstSpawn();
+    _nemesisState.telegraphedFor = -1;
   }
   _lastSeenTime = t;
 
@@ -209,6 +304,35 @@ export function tickSpawnDirector(dt) {
     _finalBossSpawned = true;
     spawnFinalBoss();
     showBanner(`${FINAL_BOSS_NAME.name} — ${FINAL_BOSS_NAME.subtitle.toUpperCase()}`, 3.0, '#ffe14a');
+  }
+
+  // ── Nemesis Elite (C3) ──
+  // Hunts player relentlessly, ignores standard wave logic. Single active.
+  // Boss-rush mode pauses the nemesis schedule so the boss fights stay clean.
+  if (!bossRush && _nemesisState.active === null && t >= _nemesisState.nextSpawnAt) {
+    // Spawn at ring edge well off-screen so the player has 3s telegraph time
+    // before the nemesis closes distance (4.0 u/s × 3s = 12u of warning).
+    const hp = state.hero.pos;
+    const angle = Math.random() * Math.PI * 2;
+    const r = NEMESIS_SPAWN.spawnRadius;
+    const nx = hp.x + Math.cos(angle) * r;
+    const nz = hp.z + Math.sin(angle) * r;
+    const ne = spawnNemesis(nx, nz);
+    if (ne) {
+      _nemesisState.active = ne;
+      showBanner('⚔ THE NEMESIS HUNTS', 3.0, '#ff2020');
+      if (sfx && sfx.bossWarn) sfx.bossWarn();
+      // Camera punch so the banner has weight.
+      state.fx.chromaticPulse = Math.max(state.fx.chromaticPulse || 0, 0.7);
+      state.fx.bloomBoost = Math.max(state.fx.bloomBoost || 0, 0.45);
+    }
+  }
+  // Safety: if the active nemesis died via a path that didn't reach
+  // onNemesisKilled (defensive — should never happen), clear the slot so
+  // the next spawn isn't blocked forever.
+  if (_nemesisState.active && _nemesisState.active.alive === false) {
+    _nemesisState.active = null;
+    if (t >= _nemesisState.nextSpawnAt) _nemesisState.nextSpawnAt = _rollNemesisRespawn(t);
   }
 
   _acc += dt;
