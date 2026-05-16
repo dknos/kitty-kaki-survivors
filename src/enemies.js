@@ -68,11 +68,13 @@ function _computeDifficulty(t) {
 class SpatialHash {
   constructor(cellSize) {
     this.cellSize = cellSize;
-    /** @type {Map<string, any[]>} */
+    /** @type {Map<number, any[]>} */
     this.cells = new Map();
   }
 
-  _key(cx, cz) { return cx + '_' + cz; }
+  // Pack 2D coordinates into a 32-bit integer to avoid string allocation in hot loops.
+  // This drastically reduces GC pressure and speeds up Map lookups compared to string keys.
+  _key(cx, cz) { return ((cx & 0xFFFF) << 16) | (cz & 0xFFFF); }
   _cellCoord(v) { return Math.floor(v / this.cellSize); }
 
   insert(enemy) {
