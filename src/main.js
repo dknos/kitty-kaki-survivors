@@ -53,6 +53,8 @@ import { initStageHazards, tickStageHazards, resetStageHazards, loadForestHazard
 import { applyStageRule, tickStageRule, clearStageRule } from './stageRules.js';
 import { loadArenaDecor, clearArenaDecor } from './arenaDecor.js';
 import { loadForestAmber, tickForestAmber, clearForestAmber } from './forestAmber.js';
+import { tickPuzzleSystem } from './puzzleSystem.js';
+import { detectRoom, FOREST_ROOMS } from './forestRooms.js';
 import { loadTwilightFountains, tickTwilightFountains, clearTwilightFountains } from './twilightFountains.js';
 import { loadCinderBallistas, tickCinderBallistas, clearCinderBallistas } from './cinderBallistas.js';
 import { loadVoidTeleportPads, tickVoidTeleportPads, clearVoidTeleportPads } from './voidTeleportPads.js';
@@ -1154,6 +1156,103 @@ function applyShake(realDt) {
   state.fx.shake *= Math.pow(0.0008, realDt);
 }
 
+// ── FE-C3A — Forest room transition + camera lerp ──────────────────────────
+// Module-local state for the room state machine. Driven each frame from the
+// Forest tick block (which guards on state.run.stage.id === 'forest' so
+// these stay quiescent on other stages).
+//
+//   _forestCamLerp.active:    true while a transition is animating
+//   _forestCamLerp.elapsed:   seconds since transition began
+//   _forestCamLerp.targetX/Z: room center the camera is settling toward
+//
+// The transition lifecycle (per FOREST_EXPANSION_PLAN §4 FE-C3A):
+//   1. detectRoom(hero.pos.x, hero.pos.z) reports newRoomId != currentRoom
+//   2. Set roomState='TRANSITIONING', currentRoom=newRoomId
+//   3. Hide every InstancedMesh whose userData.roomId is set AND not in the
+//      visible set {currentRoom, 'glade'}; show those that are.
+//   4. Lerp camera toward room center for FOREST_CAM_LERP_SEC
+//   5. After the lerp completes, settle roomState into 'ARENA' if the new
+//      room is the glade hub, or 'IN_ROOM' otherwise. PUZZLE_ACTIVE is owned
+//      by puzzleSystem.js and never set by this transition path.
+const FOREST_CAM_LERP_SEC = 0.6;
+const _forestCamLerp = {
+  active: false,
+  elapsed: 0,
+  targetX: null,
+  targetZ: null,
+};
+
+/**
+ * Walk the per-room InstancedMesh tags installed by arenaDecor.js. Each child
+ * with `userData.roomId` set gets .visible flipped to match the rule "show
+ * only the current room + glade". The glade is always visible because it's
+ * the hub backdrop the puzzle rooms "lean against" geometrically.
+ *
+ * Cheap: ~30 children traversal once per transition (NOT per frame).
+ *
+ * @param {string} currentRoomId
+ */
+function _applyForestRoomVisibility(currentRoomId) {
+  const sc = state.scene;
+  if (!sc) return;
+  const decor = sc.getObjectByName('__arenaDecor');
+  if (!decor) return;
+  decor.traverse((o) => {
+    const rid = o.userData && o.userData.roomId;
+    if (!rid) return; // un-tagged decor (non-Forest, or props) — leave alone
+    o.visible = (rid === currentRoomId) || (rid === 'glade');
+  });
+}
+
+/**
+ * Per-frame room transition driver. Called only on Forest stage. Cheap
+ * fast-path when nothing is changing (detectRoom returns the same id every
+ * frame for a stationary hero).
+ *
+ * @param {number} dt seconds since last frame
+ */
+function _tickForestRoomTransition(dt) {
+  // Don't change rooms or run camera lerp while a puzzle is in flight — the
+  // hero is locked to a puzzle room until it ends (win/fail/timeout) and the
+  // boss force-return path in spawnDirector handles the override case.
+  if (state.run && state.run.roomState === 'PUZZLE_ACTIVE') return;
+
+  const hp = state.hero && state.hero.pos;
+  if (!hp) return;
+  const detected = detectRoom(hp.x, hp.z);
+  const cur = (state.run && state.run.currentRoom) || 'glade';
+
+  // detected may be null in no-man's-land between rooms — keep the last
+  // known room so visibility doesn't flicker as the hero crosses a portal.
+  if (detected && detected !== cur) {
+    state.run.currentRoom = detected;
+    state.run.roomState = 'TRANSITIONING';
+    _applyForestRoomVisibility(detected);
+    const room = FOREST_ROOMS[detected];
+    if (room && room.center) {
+      _forestCamLerp.active = true;
+      _forestCamLerp.elapsed = 0;
+      _forestCamLerp.targetX = room.center.x;
+      _forestCamLerp.targetZ = room.center.z;
+    }
+  }
+
+  // Advance the lerp clock. When it elapses, settle roomState into
+  // 'ARENA' (glade hub) or 'IN_ROOM' (any puzzle room). Don't downgrade
+  // PUZZLE_ACTIVE here — puzzleSystem owns that state.
+  if (_forestCamLerp.active) {
+    _forestCamLerp.elapsed += dt;
+    if (_forestCamLerp.elapsed >= FOREST_CAM_LERP_SEC) {
+      _forestCamLerp.active = false;
+      _forestCamLerp.targetX = null;
+      _forestCamLerp.targetZ = null;
+      if (state.run.roomState !== 'PUZZLE_ACTIVE') {
+        state.run.roomState = (state.run.currentRoom === 'glade') ? 'ARENA' : 'IN_ROOM';
+      }
+    }
+  }
+}
+
 function frame(now) {
   const realDt = Math.min(0.05, (now - _lastT) / 1000);
   _lastT = now;
@@ -1414,6 +1513,11 @@ function frame(now) {
   // other stages — tickForestAmber bails when _entities is empty.
   if (state.run && state.run.stage && state.run.stage.id === 'forest') {
     _p=perfStart(); tickForestAmber(logicDt, state); perfMark('forestAmber', _p);
+    // FE-C3A — puzzle system tick + room transition detection. Puzzle tick
+    // is a no-op when no puzzle is active. Room detection runs every frame
+    // so a fast hero crossing portals doesn't strand a stale currentRoom.
+    _p=perfStart(); tickPuzzleSystem(logicDt); perfMark('puzzleSystem', _p);
+    _p=perfStart(); _tickForestRoomTransition(logicDt); perfMark('roomTransition', _p);
   }
   // Twilight-only: Blood/Light Fountains. No-op on other stages —
   // tickTwilightFountains bails when _fountains is empty.
@@ -1458,10 +1562,25 @@ function frame(now) {
   // Camera follow hero (lerp xz, keep height + offset matching original game)
   const hp = state.hero.pos;
   const camLerp = WORLD.cameraLerp;
-  camera.position.x += (hp.x + 40 - camera.position.x) * camLerp;
-  camera.position.z += (hp.z + 40 - camera.position.z) * camLerp;
-  camera.position.y = 60;
-  camera.lookAt(hp.x, 0, hp.z);
+  // FE-C3A — during a Forest room transition, drive the camera toward the
+  // room center instead of toward the hero. Stronger lerp (0.18) so the
+  // 0.6s window resolves into a visible "settle to room" motion rather than
+  // hanging halfway. Falls through to the standard hero-follow when the
+  // transition completes (_forestCamLerp.active flips false).
+  if (state.run && state.run.stage && state.run.stage.id === 'forest'
+      && _forestCamLerp.active && _forestCamLerp.targetX != null) {
+    const tcx = _forestCamLerp.targetX;
+    const tcz = _forestCamLerp.targetZ;
+    camera.position.x += (tcx + 40 - camera.position.x) * 0.18;
+    camera.position.z += (tcz + 40 - camera.position.z) * 0.18;
+    camera.position.y = 60;
+    camera.lookAt(tcx, 0, tcz);
+  } else {
+    camera.position.x += (hp.x + 40 - camera.position.x) * camLerp;
+    camera.position.z += (hp.z + 40 - camera.position.z) * camLerp;
+    camera.position.y = 60;
+    camera.lookAt(hp.x, 0, hp.z);
+  }
 
   // Sun + shadow-camera follow: keep the directional light at a fixed offset
   // from the hero so the 80-unit shadow frustum always contains the action.
@@ -1530,6 +1649,13 @@ function frame(now) {
   }
 
   _p=perfStart(); updateUI();      perfMark('ui', _p);
+
+  // FE-C3A — end-of-frame sweep for one-shot interact flag. hero.js sets it
+  // when the player hits E or B-button; readers (puzzle/portal systems) see
+  // it during the same frame's tick. Clearing here means a frame with no
+  // reader still leaves a clean slate next frame. Safe to clear even when
+  // not set (no-op assignment).
+  if (state.input) state.input.interactPressed = false;
 
   _p=perfStart(); renderFrame();   perfMark('render', _p);
   updatePerfHUD();

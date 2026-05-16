@@ -9,7 +9,7 @@ import { selectedCharacter, selectedAvatar } from './meta.js';
 import { sfx } from './audio.js';
 import { showDeathScreen, showLevelUpModal, flashDamage, flashLevelUp } from './ui.js';
 import { weaponChoices } from './weapons/index.js';
-import { isDashPressed, consumeJump } from './input.js';
+import { isDashPressed, consumeJump, consumePadInteract } from './input.js';
 import { queryRadius, damageEnemy } from './enemies.js';
 import { spawnKillRing } from './fx.js';
 import { spawnDashStreak } from './vfxBurst.js';
@@ -210,9 +210,42 @@ let _innerMesh = null;     // the GLB child of state.hero.mesh (excludes the dis
 let _baseInnerY = 0;
 let _baseScale = 1;        // captured at init after auto-fit, used by death anim
 
+// ── Interact key (FE-C3A, Forest Expansion) ─────────────────────────────────
+// Edge-triggered E (keyboard) + B-button (gamepad). Writes one-frame
+// state.input.interactPressed = true; consumed by puzzle system / portals on
+// read. Note: spec called for A-button (gamepad), but A is already DASH
+// (input.js isDashPressed checks gamepadState.buttons.a). The existing input
+// pipeline routes B → _padInteractQueued → consumePadInteract(), so we reuse
+// that to avoid colliding with dash.
+let _interactKeyQueued = false;
+let _interactListenerInstalled = false;
+function _installInteractListener() {
+  if (_interactListenerInstalled) return;
+  _interactListenerInstalled = true;
+  // Edge-trigger on keydown, ignore auto-repeat so a held E only fires once.
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'KeyE' && !e.repeat) _interactKeyQueued = true;
+  });
+}
+_installInteractListener();
+
 export function updateHero(dt) {
   const h = state.hero;
   const mv = state.input.moveVec;
+
+  // ── Interact one-shot (FE-C3A) ─────────────────────────────────────────
+  // Drain the keyboard edge-trigger AND the gamepad B-button queue into
+  // state.input.interactPressed. Set true for exactly this frame; main.js
+  // clears it at the end of the tick so a missed reader never sees a stale
+  // press next frame. Cleared here too in case readers (puzzle/portal) run
+  // before main.js's end-of-frame sweep and to handle the no-press case.
+  state.input.interactPressed = false;
+  let _padInteract = false;
+  try { _padInteract = consumePadInteract(); } catch (_) {}
+  if (_interactKeyQueued || _padInteract) {
+    state.input.interactPressed = true;
+    _interactKeyQueued = false;
+  }
 
   // Isometric input remap: screen up = world -X-Z, screen right = world +X-Z.
   let speedMul = h.statMul.moveSpeed || 1;
