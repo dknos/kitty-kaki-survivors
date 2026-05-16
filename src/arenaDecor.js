@@ -24,6 +24,7 @@ import { BLOOM_LAYER } from './postfx.js';
 import { cloneCached } from './assets.js';
 import { makeRuneRingTexture } from './enemyTells.js';
 import { fxTex } from './fxTextures.js';
+import { FOREST_ROOMS } from './forestRooms.js';
 
 // Active decor group + cleanup hooks, tracked module-side so clearArenaDecor
 // can be called without a handle. One group per scene is enough in this game.
@@ -51,13 +52,38 @@ function _track(obj) { _disposables.push(obj); }
 
 // ── stage packs ───────────────────────────────────────────────────────────────
 
-function _buildForestDecor(group) {
+/**
+ * Forest stage dispatcher (Cohort 2, FE-C2). Routes to a per-room builder
+ * keyed by `opts.roomId`. The loader (`loadArenaDecor`) fans out by calling
+ * this once per room so all 4 room groups are pre-allocated at scene-load
+ * time — the integration agent (Cohort 3A) just toggles `.visible` on the
+ * tagged meshes when the player crosses a portal. Backward-compat: missing
+ * roomId defaults to 'glade' so any pre-FE-C2 caller still works.
+ */
+function _buildForestDecor(group, opts) {
+  const roomId = (opts && opts.roomId) || 'glade';
+  switch (roomId) {
+    case 'glade':          return _buildGladeDecor(group);
+    case 'saphollow':      return _buildSapHollowDecor(group);
+    case 'crystalchoir':   return _buildCrystalChoirDecor(group);
+    case 'amberlabyrinth': return _buildAmberLabyrinthDecor(group);
+    default:               return _buildGladeDecor(group);
+  }
+}
+
+function _buildGladeDecor(group) {
   // PETRIFIED FOREST — bioluminescent crystal-stone woods.
   // Contract: docs/FOREST_VISUAL_STYLE.md (8-color palette, choke corridors,
   // amber hotspot JSON). Per-cluster crystal pack with funnel gaps and slot-5
   // accent shards. No grass tufts (doesn't fit petrified theme). Amber
   // hotspots are coordinate-only and written to disk for the Phase-2 Amber
   // Interactable agent to consume — we do NOT render them here.
+  //
+  // Note (FE-C2): this is the "glade" hub room. The pre-FE-C2 single-arena
+  // forest decor lived in this function (then named _buildForestDecor); the
+  // body is preserved verbatim so the existing amber hotspot JSON contract
+  // and seeded chokepoints don't regress. New rooms (saphollow / crystalchoir
+  // / amberlabyrinth) live in sibling builders below.
   //
   // Palette slots used here:
   //   slot 1 #1a1e22 (stone-trunk base, charcoal)         — body color
@@ -222,6 +248,9 @@ function _buildForestDecor(group) {
   }
   bodyInst.instanceMatrix.needsUpdate = true;
   tipsInst.instanceMatrix.needsUpdate = true;
+  // FE-C2: tag for the integration agent's per-room visibility toggle.
+  bodyInst.userData.roomId = 'glade';
+  tipsInst.userData.roomId = 'glade';
   group.add(bodyInst); group.add(tipsInst);
   _track(bodyGeo); _track(tipsGeo); _track(bodyMat); _track(tipsMat);
 
@@ -254,6 +283,7 @@ function _buildForestDecor(group) {
     shardInst.setMatrixAt(i, dummy.matrix);
   }
   shardInst.instanceMatrix.needsUpdate = true;
+  shardInst.userData.roomId = 'glade';
   group.add(shardInst);
   _track(shardGeo); _track(shardMat);
 
@@ -280,6 +310,7 @@ function _buildForestDecor(group) {
     runeInst.setMatrixAt(i, dummy.matrix);
   }
   runeInst.instanceMatrix.needsUpdate = true;
+  runeInst.userData.roomId = 'glade';
   group.add(runeInst);
   _track(runeGeo); _track(runeMat);
 
@@ -345,6 +376,363 @@ function _buildForestDecor(group) {
     runes: RUNES,
     amberHotspots: amberHotspots.length,
   };
+}
+
+// ── FE-C2: per-room forest builders ─────────────────────────────────────────
+// Sap Hollow / Crystal Choir Grove / Amber Labyrinth.
+//
+// Each room translates its scatter by FOREST_ROOMS[roomId].center so meshes
+// don't pile on top of the Glade at world origin (advisor flagged this trap
+// 2026-05-16). Each room seeds a distinct mulberry32 stream so layouts are
+// deterministic across reloads but visually distinct between rooms.
+//
+// All InstancedMesh outputs are tagged with userData.roomId so the Cohort 3A
+// integration agent can flip .visible based on the player's current room.
+// For now (FE-C2), every room's meshes are added visible — the integration
+// layer will gate them.
+//
+// PALETTE LOCK: only the 8 hex literals from docs/FOREST_VISUAL_STYLE.md may
+// appear in this section. The task spec mentions "low purple fog" for the
+// labyrinth — that's NOT purple in code, it's slot-5 (#3ecf9a, darker mint
+// "pollen tinted" per the parenthetical clarification). Verified by grep.
+
+/** mulberry32 factory — returns a stateful rand() in [0, 1). Per-room seeds
+ *  give us deterministic-but-distinct scatter patterns across the 4 rooms. */
+function _mulberry32(seed) {
+  let s = seed >>> 0;
+  return function rand() {
+    s = (s + 0x6D2B79F5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * Sap Hollow — lime sap floor + dripping ceiling.
+ * Center (-70, -90), bounds 40×60u. Visual lead is slot-4 (mint bio-glow)
+ * sap puddles + slot-5 drip particles. "Darker overall" achieved via lower
+ * material opacity on accents, NOT a new palette color (palette is locked).
+ */
+function _buildSapHollowDecor(group) {
+  const room = FOREST_ROOMS.saphollow;
+  const cx = room.center.x, cz = room.center.z;
+  const rand = _mulberry32(0xC0FFE2);
+  const dummy = new THREE.Object3D();
+
+  // 15-20 sap puddles — flat additive discs on the floor, slot-4 (mint).
+  // Reuses the rune-ring texture via the same fxTex hook the glade uses so
+  // we don't ship a second texture. Bloom OFF (these are ground splats).
+  const PUDDLES = 15 + ((rand() * 6) | 0); // 15..20
+  const puddleGeo = new THREE.PlaneGeometry(1.0, 1.0);
+  const puddleMat = new THREE.MeshBasicMaterial({
+    map: fxTex('ring_arcane') || makeRuneRingTexture(),
+    color: 0x7df0c4,             // slot 4 — bio-glow primary mint
+    transparent: true, opacity: 0.55, side: THREE.DoubleSide,
+    depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+  const puddleInst = new THREE.InstancedMesh(puddleGeo, puddleMat, PUDDLES);
+  for (let i = 0; i < PUDDLES; i++) {
+    // Inner scatter inside the room bounds (margin 4u from edges).
+    const lx = (rand() * 2 - 1) * 16;   // ±16 inside 40u-wide bounds
+    const lz = (rand() * 2 - 1) * 26;   // ±26 inside 60u-tall bounds
+    const s  = 1.6 + rand() * 1.8;      // 1.6..3.4u radius
+    dummy.position.set(cx + lx, -0.05, cz + lz);
+    dummy.scale.set(s, s, 1);
+    dummy.rotation.set(-Math.PI / 2, 0, rand() * Math.PI * 2);
+    dummy.updateMatrix();
+    puddleInst.setMatrixAt(i, dummy.matrix);
+  }
+  puddleInst.instanceMatrix.needsUpdate = true;
+  puddleInst.userData.roomId = 'saphollow';
+  group.add(puddleInst);
+  _track(puddleGeo); _track(puddleMat);
+
+  // Dripping ceiling particles — tiny slot-5 octahedrons hanging at variable
+  // heights, additive + bloom-tagged for the wet-cave look. Static placement
+  // (no animation tick) — the bloom flicker reads as drip motion.
+  const DRIPS = 36;
+  const dripGeo = new THREE.OctahedronGeometry(0.10, 0);
+  const dripMat = new THREE.MeshStandardMaterial({
+    color: 0x3ecf9a,             // slot 5 — bio-glow secondary
+    emissive: 0x3ecf9a,
+    emissiveIntensity: 1.6,
+    roughness: 0.3, metalness: 0.1,
+    flatShading: true,
+    transparent: true, opacity: 0.85,
+  });
+  const dripInst = new THREE.InstancedMesh(dripGeo, dripMat, DRIPS);
+  dripInst.layers.enable(BLOOM_LAYER);
+  for (let i = 0; i < DRIPS; i++) {
+    const lx = (rand() * 2 - 1) * 17;
+    const lz = (rand() * 2 - 1) * 27;
+    const y  = 2.4 + rand() * 1.8;      // 2.4..4.2u above floor
+    const s  = 0.45 + rand() * 0.85;
+    dummy.position.set(cx + lx, y, cz + lz);
+    dummy.scale.setScalar(s);
+    dummy.rotation.set(rand() * Math.PI, rand() * Math.PI * 2, rand() * Math.PI);
+    dummy.updateMatrix();
+    dripInst.setMatrixAt(i, dummy.matrix);
+  }
+  dripInst.instanceMatrix.needsUpdate = true;
+  dripInst.userData.roomId = 'saphollow';
+  group.add(dripInst);
+  _track(dripGeo); _track(dripMat);
+
+  // Slot-2 stone-trunk silhouettes around the room edge — a low ring of
+  // dark crystal stubs that frame the playspace without choking it. Bloom
+  // OFF (these are silhouette, not glow). Reuses the glade body geometry
+  // shape but with a darker palette slot.
+  const STUBS = 12;
+  const stubGeo = new THREE.CylinderGeometry(0.28, 0.42, 0.95, 6, 1, false);
+  const stubMat = new THREE.MeshStandardMaterial({
+    color: 0x2d3a55,             // slot 2 — cold blue-gray
+    roughness: 0.9, metalness: 0.05,
+    flatShading: true,
+  });
+  const stubInst = new THREE.InstancedMesh(stubGeo, stubMat, STUBS);
+  for (let i = 0; i < STUBS; i++) {
+    // Place along the room perimeter at ~80% of half-bounds.
+    const angle = (i / STUBS) * Math.PI * 2 + rand() * 0.4;
+    const lx = Math.cos(angle) * 16;
+    const lz = Math.sin(angle) * 26;
+    const sy = 1.1 + rand() * 0.9;
+    dummy.position.set(cx + lx, 0.475 * sy, cz + lz);
+    dummy.scale.set(0.85 + rand() * 0.3, sy, 0.85 + rand() * 0.3);
+    dummy.rotation.set((rand() - 0.5) * 0.25, rand() * Math.PI * 2, (rand() - 0.5) * 0.25);
+    dummy.updateMatrix();
+    stubInst.setMatrixAt(i, dummy.matrix);
+  }
+  stubInst.instanceMatrix.needsUpdate = true;
+  stubInst.userData.roomId = 'saphollow';
+  group.add(stubInst);
+  _track(stubGeo); _track(stubMat);
+
+  return { room: 'saphollow', puddles: PUDDLES, drips: DRIPS, stubs: STUBS };
+}
+
+/**
+ * Crystal Choir Grove — singing crystal spire arc.
+ * Center (0, 80), bounds 50×50u. 5-7 tall spires arranged in an arc, brighter
+ * glow than glade (emissiveIntensity at the top of the spec range, 1.8).
+ * Uses the same body/tip InstancedMesh pattern as the glade so the visual
+ * vocabulary stays consistent.
+ */
+function _buildCrystalChoirDecor(group) {
+  const room = FOREST_ROOMS.crystalchoir;
+  const cx = room.center.x, cz = room.center.z;
+  const rand = _mulberry32(0xC0FFE3);
+  const dummy = new THREE.Object3D();
+
+  const SPIRES = 5 + ((rand() * 3) | 0); // 5..7
+  // Tall hex-prism body, twice the height of glade crystals.
+  const bodyGeo = new THREE.CylinderGeometry(0.28, 0.46, 2.4, 6, 1, false);
+  // Big tip cone for the choir-spire silhouette.
+  const tipsGeo = new THREE.ConeGeometry(0.30, 1.1, 6);
+  tipsGeo.translate(0, 1.75, 0);  // sit on top of body (half body 1.2 + cone half 0.55)
+
+  const bodyMat = new THREE.MeshStandardMaterial({
+    color: 0x2d3a55,             // slot 2
+    roughness: 0.85, metalness: 0.05,
+    flatShading: true,
+  });
+  const tipsMat = new THREE.MeshStandardMaterial({
+    color: 0x5f8fb5,             // slot 3 — pale cyan-steel
+    emissive: 0x7df0c4,          // slot 4
+    emissiveIntensity: 1.8,      // top of the 1.2-1.8 spec band ("brighter than glade")
+    roughness: 0.22, metalness: 0.12,
+    flatShading: true,
+    transparent: true, opacity: 0.95,
+  });
+  const bodyInst = new THREE.InstancedMesh(bodyGeo, bodyMat, SPIRES);
+  const tipsInst = new THREE.InstancedMesh(tipsGeo, tipsMat, SPIRES);
+  tipsInst.layers.enable(BLOOM_LAYER);
+
+  // Arrange in a 140° arc opening toward the room entry (south-ish, -z side).
+  const arcStart = Math.PI * 0.7;    // ~126°
+  const arcSpan  = Math.PI * 0.78;   // ~140°
+  for (let i = 0; i < SPIRES; i++) {
+    const t = SPIRES > 1 ? i / (SPIRES - 1) : 0.5;
+    const angle = arcStart + arcSpan * t;
+    const r = 14 + rand() * 5;       // 14..19u from room center
+    const lx = Math.cos(angle) * r;
+    const lz = Math.sin(angle) * r;
+    const sy = 1.0 + rand() * 0.5;
+    const baseY = 1.2 * sy;          // half body height
+    dummy.position.set(cx + lx, baseY, cz + lz);
+    dummy.scale.set(0.95 + rand() * 0.3, sy, 0.95 + rand() * 0.3);
+    dummy.rotation.set(
+      (rand() - 0.5) * 0.15,
+      rand() * Math.PI * 2,
+      (rand() - 0.5) * 0.15,
+    );
+    dummy.updateMatrix();
+    bodyInst.setMatrixAt(i, dummy.matrix);
+    tipsInst.setMatrixAt(i, dummy.matrix);
+  }
+  bodyInst.instanceMatrix.needsUpdate = true;
+  tipsInst.instanceMatrix.needsUpdate = true;
+  bodyInst.userData.roomId = 'crystalchoir';
+  tipsInst.userData.roomId = 'crystalchoir';
+  group.add(bodyInst); group.add(tipsInst);
+  _track(bodyGeo); _track(tipsGeo); _track(bodyMat); _track(tipsMat);
+
+  // Slot-3 facet shards on the floor around the arc — atmosphere only.
+  const SHARDS = 16;
+  const shardGeo = new THREE.OctahedronGeometry(0.32, 0);
+  const shardMat = new THREE.MeshStandardMaterial({
+    color: 0x5f8fb5,             // slot 3
+    emissive: 0x5f8fb5,
+    emissiveIntensity: 0.8,
+    roughness: 0.3, metalness: 0.1,
+    flatShading: true,
+    transparent: true, opacity: 0.85,
+  });
+  const shardInst = new THREE.InstancedMesh(shardGeo, shardMat, SHARDS);
+  shardInst.layers.enable(BLOOM_LAYER);
+  for (let i = 0; i < SHARDS; i++) {
+    const angle = rand() * Math.PI * 2;
+    const r = 8 + rand() * 12;
+    const lx = Math.cos(angle) * r;
+    const lz = Math.sin(angle) * r;
+    const s  = 0.4 + rand() * 0.7;
+    dummy.position.set(cx + lx, 0.18 + rand() * 0.25, cz + lz);
+    dummy.scale.setScalar(s);
+    dummy.rotation.set(rand() * Math.PI, rand() * Math.PI * 2, rand() * Math.PI);
+    dummy.updateMatrix();
+    shardInst.setMatrixAt(i, dummy.matrix);
+  }
+  shardInst.instanceMatrix.needsUpdate = true;
+  shardInst.userData.roomId = 'crystalchoir';
+  group.add(shardInst);
+  _track(shardGeo); _track(shardMat);
+
+  return { room: 'crystalchoir', spires: SPIRES, shards: SHARDS };
+}
+
+/**
+ * Amber Labyrinth — dense amber-toned crystal walls + slot-5 "pollen" fog.
+ * Center (130, 0), bounds 55×40u. Density ~4× the glade per-cluster count.
+ * "Low purple fog" in the task copy = pollen-tinted = slot-5 (advisor pin).
+ * No purple hex literal appears here — palette discipline.
+ */
+function _buildAmberLabyrinthDecor(group) {
+  const room = FOREST_ROOMS.amberlabyrinth;
+  const cx = room.center.x, cz = room.center.z;
+  const rand = _mulberry32(0xC0FFE4);
+  const dummy = new THREE.Object3D();
+
+  // Dense amber-toned crystal walls — body slot-1 (stone), tips slot-6 amber.
+  // 4× glade density per-cluster: target ~72 instances vs glade's 6-10 per
+  // cluster. Lay them out as 4 walls (N/S/E/W) of the room with ~18 each,
+  // leaving doorway gaps mid-edge for player traversal.
+  const WALL_PER_SIDE = 18;
+  const TOTAL = WALL_PER_SIDE * 4;
+  const bodyGeo = new THREE.CylinderGeometry(0.20, 0.32, 1.4, 6, 1, false);
+  const tipsGeo = new THREE.ConeGeometry(0.20, 0.5, 6);
+  tipsGeo.translate(0, 0.95, 0);   // body half 0.7 + cone half 0.25
+
+  const bodyMat = new THREE.MeshStandardMaterial({
+    color: 0x1a1e22,             // slot 1 — stone-trunk charcoal (denser than glade)
+    roughness: 0.9, metalness: 0.04,
+    flatShading: true,
+  });
+  const tipsMat = new THREE.MeshStandardMaterial({
+    color: 0x5f8fb5,             // slot 3 — facet
+    emissive: 0xf5a300,          // slot 6 — amber idle warm orange
+    emissiveIntensity: 1.6,      // within 1.4-2.0 amber spec band
+    roughness: 0.25, metalness: 0.12,
+    flatShading: true,
+    transparent: true, opacity: 0.94,
+  });
+  const bodyInst = new THREE.InstancedMesh(bodyGeo, bodyMat, TOTAL);
+  const tipsInst = new THREE.InstancedMesh(tipsGeo, tipsMat, TOTAL);
+  tipsInst.layers.enable(BLOOM_LAYER);
+
+  // 4 walls along the inside of the room bounds, with a 5u doorway in the
+  // middle of each. Wall x/z extents: room is ±27.5u x ±20u from center.
+  const halfX = 25;
+  const halfZ = 18;
+  const doorHalfWidth = 2.5;
+  let ci = 0;
+  // North + South walls (constant z = ±halfZ, x varies)
+  for (const side of [-1, 1]) {
+    for (let i = 0; i < WALL_PER_SIDE; i++) {
+      const t = (i + 0.5) / WALL_PER_SIDE;       // 0..1 along wall
+      let lx = -halfX + t * (halfX * 2);
+      // Skip the doorway gap (push toward nearest endpoint if inside gap).
+      if (Math.abs(lx) < doorHalfWidth) {
+        lx = lx >= 0 ? doorHalfWidth + 0.2 : -doorHalfWidth - 0.2;
+      }
+      const jitter = (rand() - 0.5) * 0.8;
+      const lz = side * halfZ + jitter;
+      const sy = 0.85 + rand() * 1.05;
+      dummy.position.set(cx + lx, 0.7 * sy, cz + lz);
+      dummy.scale.set(0.8 + rand() * 0.4, sy, 0.8 + rand() * 0.4);
+      dummy.rotation.set((rand() - 0.5) * 0.3, rand() * Math.PI * 2, (rand() - 0.5) * 0.3);
+      dummy.updateMatrix();
+      bodyInst.setMatrixAt(ci, dummy.matrix);
+      tipsInst.setMatrixAt(ci, dummy.matrix);
+      ci++;
+    }
+  }
+  // East + West walls (constant x = ±halfX, z varies)
+  for (const side of [-1, 1]) {
+    for (let i = 0; i < WALL_PER_SIDE; i++) {
+      const t = (i + 0.5) / WALL_PER_SIDE;
+      let lz = -halfZ + t * (halfZ * 2);
+      if (Math.abs(lz) < doorHalfWidth) {
+        lz = lz >= 0 ? doorHalfWidth + 0.2 : -doorHalfWidth - 0.2;
+      }
+      const jitter = (rand() - 0.5) * 0.8;
+      const lx = side * halfX + jitter;
+      const sy = 0.85 + rand() * 1.05;
+      dummy.position.set(cx + lx, 0.7 * sy, cz + lz);
+      dummy.scale.set(0.8 + rand() * 0.4, sy, 0.8 + rand() * 0.4);
+      dummy.rotation.set((rand() - 0.5) * 0.3, rand() * Math.PI * 2, (rand() - 0.5) * 0.3);
+      dummy.updateMatrix();
+      bodyInst.setMatrixAt(ci, dummy.matrix);
+      tipsInst.setMatrixAt(ci, dummy.matrix);
+      ci++;
+    }
+  }
+  bodyInst.instanceMatrix.needsUpdate = true;
+  tipsInst.instanceMatrix.needsUpdate = true;
+  bodyInst.userData.roomId = 'amberlabyrinth';
+  tipsInst.userData.roomId = 'amberlabyrinth';
+  group.add(bodyInst); group.add(tipsInst);
+  _track(bodyGeo); _track(tipsGeo); _track(bodyMat); _track(tipsMat);
+
+  // Pollen fog motes — slot-5 (NOT purple) additive billboards drifting low.
+  // Static placement, additive + low opacity reads as low-hanging haze under
+  // the bloom pass without needing a real volumetric.
+  const POLLEN = 60;
+  const pollenGeo = new THREE.PlaneGeometry(0.55, 0.55);
+  const pollenMat = new THREE.MeshBasicMaterial({
+    map: fxTex('ring_arcane') || makeRuneRingTexture(),
+    color: 0x3ecf9a,             // slot 5 — "pollen tinted" mint
+    transparent: true, opacity: 0.30, side: THREE.DoubleSide,
+    depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+  const pollenInst = new THREE.InstancedMesh(pollenGeo, pollenMat, POLLEN);
+  for (let i = 0; i < POLLEN; i++) {
+    const lx = (rand() * 2 - 1) * (halfX - 1);
+    const lz = (rand() * 2 - 1) * (halfZ - 1);
+    const y  = 0.4 + rand() * 1.2;
+    const s  = 0.7 + rand() * 1.4;
+    dummy.position.set(cx + lx, y, cz + lz);
+    dummy.scale.set(s, s, 1);
+    dummy.rotation.set(0, rand() * Math.PI * 2, 0);
+    dummy.updateMatrix();
+    pollenInst.setMatrixAt(i, dummy.matrix);
+  }
+  pollenInst.instanceMatrix.needsUpdate = true;
+  pollenInst.userData.roomId = 'amberlabyrinth';
+  group.add(pollenInst);
+  _track(pollenGeo); _track(pollenMat);
+
+  return { room: 'amberlabyrinth', walls: TOTAL, pollen: POLLEN };
 }
 
 // ── Iter 14: real CC0 GLB scatter helper ────────────────────────────────────
@@ -1502,7 +1890,19 @@ export function loadArenaDecor(stageId, scene) {
   group.name = '__arenaDecor';
   let counts = null;
   switch (stageId) {
-    case 'forest':   counts = _buildForestDecor(group); break;
+    case 'forest': {
+      // FE-C2: pre-allocate decor for ALL 4 forest rooms at scene-load time
+      // so the integration agent (Cohort 3A) can flip InstancedMesh.visible
+      // on room transitions without rebuilding geometry. Default visibility
+      // is "all visible" — Cohort 3A will gate based on state.run.currentRoom.
+      counts = {
+        glade:          _buildForestDecor(group, { roomId: 'glade' }),
+        saphollow:      _buildForestDecor(group, { roomId: 'saphollow' }),
+        crystalchoir:   _buildForestDecor(group, { roomId: 'crystalchoir' }),
+        amberlabyrinth: _buildForestDecor(group, { roomId: 'amberlabyrinth' }),
+      };
+      break;
+    }
     case 'twilight': counts = _buildTwilightDecor(group); break;
     case 'cinder':   counts = _buildCinderDecor(group); break;
     case 'catacomb': counts = _buildCatacombDecor(group); break;
