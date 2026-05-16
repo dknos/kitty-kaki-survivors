@@ -1069,6 +1069,20 @@ export function updateEnemies(dt) {
         }
       }
     }
+    // Twilight hedge-corridor slow-zones (swarm Phase 3) — same shape as forest.
+    // Derived from hedge midpoints in stageHazards.loadTwilightHazards and
+    // published to state.run.twilightSlowZones. Short-circuit when not twilight
+    // so other stages pay zero cost. mul=0.65 funnels swarms through gaps.
+    const tzones = state.run && state.run.twilightSlowZones;
+    if (tzones) {
+      for (let z = 0; z < tzones.length; z++) {
+        const Z = tzones[z];
+        const zdx = ep.x - Z.x, zdz = ep.z - Z.z;
+        if (zdx * zdx + zdz * zdz <= Z.r2) {
+          if (Z.mul < slow) slow = Z.mul;
+        }
+      }
+    }
     // Stage-rule global slow (Forest "Overgrowth" spore pulse).
     const ruleSlow = (state.run && state.run.stageRuleEnemySlow) || 1;
     if (ruleSlow < slow) slow = ruleSlow;

@@ -45,7 +45,7 @@ import { initTotems, tickTotems, resetTotems } from './totems.js';
 import { initPylons, tickPylons, resetPylons } from './pylons.js';
 import { initBells, tickBells, resetBells } from './bells.js';
 import { initEnemyTells, updateEnemyTells, resetEnemyTells } from './enemyTells.js';
-import { initStageHazards, tickStageHazards, resetStageHazards, loadForestHazards, clearForestHazards } from './stageHazards.js';
+import { initStageHazards, tickStageHazards, resetStageHazards, loadForestHazards, clearForestHazards, loadTwilightHazards, clearTwilightHazards } from './stageHazards.js';
 import { applyStageRule, tickStageRule, clearStageRule } from './stageRules.js';
 import { loadArenaDecor, clearArenaDecor } from './arenaDecor.js';
 import { loadForestAmber, tickForestAmber, clearForestAmber } from './forestAmber.js';
@@ -533,6 +533,9 @@ function _teardownActiveRun() {
   // the forestAmber teardown shape; clear path also nulls
   // state.run.fountainSpeedBuff so the buff can't leak across runs.
   if (state.scene) clearTwilightFountains(state.scene);
+  // Drop twilight slow-zones too — paired with fountains since both key off
+  // the same hedge derivation. No-op on non-twilight stages.
+  if (state.scene) clearTwilightHazards(state.scene);
 
   // Finalize Helltide BEFORE resetState wipes its state. teardownHelltide
   // reads state.run.helltideActive + helltideEmbersBanked to credit lifetime
@@ -927,12 +930,20 @@ function applyMetaUpgrades() {
       });
       // Defensive: re-entering forest should drop any leftover twilight FX.
       clearTwilightFountains(state.scene);
+      clearTwilightHazards(state.scene);
     } else if (stage.id === 'twilight') {
       // Phase-2 swarm: Blood/Light Fountains — proximity drink → 1.75× move
       // speed for 4s, 30s per-fountain cooldown. Fire-and-forget; hero.js
       // short-circuits on null until state.run.fountainSpeedBuff is published.
       loadTwilightFountains(state.scene).catch((e) => {
         console.warn('[main] loadTwilightFountains failed:', e);
+      });
+      // Swarm Phase 3: hedge-corridor slow-zones — funnel swarms into
+      // single-file lines through hedge gaps. Fire-and-forget; enemies.js
+      // short-circuits on null until state.run.twilightSlowZones is
+      // published, so zones spawning a frame late is invisible.
+      loadTwilightHazards(state.scene).catch((e) => {
+        console.warn('[main] loadTwilightHazards failed:', e);
       });
       // Defensive: forest decor must be gone on twilight.
       clearForestAmber(state.scene);
@@ -944,6 +955,7 @@ function applyMetaUpgrades() {
       clearForestAmber(state.scene);
       clearForestHazards(state.scene);
       clearTwilightFountains(state.scene);
+      clearTwilightHazards(state.scene);
     }
   }
   // Per-stage ambient bed (loop). `forest` and `twilight` ship ambient files

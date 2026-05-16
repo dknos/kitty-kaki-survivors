@@ -49,6 +49,12 @@ const FOREST_SLOWZONE_R2     = FOREST_SLOWZONE_RADIUS * FOREST_SLOWZONE_RADIUS;
 const FOREST_SLOWZONE_MUL    = 0.55;
 let _forestSlowZones = null;
 
+// Twilight hedge-corridor slow-zones — mirrors the forest pattern, but radius
+// and mul come from the JSON (per zone) so the regen tool owns the numbers.
+// Published to `state.run.twilightSlowZones` so enemies.js reads without an
+// import cycle. No visual marker — fountains + hedges already stack a lot.
+let _twilightSlowZones = null;
+
 // Active hazard rosters per stage. Populated lazily on entering a run.
 const _pollens = []; // {x, z, ttl, life}
 const _lavas = [];   // {x, z, ttl, life, armingUntil, radius}
@@ -380,6 +386,10 @@ export function resetStageHazards() {
   // data side so a stale roster doesn't bleed into the next run.
   _forestSlowZones = null;
   if (state.run) state.run.forestSlowZones = null;
+  // Same teardown contract for twilight slow-zones — wipe data side so a
+  // stale roster never leaks across a stage swap or run restart.
+  _twilightSlowZones = null;
+  if (state.run) state.run.twilightSlowZones = null;
 }
 
 // ─── Forest chokepoint slow-zones ────────────────────────────────────────────
@@ -419,4 +429,46 @@ export async function loadForestHazards(scene, hotspotsUrl = 'assets/forest_ambe
 export function clearForestHazards(_scene) {
   _forestSlowZones = null;
   if (state.run) state.run.forestSlowZones = null;
+}
+
+// ─── Twilight hedge-corridor slow-zones ──────────────────────────────────────
+// Funnels swarms into single-file lines through hedge gaps — the Cursed
+// Aristocracy hallway feel from docs/TWILIGHT_VISUAL_STYLE.md. Zones are
+// derived offline by tools/regen-twilight-slowzones.mjs (mulberry32(0xBADBEE)
+// replays the hedge derivation, then places 3 zones along each hedge tangent,
+// shifted inward toward origin so they sit on the inside curve where enemies
+// path). Read by enemies.js via `state.run.twilightSlowZones` in the same
+// slow-aggregator loop forest uses — no per-frame work happens here, the
+// load/publish/read split keeps the enemy tick zone-allocation-free.
+//
+// No visual marker — fountains + hedges + fog already stack a lot on this
+// stage; another ground ring risks muddying the read. Revisit after playtest
+// if zones feel invisible.
+export async function loadTwilightHazards(scene, hotspotsUrl = 'assets/twilight_slowzone_hotspots.json') {
+  // Idempotent: nuke any prior roster before rebuilding.
+  clearTwilightHazards(scene);
+  let zones = null;
+  try {
+    const res = await fetch(hotspotsUrl);
+    zones = await res.json();
+  } catch (e) {
+    console.warn('[stageHazards] twilight slowzone fetch failed:', e);
+    return 0;
+  }
+  if (!Array.isArray(zones) || zones.length === 0) return 0;
+  // Precompute r² so the enemy-loop hot path is mul-free per zone (JSON
+  // stores r for human readability; runtime needs r²).
+  _twilightSlowZones = zones.map((h) => ({
+    x: h.x, z: h.z,
+    r2: h.r * h.r,
+    mul: h.mul,
+  }));
+  // Publish so enemies.js can read without importing this module.
+  if (state.run) state.run.twilightSlowZones = _twilightSlowZones;
+  return _twilightSlowZones.length;
+}
+
+export function clearTwilightHazards(_scene) {
+  _twilightSlowZones = null;
+  if (state.run) state.run.twilightSlowZones = null;
 }
