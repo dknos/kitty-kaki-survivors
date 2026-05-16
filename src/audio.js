@@ -215,6 +215,12 @@ const SFX_MANIFEST = {
                      'audio/forest/crystal_shatter_b.ogg',
                      'audio/forest/crystal_shatter_c.ogg'],
   amberDetonation:  ['audio/forest/amber_detonation.ogg'],
+  // Ascension Evolution chime (Punch List #1, 2026-05-16). Stage-agnostic
+  // SFX layered with crystalShatter on weapon evolution. Manifest path is
+  // intentionally absent (no `audio/fx/` directory in-tree) — `_play()`
+  // drops on empty bank (line 304) so `sfx.evolutionChime()` is a graceful
+  // no-op until the Kenney CC0 sample lands here.
+  evolutionChime:   ['audio/fx/evolution_chime.ogg'],
   // Twilight stage SFX (Phase-2 Fountains Agent hooks). CC0 Kenney bell/glass/
   // forceField layers + synthesized gulp/water/crow elements (the Kenney packs
   // don't ship water/gulp samples). All -16 LUFS to match the SFX bus. See
@@ -432,6 +438,10 @@ export const sfx = {
   // sample for now; agent can layer multiple amber detonations via the timing
   // it already controls (8-12 shards + 0.6s shockwave timeline).
   amberDetonation:  _throttled('amberDetonation',  () => _play('amberDetonation',  { gain: 0.65 })),
+  // Ascension Evolution chime (Punch List #1) — stage-agnostic. Bank is
+  // empty until the Kenney CC0 sample ships; `_play` no-ops cleanly so
+  // callers don't need to feature-detect (see `evolutionChime` manifest).
+  evolutionChime:   _throttled('evolutionChime',   () => _play('evolutionChime',   { gain: 0.55 })),
 
   // ── Twilight stage (Phase-2 Fountains Agent hooks) ─────────────────────────
   // Fountain pour layers the 0.6s drink animation; fountain drink chime fires

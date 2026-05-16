@@ -19,6 +19,7 @@ import { initHero, updateHero, updateDeathAnim, takeDamage as heroTakeDamage, re
 import { initEnemies, updateEnemies, prewarmPools } from './enemies.js';
 import { initWeapons, tickWeapons, acquireWeapon, weaponChoices, _resetEvoAnnouncements, REGISTRY as WEAPON_REGISTRY } from './weapons/index.js';
 import { tickChainArcs } from './chainFx.js';
+import { tickEvolveBursts, disposeAllEvolveBursts, setEvolveBurstStateRef } from './fx/evolveBurst.js';
 import { initProjectileVisuals, releaseProjectileVisuals } from './weapons/autoAim.js';
 import { initXP, updateGems, applyLevelUpChoice } from './xp.js';
 import { initSpawnDirector, tickSpawnDirector, secondsUntilNextMiniBoss } from './spawnDirector.js';
@@ -217,6 +218,9 @@ async function boot() {
   initUI();
   initDamageNumbers();
   initFX(scene);
+  // Ascension Evolution FX (Punch List #1) needs a state handle so the
+  // 30s player rim can follow state.hero.pos without a static import cycle.
+  setEvolveBurstStateRef(state);
   initVFXBurst(scene);
   initTotems(scene);
   initPylons(scene);
@@ -550,6 +554,10 @@ function _teardownActiveRun() {
   // cooldown timestamps live on _pads; wiping the array wipes the cooldown
   // state alongside it, so nothing leaks across runs.
   if (state.scene) clearVoidTeleportPads(state.scene);
+  // Drop any live Ascension burst + 30s player rim. Mirrors the chainFx
+  // teardown shape; matters when the player dies mid-rim (would otherwise
+  // ghost-attach a glowing ring to the next run's hero spawn position).
+  if (state.scene) disposeAllEvolveBursts(state.scene);
 
   // Finalize Helltide BEFORE resetState wipes its state. teardownHelltide
   // reads state.run.helltideActive + helltideEmbersBanked to credit lifetime
@@ -1409,6 +1417,7 @@ function frame(now) {
   // byte-for-byte and matching the pre-refactor forest behavior within ~1%
   // opacity drift on frame 0 (life=0.4s, dt~0.016s → k≈0.04).
   _p=perfStart(); tickChainArcs(logicDt);         perfMark('chainArcs', _p);
+  _p=perfStart(); tickEvolveBursts(logicDt);      perfMark('evolveBursts', _p);
   _p=perfStart(); tickStageRule(state, logicDt);  perfMark('stageRule', _p);
   _p=perfStart(); tickMiniEvents(logicDt);        perfMark('miniEvents', _p);
   _p=perfStart(); tickArenaProps(logicDt);        perfMark('arenaProps', _p);
