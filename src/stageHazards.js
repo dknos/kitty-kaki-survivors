@@ -55,6 +55,13 @@ let _forestSlowZones = null;
 // import cycle. No visual marker — fountains + hedges already stack a lot.
 let _twilightSlowZones = null;
 
+// Cinder catapult slow-zones — mirrors the twilight pattern. Zones sit at
+// the catapult positions (per docs/CINDER_VISUAL_STYLE.md: 0.7x within 2u of
+// each catapult center). Published to `state.run.cinderSlowZones` for
+// enemies.js to read via the existing slow aggregator. No visual marker —
+// catapults + ballistas + lava puddles already stack a lot on cinder.
+let _cinderSlowZones = null;
+
 // Active hazard rosters per stage. Populated lazily on entering a run.
 const _pollens = []; // {x, z, ttl, life}
 const _lavas = [];   // {x, z, ttl, life, armingUntil, radius}
@@ -390,6 +397,10 @@ export function resetStageHazards() {
   // stale roster never leaks across a stage swap or run restart.
   _twilightSlowZones = null;
   if (state.run) state.run.twilightSlowZones = null;
+  // Same teardown contract for cinder slow-zones — wipe data side so a stale
+  // roster never leaks across a stage swap or run restart.
+  _cinderSlowZones = null;
+  if (state.run) state.run.cinderSlowZones = null;
 }
 
 // ─── Forest chokepoint slow-zones ────────────────────────────────────────────
@@ -471,4 +482,46 @@ export async function loadTwilightHazards(scene, hotspotsUrl = 'assets/twilight_
 export function clearTwilightHazards(_scene) {
   _twilightSlowZones = null;
   if (state.run) state.run.twilightSlowZones = null;
+}
+
+// ─── Cinder catapult slow-zones ──────────────────────────────────────────────
+// Funnels swarms AROUND the ruined catapult silhouettes — figure-eight kiting
+// per docs/CINDER_VISUAL_STYLE.md. Zones are derived offline by
+// tools/regen-cinder-slowzones.mjs (mulberry32(0xDADADA) replays the catapult
+// stream byte-for-byte with src/arenaDecor.js _buildCinderDecor + the ballista
+// regen tool, then emits one zone per catapult at the catapult center). Read
+// by enemies.js via `state.run.cinderSlowZones` in the same slow-aggregator
+// loop forest + twilight use — no per-frame work happens here, the
+// load/publish/read split keeps the enemy tick zone-allocation-free.
+//
+// No visual marker — catapults + ballistas + lava puddles already stack a lot
+// on cinder; another ground ring risks muddying the read. Revisit after
+// playtest if zones feel invisible.
+export async function loadCinderHazards(scene, hotspotsUrl = 'assets/cinder_slowzone_hotspots.json') {
+  // Idempotent: nuke any prior roster before rebuilding.
+  clearCinderHazards(scene);
+  let zones = null;
+  try {
+    const res = await fetch(hotspotsUrl);
+    zones = await res.json();
+  } catch (e) {
+    console.warn('[stageHazards] cinder slowzone fetch failed:', e);
+    return 0;
+  }
+  if (!Array.isArray(zones) || zones.length === 0) return 0;
+  // Precompute r² so the enemy-loop hot path is mul-free per zone (JSON
+  // stores r for human readability; runtime needs r²).
+  _cinderSlowZones = zones.map((h) => ({
+    x: h.x, z: h.z,
+    r2: h.r * h.r,
+    mul: h.mul,
+  }));
+  // Publish so enemies.js can read without importing this module.
+  if (state.run) state.run.cinderSlowZones = _cinderSlowZones;
+  return _cinderSlowZones.length;
+}
+
+export function clearCinderHazards(_scene) {
+  _cinderSlowZones = null;
+  if (state.run) state.run.cinderSlowZones = null;
 }

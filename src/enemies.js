@@ -1113,6 +1113,21 @@ export function updateEnemies(dt) {
         }
       }
     }
+    // Cinder catapult slow-zones (swarm Phase 3) — same shape as twilight.
+    // Derived from catapult positions in stageHazards.loadCinderHazards and
+    // published to state.run.cinderSlowZones. Short-circuit when not cinder
+    // so other stages pay zero cost. mul=0.7 funnels swarms around the
+    // wreckage (figure-eight kiting per docs/CINDER_VISUAL_STYLE.md).
+    const czones = state.run && state.run.cinderSlowZones;
+    if (czones) {
+      for (let z = 0; z < czones.length; z++) {
+        const Z = czones[z];
+        const zdx = ep.x - Z.x, zdz = ep.z - Z.z;
+        if (zdx * zdx + zdz * zdz <= Z.r2) {
+          if (Z.mul < slow) slow = Z.mul;
+        }
+      }
+    }
     // Stage-rule global slow (Forest "Overgrowth" spore pulse).
     const ruleSlow = (state.run && state.run.stageRuleEnemySlow) || 1;
     if (ruleSlow < slow) slow = ruleSlow;
