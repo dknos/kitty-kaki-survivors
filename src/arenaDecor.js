@@ -66,6 +66,35 @@ function _buildForestDecor(group) {
   //   slot 4 #7df0c4 (bio-glow primary, mint)             — tip emissive
   //   slot 5 #3ecf9a (bio-glow secondary, darker mint)    — accent shards
 
+  // ── deterministic RNG (A1 fix) ───────────────────────────────────────────
+  // mulberry32 seeded with the canonical forest decor seed (0xC0FFEE). Same
+  // seed used by tools/regen-forest-hotspots.mjs so cluster centers / funnels
+  // derived here align with the amber hotspot positions written to disk.
+  // Without this, Math.random()-driven cluster centers re-roll every reload
+  // while the JSON hotspots stay fixed — they drift apart and the chokepoint
+  // funnel feel collapses (cf. tight-pair issue in seeds 1000/1001 etc.).
+  let _rngState = 0xC0FFEE >>> 0;
+  function rand() {
+    _rngState = (_rngState + 0x6D2B79F5) >>> 0;
+    let t = _rngState;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  }
+  // Local shadows of _ringR / _scatterRing so the helper paths used inside
+  // this function are also seeded (the module-level versions still use
+  // Math.random() for the other stage builders — only forest needs determinism
+  // for the hotspot alignment contract).
+  function ringR(rMin, rMax, biasPow = 1.6) {
+    const u = Math.pow(rand(), 1 / biasPow);
+    return rMin + (rMax - rMin) * u;
+  }
+  function scatterRing(rMin, rMax, biasPow = 1.6) {
+    const a = rand() * Math.PI * 2;
+    const r = ringR(rMin, rMax, biasPow);
+    return { x: Math.cos(a) * r, z: Math.sin(a) * r, a };
+  }
+
   // ── shared per-instance transform dummy ──────────────────────────────────
   const dummy = new THREE.Object3D();
 
@@ -74,13 +103,13 @@ function _buildForestDecor(group) {
   // jitter, so we always preserve open arcs between clumps (player escape
   // routes). Radius per cluster picked in [22, 46] so they sit well inside
   // the 60u play ring but outside the spawn safe zone.
-  const CLUSTER_COUNT = 4 + (Math.random() < 0.5 ? 0 : 1); // 4 or 5
+  const CLUSTER_COUNT = 4 + (rand() < 0.5 ? 0 : 1); // 4 or 5
   const baseStep = (Math.PI * 2) / CLUSTER_COUNT;
   const jitterMax = baseStep * 0.25;  // ≤ ¼ wedge so arcs stay open
   const clusters = [];
   for (let c = 0; c < CLUSTER_COUNT; c++) {
-    const angle = c * baseStep + (Math.random() - 0.5) * 2 * jitterMax;
-    const radius = 22 + Math.random() * 24; // 22..46
+    const angle = c * baseStep + (rand() - 0.5) * 2 * jitterMax;
+    const radius = 22 + rand() * 24; // 22..46
     clusters.push({
       cx: Math.cos(angle) * radius,
       cz: Math.sin(angle) * radius,
@@ -88,9 +117,9 @@ function _buildForestDecor(group) {
       // Funnel gap: a single ~60° wedge per cluster where no crystal grows
       // (and where the amber hotspot is biased). Random offset within the
       // cluster so swarms threading through the funnel hit different lanes.
-      funnelDir: Math.random() * Math.PI * 2,
+      funnelDir: rand() * Math.PI * 2,
       funnelHalfWidth: Math.PI / 6,   // 30° half = 60° gap
-      crystalCount: 6 + ((Math.random() * 5) | 0), // 6..10
+      crystalCount: 6 + ((rand() * 5) | 0), // 6..10
     });
   }
 
@@ -160,30 +189,30 @@ function _buildForestDecor(group) {
       // Re-roll until outside funnel wedge (bounded loop, 8 max tries — then
       // accept whatever we have to avoid infinite loops in unlucky seeds).
       for (let tries = 0; tries < 8; tries++) {
-        theta = Math.random() * Math.PI * 2;
+        theta = rand() * Math.PI * 2;
         const d = Math.atan2(
           Math.sin(theta - cl.funnelDir),
           Math.cos(theta - cl.funnelDir),
         );
         if (Math.abs(d) > cl.funnelHalfWidth) break;
       }
-      const r = 0.6 + Math.random() * 2.9;   // 0.6..3.5u from cluster center
+      const r = 0.6 + rand() * 2.9;   // 0.6..3.5u from cluster center
       const x = cl.cx + Math.cos(theta) * r;
       const z = cl.cz + Math.sin(theta) * r;
 
       // Skew per-instance — height bias for tall facet vs squat stub.
-      const sx = 0.65 + Math.random() * 0.45;
-      const sy = 0.85 + Math.random() * 0.95;
-      const sz = 0.65 + Math.random() * 0.45;
+      const sx = 0.65 + rand() * 0.45;
+      const sy = 0.85 + rand() * 0.95;
+      const sz = 0.65 + rand() * 0.45;
       // Sit base on floor: half-height of body is 0.55 → lift by 0.55 * sy.
       const baseY = 0.55 * sy;
       dummy.position.set(x, baseY, z);
       dummy.scale.set(sx, sy, sz);
       // Lean off vertical for facet asymmetry (spec: avoid parade-line look).
       dummy.rotation.set(
-        (Math.random() - 0.5) * 0.40,
-        Math.random() * Math.PI * 2,
-        (Math.random() - 0.5) * 0.40,
+        (rand() - 0.5) * 0.40,
+        rand() * Math.PI * 2,
+        (rand() - 0.5) * 0.40,
       );
       dummy.updateMatrix();
       bodyInst.setMatrixAt(ci, dummy.matrix);
@@ -212,14 +241,14 @@ function _buildForestDecor(group) {
   const shardInst = new THREE.InstancedMesh(shardGeo, shardMat, SHARDS);
   shardInst.layers.enable(BLOOM_LAYER);
   for (let i = 0; i < SHARDS; i++) {
-    const { x, z } = _scatterRing(18, 55, 1.4);
-    const s = 0.45 + Math.random() * 0.85;
-    dummy.position.set(x, 0.15 + Math.random() * 0.35, z);
+    const { x, z } = scatterRing(18, 55, 1.4);
+    const s = 0.45 + rand() * 0.85;
+    dummy.position.set(x, 0.15 + rand() * 0.35, z);
     dummy.scale.setScalar(s);
     dummy.rotation.set(
-      Math.random() * Math.PI,
-      Math.random() * Math.PI * 2,
-      Math.random() * Math.PI,
+      rand() * Math.PI,
+      rand() * Math.PI * 2,
+      rand() * Math.PI,
     );
     dummy.updateMatrix();
     shardInst.setMatrixAt(i, dummy.matrix);
@@ -242,11 +271,11 @@ function _buildForestDecor(group) {
   });
   const runeInst = new THREE.InstancedMesh(runeGeo, runeMat, RUNES);
   for (let i = 0; i < RUNES; i++) {
-    const { x, z } = _scatterRing(18, 56, 1.5);
-    const s = 0.7 + Math.random() * 1.1;
+    const { x, z } = scatterRing(18, 56, 1.5);
+    const s = 0.7 + rand() * 1.1;
     dummy.position.set(x, -0.06, z);
     dummy.scale.set(s, s, 1);
-    dummy.rotation.set(-Math.PI / 2, 0, Math.random() * Math.PI * 2);
+    dummy.rotation.set(-Math.PI / 2, 0, rand() * Math.PI * 2);
     dummy.updateMatrix();
     runeInst.setMatrixAt(i, dummy.matrix);
   }
@@ -261,14 +290,14 @@ function _buildForestDecor(group) {
   const amberHotspots = [];
   let seedCounter = 1000;
   for (const cl of clusters) {
-    const wanted = Math.random() < 0.55 ? 2 : 1;  // mostly 1, sometimes 2
+    const wanted = rand() < 0.55 ? 2 : 1;  // mostly 1, sometimes 2
     let placed = 0;
     for (let tries = 0; tries < 24 && placed < wanted; tries++) {
       // Aim at the funnel-facing perimeter of the cluster: sample θ inside
       // the funnel wedge so the hotspot sits IN the path the swarm walks.
       const wedge = cl.funnelHalfWidth * 1.4; // a touch wider than the gap
-      const theta = cl.funnelDir + (Math.random() * 2 - 1) * wedge;
-      const r = 3.4 + Math.random() * 1.6;    // just outside cluster radius
+      const theta = cl.funnelDir + (rand() * 2 - 1) * wedge;
+      const r = 3.4 + rand() * 1.6;    // just outside cluster radius
       const x = cl.cx + Math.cos(theta) * r;
       const z = cl.cz + Math.sin(theta) * r;
       const radial = Math.hypot(x, z);
@@ -276,7 +305,7 @@ function _buildForestDecor(group) {
       amberHotspots.push({
         x: +x.toFixed(2),
         z: +z.toFixed(2),
-        scale: +(0.85 + Math.random() * 0.35).toFixed(2),  // 0.85..1.20
+        scale: +(0.85 + rand() * 0.35).toFixed(2),  // 0.85..1.20
         seed: seedCounter++,
       });
       placed++;
@@ -288,9 +317,9 @@ function _buildForestDecor(group) {
   const TARGET_MIN = 18, TARGET_MAX = 22;
   let topUpGuard = 0;
   while (amberHotspots.length < TARGET_MIN && topUpGuard++ < 200) {
-    const cl = clusters[(Math.random() * clusters.length) | 0];
-    const theta = Math.random() * Math.PI * 2;   // any perimeter angle
-    const r = 3.4 + Math.random() * 1.8;
+    const cl = clusters[(rand() * clusters.length) | 0];
+    const theta = rand() * Math.PI * 2;   // any perimeter angle
+    const r = 3.4 + rand() * 1.8;
     const x = cl.cx + Math.cos(theta) * r;
     const z = cl.cz + Math.sin(theta) * r;
     const radial = Math.hypot(x, z);
@@ -298,7 +327,7 @@ function _buildForestDecor(group) {
     amberHotspots.push({
       x: +x.toFixed(2),
       z: +z.toFixed(2),
-      scale: +(0.85 + Math.random() * 0.35).toFixed(2),
+      scale: +(0.85 + rand() * 0.35).toFixed(2),
       seed: seedCounter++,
     });
   }
