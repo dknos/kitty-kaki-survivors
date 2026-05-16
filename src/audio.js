@@ -222,6 +222,22 @@ const SFX_MANIFEST = {
   fountainPour:        ['audio/twilight/fountain_pour.ogg'],
   fountainDrink:       ['audio/twilight/fountain_drink.ogg'],
   speedBoostActivate:  ['audio/twilight/speed_boost_activate.ogg'],
+  // Cinder stage SFX (Phase-2 Ballistas Agent hooks). CC0 Kenney impact/scifi
+  // layers (impactMetal_medium + impactPunch_medium for the cranking repair
+  // loop; impactBell_heavy + forceField for the activation chime; lowFrequency
+  // _explosion + thrusterFire for the bolt thunk + whoosh). All -16 LUFS to
+  // match the SFX bus. See assets/audio/cinder/ATTRIBUTION.md.
+  //
+  // ballistaRepairLoop: 1.5s seamlessly-looped cranking+hammering. The Phase-2
+  // Ballistas Agent should call sfx.ballistaRepairLoop() every ~1.4s during
+  // the 10s repair window — slight overlap masks the seam and gives a
+  // continuous mechanical feel. Implemented as a normal SFX bucket (no special
+  // <audio loop=true> path) since the agent already tick()s; one less moving
+  // part in the audio bus. The 30ms global throttle is well under 1.4s so
+  // repeated agent calls land cleanly.
+  ballistaRepairLoop:  ['audio/cinder/ballista_repair_loop.ogg'],
+  ballistaActivate:    ['audio/cinder/ballista_activate.ogg'],
+  ballistaFire:        ['audio/cinder/ballista_fire.ogg'],
 };
 
 const SFX_BANK = Object.fromEntries(Object.keys(SFX_MANIFEST).map(k => [k, []]));
@@ -408,6 +424,21 @@ export const sfx = {
   fountainPour:       _throttled('fountainPour',       () => _play('fountainPour',       { gain: 0.38 })),
   fountainDrink:      _throttled('fountainDrink',      () => _play('fountainDrink',      { gain: 0.50 })),
   speedBoostActivate: _throttled('speedBoostActivate', () => _play('speedBoostActivate', { gain: 0.55 })),
+
+  // ── Cinder stage (Phase-2 Ballistas Agent hooks) ───────────────────────────
+  // Repair loop: agent calls every ~1.4s during the 10s repair window. The
+  // sample is 1.5s seamless, so consecutive ~1.4s plays overlap ~0.1s — the
+  // overlap masks the loop seam and keeps the cranking feel continuous. Sits
+  // medium-quiet (0.32) so it doesn't drown out combat SFX during the window.
+  ballistaRepairLoop: _throttled('ballistaRepairLoop', () => _play('ballistaRepairLoop', { gain: 0.32 })),
+  // Activation chime: louder (0.62) — this is the power-fantasy reward moment
+  // at t=10. One-shot, not throttled in a way the player can hear (30ms is
+  // imperceptible; double-fire would be a real audible defect).
+  ballistaActivate:   _throttled('ballistaActivate',   () => _play('ballistaActivate',   { gain: 0.62 })),
+  // Fire: punchy (0.55) so 2-3 simultaneous bolts (4-6 active ballistas firing
+  // every 2s) don't mud the mix. Sample is short (0.65s) to leave dynamic
+  // headroom for overlapping plays through the SFX submaster.
+  ballistaFire:       _throttled('ballistaFire',       () => _play('ballistaFire',       { gain: 0.55 })),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -585,6 +616,7 @@ function _startModePoll() {
 const STAGE_AMBIENT_URLS = {
   forest: 'audio/forest/forest_ambient.ogg',
   twilight: 'audio/twilight/twilight_ambient.ogg',
+  cinder: 'audio/cinder/cinder_ambient.ogg',
 };
 let _stageAmbient = null;        // { stageId, el, srcNode, gainNode }
 
