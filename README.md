@@ -54,7 +54,7 @@ A Vampire-Survivors-style auto-attacking horde game built in **THREE.js** with n
 
 ## Credits
 
-Made by [@slopfactory9000](mailto:slopfactory9000@gmail.com).
+Made by [@dknos](mailto:rneebo@gmail.com).
 
 **Models — all CC0 / CC-BY:**
 - **Quaternius** — Ultimate Monsters bundle (Mushnub, Cactoro, Goleling, Orc, Demon, Yeti, Pink Slime, Ghost, Dragon, Mushroom King, Wasp, Spider, Wolf) and chest models — CC0

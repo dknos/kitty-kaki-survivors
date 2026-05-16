@@ -5872,7 +5872,7 @@ export function showCredits() {
   };
 
   sections.appendChild(_section('Made by', C.amber, [
-    `<a href="mailto:slopfactory9000@gmail.com" style="color:${C.amber};text-decoration:none;">@slopfactory9000</a> · code, gameplay, shaders, FX`,
+    `<a href="mailto:rneebo@gmail.com" style="color:${C.amber};text-decoration:none;">@dknos</a> · code, gameplay, shaders, FX`,
   ]));
   sections.appendChild(_section('Tech', C.cyan, [
     `<a href="https://threejs.org" target="_blank" rel="noopener" style="color:${C.cyan};text-decoration:none;">THREE.js 0.160</a> + addons (EffectComposer, GLTFLoader, DRACOLoader)`,

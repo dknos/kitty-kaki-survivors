@@ -106,7 +106,7 @@ welcome (the tutorial fires only when the run starts).
   Poly by Google, Poly Haven, and Three.js.
 - No version label. `meta.version = 1` is invisible.
 - No "Made by" attribution on start screen. README mentions
-  @slopfactory9000 — surface it.
+  @dknos — surface it.
 - No game-over outro variation between victory and death — they share the
   death screen layout. A 2-3 second victory cinematic (camera pull-out,
   amber bloom flash, banner) before the score screen would land it.
@@ -490,7 +490,7 @@ hasn't captured yet; commit as 1×1 png + 1×1 gif if needed).
 **Contract:**
 
 - **Credits modal**: `ui.js showCredits()` — new modal mirroring
-  `showOptions` structure. Lists: Game by @slopfactory9000, Models
+  `showOptions` structure. Lists: Game by @dknos, Models
   (Quaternius CC0 + Poly by Google CC-BY), Textures (Poly Haven CC0),
   Three.js + addons, Three.js logo. Push focus scope so Esc closes
   cleanly via `uiFocus.js`.
@@ -517,7 +517,7 @@ hasn't captured yet; commit as 1×1 png + 1×1 gif if needed).
     → console.error mirror + small red corner toast (auto-dismiss 4s)
     with "An error occurred. Press F3 for diagnostics."
 - **LICENSE file** at repo root: standard MIT, current year, Daniel /
-  slopfactory9000 attribution.
+  dknos attribution.
 - **README polish**:
   - Add screenshot at top (or placeholder note "screenshot pending").
   - Add demo GIF mention (or placeholder).
