@@ -53,7 +53,7 @@ import { initStageHazards, tickStageHazards, resetStageHazards, loadForestHazard
 import { applyStageRule, tickStageRule, clearStageRule } from './stageRules.js';
 import { loadArenaDecor, clearArenaDecor } from './arenaDecor.js';
 import { loadForestAmber, tickForestAmber, clearForestAmber } from './forestAmber.js';
-import { tickPuzzleSystem } from './puzzleSystem.js';
+import { tickPuzzleSystem, startPuzzle as _puzzleStart } from './puzzleSystem.js';
 import { detectRoom, FOREST_ROOMS } from './forestRooms.js';
 import { loadForestPortals, tickForestPortals, clearForestPortals } from './forestPortals.js';
 import { loadFlowWeaver, disposeFlowWeaver } from './puzzleFlowWeaver.js';
@@ -1295,6 +1295,12 @@ function _tickForestRoomTransition(dt) {
       _forestCamLerp.targetZ = null;
       if (state.run.roomState !== 'PUZZLE_ACTIVE') {
         state.run.roomState = (state.run.currentRoom === 'glade') ? 'ARENA' : 'IN_ROOM';
+        // Auto-arm the puzzle when transition lerp finishes inside a puzzle
+        // room. Skips if puzzle already solved this run (player just sight-sees).
+        const room = FOREST_ROOMS[state.run.currentRoom];
+        if (room && room.puzzle && !state.run.forestPuzzlesSolved[room.puzzle]) {
+          _puzzleStart(room.puzzle);
+        }
       }
     }
   }
