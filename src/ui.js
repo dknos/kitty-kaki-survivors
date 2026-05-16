@@ -285,7 +285,7 @@ function injectCSS() {
       color: ${C.text};
       animation: kk-fade-in 0.28s ease-out backwards;
     }
-    .kk-card:hover, .kk-card:focus {
+    .kk-card:hover, .kk-card:focus-visible {
       transform: translateY(-6px);
       border-color: ${C.amber};
       box-shadow:
@@ -487,7 +487,7 @@ function injectCSS() {
     .kk-card {
       transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
     }
-    .kk-card:hover, .kk-card:focus {
+    .kk-card:hover, .kk-card:focus-visible {
       transform: translateY(-6px) scale(1.015);
     }
     /* ── Button system (3 tiers) ──
@@ -2420,6 +2420,7 @@ export function showStartScreen(text) {
     if (_startFocusScope) { popFocusScope(_startFocusScope); _startFocusScope = null; }
     const input = document.createElement('input');
     input.type = 'text';
+    input.setAttribute('aria-label', 'Preset name');
     input.maxLength = 32;
     input.placeholder = 'Preset name…';
     input.style.cssText = `padding:8px 12px; font-family:${F.body}; font-size:calc(var(--kk-font-scale, 1) * 12px);
@@ -2537,6 +2538,7 @@ export function showStartScreen(text) {
       const closeBtn = document.createElement('button');
       closeBtn.type = 'button';
       closeBtn.textContent = '✕';
+      closeBtn.setAttribute('aria-label', 'Delete preset');
       closeBtn.title = 'Delete preset';
       closeBtn.style.cssText = `
         position: absolute; top: 50%; right: 6px; transform: translateY(-50%);
@@ -3792,6 +3794,7 @@ export function showBossRushWager() {
       letter-spacing:0.22em; color:${C.amber}; text-align:center; margin-bottom: 6px;`;
     const slider = document.createElement('input');
     slider.type = 'range';
+    slider.setAttribute('aria-label', 'Wager amount');
     slider.min = '100';
     slider.max = '1000';
     slider.step = '50';
@@ -4759,7 +4762,10 @@ export function showOptions() {
       gap: 18px; padding: 3px 0;`;
     const labWrap = document.createElement('div');
     labWrap.style.cssText = `display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto;`;
-    const lab = document.createElement('span');
+    const lab = document.createElement('label');
+    const id = 'kk-opt-' + Math.random().toString(36).substr(2, 9);
+    controlEl.id = id;
+    lab.htmlFor = id;
     lab.textContent = labelText;
     lab.className = 'kk-fs-sm';
     lab.style.cssText = `font-family: ${F.body};
@@ -5048,6 +5054,7 @@ export function showOptions() {
   });
   const fileIn = document.createElement('input');
   fileIn.type = 'file';
+  fileIn.setAttribute('aria-label', 'Upload save file');
   fileIn.accept = 'application/json,.json';
   fileIn.style.cssText = `color: ${C.text}; font-family: ${F.mono};`;
   fileIn.addEventListener('change', () => {
@@ -5177,6 +5184,7 @@ function _showResetConfirmModal(onConfirm) {
   p.innerHTML = `This wipes <b>coins, embers, sigils, unlocks, run history, achievements, and presets</b>. There is no undo.<br><br>Type <b style="color:${C.red};">RESET</b> to confirm:`;
   const inp = document.createElement('input');
   inp.type = 'text';
+  inp.setAttribute('aria-label', 'Type RESET to confirm wipe');
   inp.placeholder = 'RESET';
   inp.className = 'kk-fs-md';
   inp.style.cssText = `padding: 8px 12px; background: rgba(8,4,4,0.9);
