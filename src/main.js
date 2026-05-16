@@ -21,6 +21,7 @@ import { initWeapons, tickWeapons, acquireWeapon, weaponChoices, _resetEvoAnnoun
 import { tickChainArcs } from './chainFx.js';
 import { tickEvolveBursts, disposeAllEvolveBursts, setEvolveBurstStateRef } from './fx/evolveBurst.js';
 import { initDissolveBurst, tickDissolveBursts, disposeAllDissolveBursts, setDissolveBurstStateRef } from './fx/dissolveBurst.js';
+import { tickVelocityVeils, disposeAllVelocityVeils } from './fx/ribbonTrail.js';
 import { initProjectileVisuals, releaseProjectileVisuals } from './weapons/autoAim.js';
 import { initXP, updateGems, applyLevelUpChoice } from './xp.js';
 import { initSpawnDirector, tickSpawnDirector, secondsUntilNextMiniBoss } from './spawnDirector.js';
@@ -571,6 +572,11 @@ function _teardownActiveRun() {
   // pre-spawn camera frame. The InstancedMesh itself stays alive (it's
   // reused across runs — same shape as fx.js kill ring init pattern).
   if (state.scene) disposeAllDissolveBursts(state.scene);
+  // Punch List #7 — Velocity Veil ribbon trail. Drop any live ribbon
+  // segments + descriptors so a stranded fountain trail can't ghost into
+  // the next run's hero spawn position. Mirrors the dissolveBurst teardown
+  // shape — the InstancedMesh itself stays alive for re-use.
+  if (state.scene) disposeAllVelocityVeils(state.scene);
 
   // Finalize Helltide BEFORE resetState wipes its state. teardownHelltide
   // reads state.run.helltideActive + helltideEmbersBanked to credit lifetime
@@ -1432,6 +1438,11 @@ function frame(now) {
   _p=perfStart(); tickChainArcs(logicDt);         perfMark('chainArcs', _p);
   _p=perfStart(); tickEvolveBursts(logicDt);      perfMark('evolveBursts', _p);
   _p=perfStart(); tickDissolveBursts(logicDt);    perfMark('dissolveBursts', _p);
+  // Punch List #7 — Velocity Veil ribbon trail + splash. Stage-agnostic
+  // tick (only fires meaningful work while a veil descriptor is active;
+  // descriptors only spawn on Twilight fountain drinks). Cap MAX_VEILS=4,
+  // POOL_CAP=128 InstancedMesh slots, ZERO per-tick allocation.
+  _p=perfStart(); tickVelocityVeils(logicDt);     perfMark('velocityVeils', _p);
   _p=perfStart(); tickStageRule(state, logicDt);  perfMark('stageRule', _p);
   _p=perfStart(); tickMiniEvents(logicDt);        perfMark('miniEvents', _p);
   _p=perfStart(); tickArenaProps(logicDt);        perfMark('arenaProps', _p);
