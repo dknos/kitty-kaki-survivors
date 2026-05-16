@@ -1045,6 +1045,294 @@ function _buildCinderDecor(group) {
   };
 }
 
+function _buildVoidDecor(group) {
+  // SHATTERED MONOLITH — endgame void stage: fractured floating pillars,
+  // missing floor-tile decals, teleport pad placeholders, cosmic star ambient.
+  // Contract: docs/VOID_VISUAL_STYLE.md (8-color palette, pad spec, tile gap
+  // spec, pillar spec, hotspot JSON schema). Split from _buildCatacombDecor
+  // because catacomb keeps its bone+pillar pack — void is a different theme
+  // with its own color contract and gameplay (teleport pads, not bones).
+  //
+  // Palette slots used here (void, per style guide):
+  //   slot 1 #040208 (obsidian black — missing-tile decals)
+  //   slot 2 #1a0a3a (deep violet abyss — pillar shadow material, pad disc base)
+  //   slot 3 #3a1a5e (cosmic purple mid — pillar stonework body)
+  //   slot 4 #d8dce8 (chrome white edge — pillar fractured cap)
+  //   slot 8 #a8b8ff (star points — tile-gap centers, ambient cosmic shimmer)
+  // Slots 5/6/7 (pad cyan idle/active glow + teleport flash) belong to
+  // Phase-2 Pads Agent — placeholders here intentionally non-emissive.
+  //
+  // Dimension note: task spec uses smaller pillars (0.8u dia × 3-4u tall body
+  // + chrome cone cap) vs VOID_VISUAL_STYLE.md's 2-3u dia × 8-14u tall. Task
+  // dimensions win — they still read as fractured monoliths at this scale and
+  // keep the floating-askew feel without dominating the play area silhouette.
+  //
+  // ── deterministic RNG (split-stream model — mirrors cinder pattern). Four
+  // independent mulberry32 streams seeded off 0xC0DE99 so each concern
+  // (pillars / pads / tiles / stars) is replayable in isolation. Regen tool
+  // drives the pillar + pad streams in lock-step with this file; tile + star
+  // streams can be added/reordered without breaking the JSON output.
+  function makeMulberry(seed) {
+    let state = seed >>> 0;
+    return function rand() {
+      state = (state + 0x6D2B79F5) >>> 0;
+      let t = state;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  const SEED = 0xC0DE99;
+  const rngPillar = makeMulberry(SEED);
+  const rngPad    = makeMulberry((SEED ^ 0x10000) >>> 0);
+  const rngTile   = makeMulberry((SEED ^ 0x20000) >>> 0);
+  const rngStar   = makeMulberry((SEED ^ 0x30000) >>> 0);
+
+  const dummy = new THREE.Object3D();
+
+  // ── 1) fractured floating pillars — 4-6 composite groups at radius 20-50u
+  // Each pillar = composite mesh (NOT InstancedMesh — only 4-6, and the
+  // per-instance tilt + cone-cap rotation differ enough that composite groups
+  // are simpler). Per-pillar layout:
+  //   - slot 2 deep-violet shadow base: CylinderGeometry hex 0.4r × 3-4u tall
+  //   - slot 3 cosmic-purple mid stonework band: thin Cylinder near top
+  //   - slot 4 chrome-white fractured cap: ConeGeometry slightly tilted
+  // Per-instance Y-rotation random + small X/Z tilt for "floating askew" feel.
+  // Pillar positions drive the pad clearance contract — the regen tool
+  // replays this stream to know where the pillars sit.
+  //
+  // RNG draw order per pillar (regen tool MUST mirror byte-for-byte):
+  //   COUNT: 1 draw   (4..6 via 4 + ((rand() * 3) | 0))
+  //   per pillar:
+  //     1) angle jitter   (rand() - 0.5) * 2 * jitterMax
+  //     2) radius         20 + rand() * 30    → 20..50
+  //     3) height         3 + rand() * 1      → 3..4
+  //     4) yaw            rand() * Math.PI * 2
+  //     5) tilt X         (rand() - 0.5) * 0.18
+  //     6) tilt Z         (rand() - 0.5) * 0.18
+  const PILLAR_COUNT = 4 + ((rngPillar() * 3) | 0); // 4..6
+  const pillarStep = (Math.PI * 2) / PILLAR_COUNT;
+  const pillarJitterMax = pillarStep * 0.25;
+  const pillars = [];
+
+  // Shared geometries / materials — tracked once, reused across all pillars.
+  const baseGeo = new THREE.CylinderGeometry(0.4, 0.45, 1.0, 6, 1, false); // hex prism, scaled per-instance
+  const bandGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.18, 6, 1, false);  // wider band near top
+  const capGeo  = new THREE.ConeGeometry(0.55, 1.1, 5);                     // jagged 5-sided cone
+  const baseMat = new THREE.MeshStandardMaterial({
+    color: 0x1a0a3a, roughness: 0.95, metalness: 0.05, flatShading: true,
+  });
+  const bandMat = new THREE.MeshStandardMaterial({
+    color: 0x3a1a5e, roughness: 0.85, metalness: 0.10, flatShading: true,
+  });
+  const capMat = new THREE.MeshStandardMaterial({
+    color: 0xd8dce8, roughness: 0.55, metalness: 0.20, flatShading: true,
+    emissive: 0x1a0a3a, emissiveIntensity: 0.10, // mildly self-lit, per style guide
+  });
+  _track(baseGeo); _track(bandGeo); _track(capGeo);
+  _track(baseMat); _track(bandMat); _track(capMat);
+
+  for (let p = 0; p < PILLAR_COUNT; p++) {
+    const angle = p * pillarStep + (rngPillar() - 0.5) * 2 * pillarJitterMax;
+    const radius = 20 + rngPillar() * 30;     // 20..50
+    const height = 3 + rngPillar() * 1;       // 3..4
+    const yaw = rngPillar() * Math.PI * 2;
+    const tiltX = (rngPillar() - 0.5) * 0.18; // small "floating askew" tilt
+    const tiltZ = (rngPillar() - 0.5) * 0.18;
+    const px = Math.cos(angle) * radius;
+    const pz = Math.sin(angle) * radius;
+    pillars.push({ x: px, z: pz });
+
+    const g = new THREE.Group();
+    g.position.set(px, 0, pz);
+    g.rotation.set(tiltX, yaw, tiltZ);
+
+    // Deep violet shadow base — tall prism, scaled to match per-pillar height.
+    const baseMesh = new THREE.Mesh(baseGeo, baseMat);
+    baseMesh.position.set(0, height * 0.5, 0);
+    baseMesh.scale.set(1, height, 1);
+    g.add(baseMesh);
+
+    // Cosmic purple mid band — sits just below the cap.
+    const band = new THREE.Mesh(bandGeo, bandMat);
+    band.position.set(0, height - 0.15, 0);
+    g.add(band);
+
+    // Chrome white fractured cap — cone slightly tilted to look broken.
+    const cap = new THREE.Mesh(capGeo, capMat);
+    cap.position.set(0, height + 0.45, 0);
+    cap.rotation.set((rngPillar() - 0.5) * 0.4, rngPillar() * Math.PI * 2, (rngPillar() - 0.5) * 0.4);
+    g.add(cap);
+
+    group.add(g);
+  }
+
+  // ── 2) teleport pad placeholders — 4-6 disc bases at radius 22-48u ──────
+  // Phase-2 Pads Agent renders runtime entities (cyan ring + pulse + bloom);
+  // we ship only the deep-violet stone disc base so the player sees a
+  // recognizable silhouette before activation. NO emissive on placeholder.
+  // Positions chosen by rejection sampling: must respect 12u min-distance
+  // from other pads AND 4u min-distance from any pillar center. The regen
+  // tool mirrors this loop exactly so the JSON aligns with placeholder
+  // positions in-game.
+  //
+  // RNG draw order per pad attempt (regen tool MUST mirror):
+  //   COUNT: 1 draw   (4..6 via 4 + ((rand() * 3) | 0))
+  //   per attempt (accept OR reject):
+  //     a) angle  → 1 draw
+  //     b) radius → 1 draw  via 22 + rand() * 26   → 22..48
+  //     c) scale  → 1 draw  via 0.85 + rand() * 0.35  → 0.85..1.20
+  //   Rejected attempts STILL consume all three draws.
+  const PAD_TARGET = 4 + ((rngPad() * 3) | 0); // 4..6
+  const MIN_PAD_DIST_SQ = 12 * 12;
+  const MIN_PILLAR_DIST_SQ = 4 * 4;
+  const padSpots = [];
+  let padGuard = 0;
+  while (padSpots.length < PAD_TARGET && padGuard++ < 500) {
+    const a = rngPad() * Math.PI * 2;
+    const r = 22 + rngPad() * 26; // 22..48
+    const scale = +(0.85 + rngPad() * 0.35).toFixed(2); // 0.85..1.20
+    const x = Math.cos(a) * r;
+    const z = Math.sin(a) * r;
+    // Reject if too close to another pad.
+    let bad = false;
+    for (const p of padSpots) {
+      const dx = x - p.x, dz = z - p.z;
+      if (dx * dx + dz * dz < MIN_PAD_DIST_SQ) { bad = true; break; }
+    }
+    if (bad) continue;
+    // Reject if too close to any pillar center.
+    for (const pil of pillars) {
+      const dx = x - pil.x, dz = z - pil.z;
+      if (dx * dx + dz * dz < MIN_PILLAR_DIST_SQ) { bad = true; break; }
+    }
+    if (bad) continue;
+    padSpots.push({
+      x: +x.toFixed(2),
+      z: +z.toFixed(2),
+      scale,
+      seed: 6000 + padSpots.length,
+    });
+  }
+
+  // Render placeholder disc bases — InstancedMesh of a single flat cylinder.
+  // 1.2u dia × 0.1u tall per style guide (very flat rim). NO emissive — the
+  // Phase-2 Pads Agent owns the cyan ring/glow.
+  const padDiscGeo = new THREE.CylinderGeometry(0.6, 0.6, 0.1, 16, 1, false);
+  padDiscGeo.translate(0, 0.05, 0);
+  const padDiscMat = new THREE.MeshStandardMaterial({
+    color: 0x1a0a3a,            // slot 2 deep violet
+    roughness: 0.85, metalness: 0.10,
+    flatShading: true,
+    // NO emissive — Phase-2 Pads Agent owns slot 5/6/7 cyan glow + flash.
+  });
+  const PAD_SLOTS = Math.max(PAD_TARGET, padSpots.length);
+  const padInst = new THREE.InstancedMesh(padDiscGeo, padDiscMat, PAD_SLOTS);
+  for (let i = 0; i < PAD_SLOTS; i++) {
+    if (i < padSpots.length) {
+      const b = padSpots[i];
+      dummy.position.set(b.x, 0, b.z);
+      dummy.scale.setScalar(b.scale);
+      dummy.rotation.set(0, 0, 0);
+    } else {
+      dummy.position.set(0, -1000, 0);
+      dummy.scale.setScalar(0.001);
+      dummy.rotation.set(0, 0, 0);
+    }
+    dummy.updateMatrix();
+    padInst.setMatrixAt(i, dummy.matrix);
+  }
+  padInst.instanceMatrix.needsUpdate = true;
+  group.add(padInst);
+  _track(padDiscGeo); _track(padDiscMat);
+  group.userData.voidTeleportHotspots = padSpots;
+
+  // ── 3) missing-tile decals — 5-8 ground-plane decals at radius 18-50u ───
+  // Pure visual fiction: NO collision, NO damage. Slot 1 obsidian black,
+  // opacity 0.85, bloom OFF. Slight per-decal Y-jitter so they don't all sit
+  // at exactly y=0 (reads more like holes than posters).
+  const TILE_COUNT = 5 + ((rngTile() * 4) | 0); // 5..8
+  const tileGeo = new THREE.PlaneGeometry(1, 1);
+  const tileMat = new THREE.MeshStandardMaterial({
+    color: 0x040208,            // slot 1 obsidian black
+    roughness: 1.0, metalness: 0.0,
+    transparent: true, opacity: 0.85, side: THREE.DoubleSide,
+    depthWrite: false,
+    // NO emissive — the void absorbs light, doesn't emit it.
+  });
+  const tileInst = new THREE.InstancedMesh(tileGeo, tileMat, TILE_COUNT);
+  // NO BLOOM_LAYER enable — gaps must not glow.
+  for (let i = 0; i < TILE_COUNT; i++) {
+    const a = rngTile() * Math.PI * 2;
+    const r = 18 + rngTile() * 32; // 18..50
+    const w = 1.5 + rngTile() * 1.0;  // 1.5..2.5u
+    const h = 1.5 + rngTile() * 1.0;
+    const yawRot = rngTile() * Math.PI * 2;
+    const yJitter = -0.02 + (rngTile() - 0.5) * 0.04; // tiny ± Y so not all at 0
+    const cx = Math.cos(a) * r;
+    const cz = Math.sin(a) * r;
+    dummy.position.set(cx, yJitter, cz);
+    dummy.scale.set(w, h, 1);
+    dummy.rotation.set(-Math.PI / 2, 0, yawRot);
+    dummy.updateMatrix();
+    tileInst.setMatrixAt(i, dummy.matrix);
+  }
+  tileInst.instanceMatrix.needsUpdate = true;
+  group.add(tileInst);
+  _track(tileGeo); _track(tileMat);
+
+  // ── 4) ambient cosmic star particles — ~25 small bloom-lit octahedrons ──
+  // Slot 8 #a8b8ff, varied y heights 0.2-2.5u, additive bloom feel. Register
+  // ambient bob on the shared _bobbers slot — clearArenaDecor wipes between
+  // stage swaps so reuse is safe. Only stars bob (one InstancedMesh per slot).
+  const STAR_COUNT = 25;
+  const starGeo = new THREE.OctahedronGeometry(0.06, 0);
+  const starMat = new THREE.MeshStandardMaterial({
+    color: 0xa8b8ff,            // slot 8 star points
+    emissive: 0xa8b8ff,
+    emissiveIntensity: 1.6,     // 1.4..2.2 per style guide
+    roughness: 0.3, metalness: 0.0,
+    flatShading: true,
+    transparent: true, opacity: 0.95,
+  });
+  const starInst = new THREE.InstancedMesh(starGeo, starMat, STAR_COUNT);
+  starInst.layers.enable(BLOOM_LAYER);
+  const starBaseY = new Float32Array(STAR_COUNT);
+  const starPhase = new Float32Array(STAR_COUNT);
+  const starAmp   = new Float32Array(STAR_COUNT);
+  const starFreq  = new Float32Array(STAR_COUNT);
+  for (let i = 0; i < STAR_COUNT; i++) {
+    const a = rngStar() * Math.PI * 2;
+    const u = Math.pow(rngStar(), 1 / 1.4); // mild outward bias
+    const r = 18 + (55 - 18) * u;
+    const x = Math.cos(a) * r;
+    const z = Math.sin(a) * r;
+    const y = 0.2 + rngStar() * 2.3; // 0.2..2.5u — varied heights
+    starBaseY[i] = y;
+    starPhase[i] = rngStar() * Math.PI * 2;
+    starAmp[i]   = 0.04 + rngStar() * 0.08;   // very subtle drift
+    starFreq[i]  = 0.3 + rngStar() * 0.5;
+    const s = 0.7 + rngStar() * 0.8;
+    dummy.position.set(x, y, z);
+    dummy.scale.setScalar(s);
+    dummy.rotation.set(rngStar() * Math.PI, rngStar() * Math.PI * 2, rngStar() * Math.PI);
+    dummy.updateMatrix();
+    starInst.setMatrixAt(i, dummy.matrix);
+  }
+  starInst.instanceMatrix.needsUpdate = true;
+  group.add(starInst);
+  _track(starGeo); _track(starMat);
+  // Register subtle Y-bob on the shared _bobbers slot.
+  _bobbers = { mesh: starInst, baseY: starBaseY, phase: starPhase, amp: starAmp, freq: starFreq };
+
+  return {
+    pillars: PILLAR_COUNT,
+    tileGaps: TILE_COUNT,
+    padPlaceholders: padSpots.length,
+    stars: STAR_COUNT,
+  };
+}
+
 function _buildCatacombDecor(group) {
   // 1) Floating bone fragments — mix of small cones (femurs / shards) and
   // tiny boxes (vertebrae). Off-white, drift slowly at varied heights.
@@ -1217,8 +1505,8 @@ export function loadArenaDecor(stageId, scene) {
     case 'forest':   counts = _buildForestDecor(group); break;
     case 'twilight': counts = _buildTwilightDecor(group); break;
     case 'cinder':   counts = _buildCinderDecor(group); break;
-    case 'catacomb':
-    case 'void':     counts = _buildCatacombDecor(group); break;
+    case 'catacomb': counts = _buildCatacombDecor(group); break;
+    case 'void':     counts = _buildVoidDecor(group); break;
     default: return null;
   }
   scene.add(group);
