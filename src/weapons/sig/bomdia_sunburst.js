@@ -100,6 +100,14 @@ function _castBeams(level) {
   const dirs = level.beamCount === 8
     ? [0, Math.PI/4, Math.PI/2, 3*Math.PI/4, Math.PI, 5*Math.PI/4, 3*Math.PI/2, 7*Math.PI/4]
     : [0, Math.PI/2, Math.PI, 3*Math.PI/2];
+  // perf: hoist queryRadius outside the beam-direction loop. All beams share
+  // the same origin (hero) and radius (len), so the candidate set is identical
+  // across directions. Pre-fix this allocated a fresh array + bounding-box
+  // iteration 4-8x per cast at cooldown 1.7-3.8s — matched the periodic stutter
+  // reported on cinder / bomdia. Behavior unchanged: each direction still
+  // filters by along/perp independently.
+  let cands = null;
+  try { cands = queryRadius(h, len); } catch (_) { cands = state.enemies && state.enemies.active; }
   for (const ang of dirs) {
     // Find a free slot
     let slot = -1;
@@ -110,11 +118,8 @@ function _castBeams(level) {
       slot = oldest;
     }
     _beams[slot] = { cx: h.x, cz: h.z, ang, len, width, t: 0, life: level.linger };
-    // Damage application — rectangle-in-world test. We sample candidates in
-    // a circle of radius `len` and accept those whose perpendicular distance
-    // to the beam axis is within width/2.
-    let cands = null;
-    try { cands = queryRadius(h, len); } catch (_) { cands = state.enemies && state.enemies.active; }
+    // Damage application — rectangle-in-world test against shared candidate
+    // set; perpendicular distance to the beam axis must be within width/2.
     if (!cands) continue;
     const cosA = Math.cos(ang), sinA = Math.sin(ang);
     const halfW = width * 0.5;
