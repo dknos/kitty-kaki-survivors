@@ -215,6 +215,13 @@ const SFX_MANIFEST = {
                      'audio/forest/crystal_shatter_b.ogg',
                      'audio/forest/crystal_shatter_c.ogg'],
   amberDetonation:  ['audio/forest/amber_detonation.ogg'],
+  // Twilight stage SFX (Phase-2 Fountains Agent hooks). CC0 Kenney bell/glass/
+  // forceField layers + synthesized gulp/water/crow elements (the Kenney packs
+  // don't ship water/gulp samples). All -16 LUFS to match the SFX bus. See
+  // assets/audio/twilight/ATTRIBUTION.md.
+  fountainPour:        ['audio/twilight/fountain_pour.ogg'],
+  fountainDrink:       ['audio/twilight/fountain_drink.ogg'],
+  speedBoostActivate:  ['audio/twilight/speed_boost_activate.ogg'],
 };
 
 const SFX_BANK = Object.fromEntries(Object.keys(SFX_MANIFEST).map(k => [k, []]));
@@ -392,6 +399,15 @@ export const sfx = {
   // sample for now; agent can layer multiple amber detonations via the timing
   // it already controls (8-12 shards + 0.6s shockwave timeline).
   amberDetonation:  _throttled('amberDetonation',  () => _play('amberDetonation',  { gain: 0.65 })),
+
+  // ── Twilight stage (Phase-2 Fountains Agent hooks) ─────────────────────────
+  // Fountain pour layers the 0.6s drink animation; fountain drink chime fires
+  // at t=0.6 of the drink anim (aura activation moment). Speed-boost activate
+  // is a one-shot whoosh+shimmer for the slot-8 aura ring spawn. All throttled
+  // 30ms — proximity-triggered drinks shouldn't double-fire on a single tick.
+  fountainPour:       _throttled('fountainPour',       () => _play('fountainPour',       { gain: 0.38 })),
+  fountainDrink:      _throttled('fountainDrink',      () => _play('fountainDrink',      { gain: 0.50 })),
+  speedBoostActivate: _throttled('speedBoostActivate', () => _play('speedBoostActivate', { gain: 0.55 })),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -568,6 +584,7 @@ function _startModePoll() {
 // ─────────────────────────────────────────────────────────────────────────────
 const STAGE_AMBIENT_URLS = {
   forest: 'audio/forest/forest_ambient.ogg',
+  twilight: 'audio/twilight/twilight_ambient.ogg',
 };
 let _stageAmbient = null;        // { stageId, el, srcNode, gainNode }
 

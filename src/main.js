@@ -928,10 +928,10 @@ function applyMetaUpgrades() {
       clearForestHazards(state.scene);
     }
   }
-  // Per-stage ambient bed (loop). Currently only `forest` ships an ambient
-  // file (assets/audio/forest/forest_ambient.ogg); other stages no-op until
-  // their packs land. Routed through the music submaster so the Music Volume
-  // slider controls it. Stop on null/unknown stage.
+  // Per-stage ambient bed (loop). `forest` and `twilight` ship ambient files
+  // (assets/audio/forest/forest_ambient.ogg and audio/twilight/twilight_ambient.ogg);
+  // other stages no-op until their packs land. Routed through the music
+  // submaster so the Music Volume slider controls it. Stop on null/unknown stage.
   if (stage) {
     playStageAmbient(stage.id);
   } else {
