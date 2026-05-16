@@ -52,61 +52,270 @@ function _track(obj) { _disposables.push(obj); }
 // ── stage packs ───────────────────────────────────────────────────────────────
 
 function _buildForestDecor(group) {
-  // 1) Trees — cone-on-cylinder, dark green. ~40 instances. Merged into a
-  // single InstancedMesh by using a small parent group of two meshes that
-  // share a transform per instance.
-  const TREES = 42;
-  const trunkGeo = new THREE.CylinderGeometry(0.12, 0.18, 1.2, 6);
-  const crownGeo = new THREE.ConeGeometry(0.95, 2.2, 8);
-  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x3a2a1a, roughness: 1.0, metalness: 0 });
-  const crownMat = new THREE.MeshStandardMaterial({ color: 0x1d4a25, roughness: 0.95, metalness: 0 });
-  const trunkInst = new THREE.InstancedMesh(trunkGeo, trunkMat, TREES);
-  const crownInst = new THREE.InstancedMesh(crownGeo, crownMat, TREES);
-  trunkInst.receiveShadow = false; crownInst.receiveShadow = false;
+  // PETRIFIED FOREST — bioluminescent crystal-stone woods.
+  // Contract: docs/FOREST_VISUAL_STYLE.md (8-color palette, choke corridors,
+  // amber hotspot JSON). Per-cluster crystal pack with funnel gaps and slot-5
+  // accent shards. No grass tufts (doesn't fit petrified theme). Amber
+  // hotspots are coordinate-only and written to disk for the Phase-2 Amber
+  // Interactable agent to consume — we do NOT render them here.
+  //
+  // Palette slots used here:
+  //   slot 1 #1a1e22 (stone-trunk base, charcoal)         — body color
+  //   slot 2 #2d3a55 (crystal-trunk mid, blue-gray)       — body color
+  //   slot 3 #5f8fb5 (crystal facet hi, pale cyan-steel)  — tip color
+  //   slot 4 #7df0c4 (bio-glow primary, mint)             — tip emissive
+  //   slot 5 #3ecf9a (bio-glow secondary, darker mint)    — accent shards
+
+  // ── shared per-instance transform dummy ──────────────────────────────────
   const dummy = new THREE.Object3D();
-  for (let i = 0; i < TREES; i++) {
-    const { x, z } = _scatterRing(28, 60, 2.0);
-    const s = 0.85 + Math.random() * 0.9;
-    const ry = Math.random() * Math.PI * 2;
-    // trunk
-    dummy.position.set(x, 0.6 * s, z);
-    dummy.scale.setScalar(s);
-    dummy.rotation.set(0, ry, 0);
-    dummy.updateMatrix();
-    trunkInst.setMatrixAt(i, dummy.matrix);
-    // crown sits on top of the trunk
-    dummy.position.set(x, (1.2 + 1.1) * s, z);
-    dummy.updateMatrix();
-    crownInst.setMatrixAt(i, dummy.matrix);
-  }
-  trunkInst.instanceMatrix.needsUpdate = true;
-  crownInst.instanceMatrix.needsUpdate = true;
-  group.add(trunkInst); group.add(crownInst);
-  _track(trunkGeo); _track(crownGeo); _track(trunkMat); _track(crownMat);
 
-  // 2) Grass tufts — small upright planes with a soft alpha cutout. 100 of
-  // them, sprinkled inside the tree ring (so the player still passes through
-  // them on the periphery).
-  const TUFTS = 100;
-  const tuftGeo = new THREE.PlaneGeometry(0.5, 0.45);
-  const tuftMat = new THREE.MeshBasicMaterial({
-    color: 0x4c8a3a, side: THREE.DoubleSide, transparent: true, opacity: 0.85,
+  // ── 1) cluster centers (deterministic open-arc layout) ───────────────────
+  // Pick 3–5 cluster anchors evenly around the play ring with a small angular
+  // jitter, so we always preserve open arcs between clumps (player escape
+  // routes). Radius per cluster picked in [22, 46] so they sit well inside
+  // the 60u play ring but outside the spawn safe zone.
+  const CLUSTER_COUNT = 4 + (Math.random() < 0.5 ? 0 : 1); // 4 or 5
+  const baseStep = (Math.PI * 2) / CLUSTER_COUNT;
+  const jitterMax = baseStep * 0.25;  // ≤ ¼ wedge so arcs stay open
+  const clusters = [];
+  for (let c = 0; c < CLUSTER_COUNT; c++) {
+    const angle = c * baseStep + (Math.random() - 0.5) * 2 * jitterMax;
+    const radius = 22 + Math.random() * 24; // 22..46
+    clusters.push({
+      cx: Math.cos(angle) * radius,
+      cz: Math.sin(angle) * radius,
+      angle,
+      // Funnel gap: a single ~60° wedge per cluster where no crystal grows
+      // (and where the amber hotspot is biased). Random offset within the
+      // cluster so swarms threading through the funnel hit different lanes.
+      funnelDir: Math.random() * Math.PI * 2,
+      funnelHalfWidth: Math.PI / 6,   // 30° half = 60° gap
+      crystalCount: 6 + ((Math.random() * 5) | 0), // 6..10
+    });
+  }
+
+  // ── 2) crystal trees — TWO InstancedMesh pools sharing transforms ────────
+  // Body (hex-prism): slot 2 color, NO emissive, NO bloom.
+  // Tips (twin cones merged): slot 3 color, slot 4 emissive, BLOOM ON.
+  // Same per-instance matrix applied to both meshes so they always co-locate.
+  let totalCrystals = 0;
+  for (const cl of clusters) totalCrystals += cl.crystalCount;
+
+  // Body geo — tall hex prism. Center at y=0.55 (height/2) so y-position = 0
+  // is "ground", but we lift to half-height so base sits on floor.
+  const bodyGeo = new THREE.CylinderGeometry(0.22, 0.34, 1.1, 6, 1, false);
+  // Tips — merge two cones (one tall up-pointing facet on top, one short
+  // inverted at the base flare) into a single BufferGeometry. Same manual-
+  // merge pattern as _buildTwilightDecor uses.
+  const _tipUp   = new THREE.ConeGeometry(0.22, 0.55, 6);
+  _tipUp.translate(0, 0.825, 0);   // sit on top of body (body half-height 0.55 + cone half 0.275)
+  const _tipMid  = new THREE.ConeGeometry(0.18, 0.40, 6);
+  _tipMid.translate(0, 1.20, 0);   // small secondary tip above the first
+  const tipsGeo = (() => {
+    const merge = new THREE.BufferGeometry();
+    const parts = [_tipUp, _tipMid];
+    let vc = 0;
+    for (const p of parts) vc += p.attributes.position.count;
+    const pos = new Float32Array(vc * 3);
+    const nrm = new Float32Array(vc * 3);
+    let off = 0;
+    for (const p of parts) {
+      const pp = p.attributes.position.array;
+      const pn = p.attributes.normal ? p.attributes.normal.array : null;
+      pos.set(pp, off);
+      if (pn) nrm.set(pn, off);
+      off += pp.length;
+    }
+    merge.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    merge.setAttribute('normal',   new THREE.BufferAttribute(nrm, 3));
+    merge.computeBoundingSphere();
+    return merge;
+  })();
+  _tipUp.dispose(); _tipMid.dispose();
+
+  const bodyMat = new THREE.MeshStandardMaterial({
+    color: 0x2d3a55,           // slot 2 — cold blue-gray
+    roughness: 0.85, metalness: 0.05,
+    flatShading: true,         // faceted silhouette under bloom
   });
-  const tuftInst = new THREE.InstancedMesh(tuftGeo, tuftMat, TUFTS);
-  for (let i = 0; i < TUFTS; i++) {
-    const { x, z } = _scatterRing(20, 58, 1.8);
-    const s = 0.7 + Math.random() * 0.9;
-    dummy.position.set(x, 0.22 * s, z);
-    dummy.scale.set(s, s, 1);
-    dummy.rotation.set(0, Math.random() * Math.PI * 2, 0);
-    dummy.updateMatrix();
-    tuftInst.setMatrixAt(i, dummy.matrix);
-  }
-  tuftInst.instanceMatrix.needsUpdate = true;
-  group.add(tuftInst);
-  _track(tuftGeo); _track(tuftMat);
+  const tipsMat = new THREE.MeshStandardMaterial({
+    color: 0x5f8fb5,           // slot 3 — pale cyan-steel facet
+    emissive: 0x7df0c4,        // slot 4 — bio-glow primary mint
+    emissiveIntensity: 1.5,    // spec: 1.2–1.8
+    roughness: 0.25, metalness: 0.10,
+    flatShading: true,
+    transparent: true, opacity: 0.94,
+  });
+  const bodyInst = new THREE.InstancedMesh(bodyGeo, bodyMat, totalCrystals);
+  const tipsInst = new THREE.InstancedMesh(tipsGeo, tipsMat, totalCrystals);
+  tipsInst.layers.enable(BLOOM_LAYER);   // facet tips glow
+  bodyInst.receiveShadow = false; tipsInst.receiveShadow = false;
 
-  return { trees: TREES, tufts: TUFTS };
+  let ci = 0;
+  for (const cl of clusters) {
+    for (let k = 0; k < cl.crystalCount; k++) {
+      // Inner-cluster polar scatter AROUND the cluster center (not from world
+      // origin). Reserve the funnel wedge so swarm pathing has a lane.
+      let theta;
+      // Re-roll until outside funnel wedge (bounded loop, 8 max tries — then
+      // accept whatever we have to avoid infinite loops in unlucky seeds).
+      for (let tries = 0; tries < 8; tries++) {
+        theta = Math.random() * Math.PI * 2;
+        const d = Math.atan2(
+          Math.sin(theta - cl.funnelDir),
+          Math.cos(theta - cl.funnelDir),
+        );
+        if (Math.abs(d) > cl.funnelHalfWidth) break;
+      }
+      const r = 0.6 + Math.random() * 2.9;   // 0.6..3.5u from cluster center
+      const x = cl.cx + Math.cos(theta) * r;
+      const z = cl.cz + Math.sin(theta) * r;
+
+      // Skew per-instance — height bias for tall facet vs squat stub.
+      const sx = 0.65 + Math.random() * 0.45;
+      const sy = 0.85 + Math.random() * 0.95;
+      const sz = 0.65 + Math.random() * 0.45;
+      // Sit base on floor: half-height of body is 0.55 → lift by 0.55 * sy.
+      const baseY = 0.55 * sy;
+      dummy.position.set(x, baseY, z);
+      dummy.scale.set(sx, sy, sz);
+      // Lean off vertical for facet asymmetry (spec: avoid parade-line look).
+      dummy.rotation.set(
+        (Math.random() - 0.5) * 0.40,
+        Math.random() * Math.PI * 2,
+        (Math.random() - 0.5) * 0.40,
+      );
+      dummy.updateMatrix();
+      bodyInst.setMatrixAt(ci, dummy.matrix);
+      tipsInst.setMatrixAt(ci, dummy.matrix);
+      ci++;
+    }
+  }
+  bodyInst.instanceMatrix.needsUpdate = true;
+  tipsInst.instanceMatrix.needsUpdate = true;
+  group.add(bodyInst); group.add(tipsInst);
+  _track(bodyGeo); _track(tipsGeo); _track(bodyMat); _track(tipsMat);
+
+  // ── 3) slot-5 accent shards — small bloom-lit fragments between clusters ─
+  // Atmosphere only (not chokepoints). Octahedron silhouette reads as cut
+  // glass at small scales. One InstancedMesh, single draw call, bloom on.
+  const SHARDS = 40;
+  const shardGeo = new THREE.OctahedronGeometry(0.28, 0);
+  const shardMat = new THREE.MeshStandardMaterial({
+    color: 0x3ecf9a,           // slot 5 — darker mint
+    emissive: 0x3ecf9a,
+    emissiveIntensity: 1.2,
+    roughness: 0.3, metalness: 0.1,
+    flatShading: true,
+    transparent: true, opacity: 0.90,
+  });
+  const shardInst = new THREE.InstancedMesh(shardGeo, shardMat, SHARDS);
+  shardInst.layers.enable(BLOOM_LAYER);
+  for (let i = 0; i < SHARDS; i++) {
+    const { x, z } = _scatterRing(18, 55, 1.4);
+    const s = 0.45 + Math.random() * 0.85;
+    dummy.position.set(x, 0.15 + Math.random() * 0.35, z);
+    dummy.scale.setScalar(s);
+    dummy.rotation.set(
+      Math.random() * Math.PI,
+      Math.random() * Math.PI * 2,
+      Math.random() * Math.PI,
+    );
+    dummy.updateMatrix();
+    shardInst.setMatrixAt(i, dummy.matrix);
+  }
+  shardInst.instanceMatrix.needsUpdate = true;
+  group.add(shardInst);
+  _track(shardGeo); _track(shardMat);
+
+  // ── 4) ground rune ambient — subtle slot-5 rings, bloom OFF ──────────────
+  // A small set of rune-ring textured planes (much lower density than the
+  // twilight 40, so the petrified ground stays the visual lead). Bloom off
+  // per the contract for ground-rune ambient detail.
+  const RUNES = 14;
+  const runeGeo = new THREE.PlaneGeometry(1.7, 1.7);
+  const runeMat = new THREE.MeshBasicMaterial({
+    map: fxTex('ring_arcane') || makeRuneRingTexture(),
+    color: 0x3ecf9a,           // slot 5
+    transparent: true, opacity: 0.22, side: THREE.DoubleSide,
+    depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+  const runeInst = new THREE.InstancedMesh(runeGeo, runeMat, RUNES);
+  for (let i = 0; i < RUNES; i++) {
+    const { x, z } = _scatterRing(18, 56, 1.5);
+    const s = 0.7 + Math.random() * 1.1;
+    dummy.position.set(x, -0.06, z);
+    dummy.scale.set(s, s, 1);
+    dummy.rotation.set(-Math.PI / 2, 0, Math.random() * Math.PI * 2);
+    dummy.updateMatrix();
+    runeInst.setMatrixAt(i, dummy.matrix);
+  }
+  runeInst.instanceMatrix.needsUpdate = true;
+  group.add(runeInst);
+  _track(runeGeo); _track(runeMat);
+
+  // ── 5) amber hotspots — coordinate-only scatter (Phase-2 agent renders) ──
+  // Bias 1–2 hotspots PER cluster onto the cluster's funnel-facing perimeter,
+  // so the player can shoot one and chain-detonate the chokepoint. Reject
+  // any sample outside the [15, 55] safe ring (clamp by re-sample).
+  const amberHotspots = [];
+  let seedCounter = 1000;
+  for (const cl of clusters) {
+    const wanted = Math.random() < 0.55 ? 2 : 1;  // mostly 1, sometimes 2
+    let placed = 0;
+    for (let tries = 0; tries < 24 && placed < wanted; tries++) {
+      // Aim at the funnel-facing perimeter of the cluster: sample θ inside
+      // the funnel wedge so the hotspot sits IN the path the swarm walks.
+      const wedge = cl.funnelHalfWidth * 1.4; // a touch wider than the gap
+      const theta = cl.funnelDir + (Math.random() * 2 - 1) * wedge;
+      const r = 3.4 + Math.random() * 1.6;    // just outside cluster radius
+      const x = cl.cx + Math.cos(theta) * r;
+      const z = cl.cz + Math.sin(theta) * r;
+      const radial = Math.hypot(x, z);
+      if (radial < 15 || radial > 55) continue;  // safe-zone clamp
+      amberHotspots.push({
+        x: +x.toFixed(2),
+        z: +z.toFixed(2),
+        scale: +(0.85 + Math.random() * 0.35).toFixed(2),  // 0.85..1.20
+        seed: seedCounter++,
+      });
+      placed++;
+    }
+  }
+  // Top up to target band 18–22 (sometimes 4 clusters * 1 = 4; we need ~20)
+  // by sampling additional perimeter spots between any cluster pair until we
+  // hit at least 18. Cap at 22 to honor the upper bound.
+  const TARGET_MIN = 18, TARGET_MAX = 22;
+  let topUpGuard = 0;
+  while (amberHotspots.length < TARGET_MIN && topUpGuard++ < 200) {
+    const cl = clusters[(Math.random() * clusters.length) | 0];
+    const theta = Math.random() * Math.PI * 2;   // any perimeter angle
+    const r = 3.4 + Math.random() * 1.8;
+    const x = cl.cx + Math.cos(theta) * r;
+    const z = cl.cz + Math.sin(theta) * r;
+    const radial = Math.hypot(x, z);
+    if (radial < 15 || radial > 55) continue;
+    amberHotspots.push({
+      x: +x.toFixed(2),
+      z: +z.toFixed(2),
+      scale: +(0.85 + Math.random() * 0.35).toFixed(2),
+      seed: seedCounter++,
+    });
+  }
+  if (amberHotspots.length > TARGET_MAX) amberHotspots.length = TARGET_MAX;
+
+  // Stash on the group so the loader / tools can write the JSON file once
+  // (we don't fs.writeFile from a browser module — the JSON is authored by
+  // the build-time tool that ran this generator. See assets/forest_amber_hotspots.json).
+  group.userData.amberHotspots = amberHotspots;
+
+  return {
+    clusters: clusters.length,
+    crystals: totalCrystals,
+    shards: SHARDS,
+    runes: RUNES,
+    amberHotspots: amberHotspots.length,
+  };
 }
 
 // ── Iter 14: real CC0 GLB scatter helper ────────────────────────────────────
