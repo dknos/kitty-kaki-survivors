@@ -32,6 +32,8 @@ import sigMonaBrushstroke  from './sig/mona_brushstroke.js';
 // Phase F3 sig kits.
 import sigBezelbugFacet    from './sig/bezelbug_facet.js';
 import sigRockerPowerchord from './sig/rocker_powerchord.js';
+// BorgirBoss (unlock-gated 13th avatar, post-Phase F).
+import sigBorgirbossRocketrack from './sig/borgirboss_rocketrack.js';
 import { passiveChoices, applyPassive, PASSIVES } from './passives.js';
 export { applyPassive, PASSIVES };
 
@@ -54,6 +56,7 @@ export const REGISTRY = {
   [sigMonaBrushstroke.id]:  sigMonaBrushstroke,
   [sigBezelbugFacet.id]:    sigBezelbugFacet,
   [sigRockerPowerchord.id]: sigRockerPowerchord,
+  [sigBorgirbossRocketrack.id]: sigBorgirbossRocketrack,
 };
 
 const WORLD_BOUND = 200; // projectile cull bound (square half-extent around hero)

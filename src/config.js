@@ -407,6 +407,17 @@ export const AVATARS = [
     signatureWeapon: 'sig_rocker_powerchord',
     unlock: 'flag:rocker',
   },
+  {
+    id: 'borgirboss', name: 'BorgirBoss', icon: '🍔',
+    desc: 'BorgirBoss — burger dump truck hauling a rack of rocket launchers.',
+    glb: 'borgirboss.glb',
+    tint: 0xffffff, scaleMul: 1.15,
+    baseArchetype: 'boom',              // big silhouette + signature ranged barrage
+    signatureWeapon: 'sig_borgirboss_rocketrack',
+    // Hardest avatar in the roster — only unlocks after sweeping every boss
+    // on the hypermode difficulty modifier. Flag set in commitRunResults.
+    unlock: 'flag:allBossesHypermode',
+  },
 ];
 
 /**

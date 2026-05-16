@@ -652,6 +652,22 @@ export function killEnemy(enemy) {
     state.fx.shake = 0.9;
     if (sfx && sfx.victory) sfx.victory();
     import('./ui.js').then(({ tryAchievement }) => tryAchievement('first_victory'));
+    // BorgirBoss unlock — record this stage's final-boss win under hypermode.
+    // When the roster (forest/twilight/cinder/void) is fully cleared on hyper,
+    // recordHyperBossKill flips the allBossesHypermode flag and we banner it.
+    if (state.modes && state.modes.hyper) {
+      const stageId = state.run && state.run.stage && state.run.stage.id;
+      if (stageId) {
+        import('./meta.js').then(({ recordHyperBossKill }) => {
+          const justFlipped = recordHyperBossKill(stageId);
+          if (justFlipped) {
+            import('./ui.js').then(({ showBanner }) => {
+              try { showBanner('🍔 BORGIRBOSS UNLOCKED', 4.0, '#ffd27f'); } catch (_) {}
+            });
+          }
+        });
+      }
+    }
     // Roll + persist a relic for the death-screen reveal.
     import('./meta.js').then(({ rollRelic, addRelic }) => {
       const drop = rollRelic();

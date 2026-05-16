@@ -31,6 +31,8 @@ const SIG_FILES = {
   // Phase F3
   sig_bezelbug_facet:    'src/weapons/sig/bezelbug_facet.js',
   sig_rocker_powerchord: 'src/weapons/sig/rocker_powerchord.js',
+  // BorgirBoss (post-F, unlock-gated 13th avatar).
+  sig_borgirboss_rocketrack: 'src/weapons/sig/borgirboss_rocketrack.js',
 };
 const REPO = new URL('../', import.meta.url);
 function read(rel) { return readFileSync(new URL(rel, REPO), 'utf8'); }
@@ -57,7 +59,8 @@ const idxSrc = read('src/weapons/index.js');
 for (const fname of ['cowboy_sixshooter', 'mothman_dustcloak', 'space_satellites',
                      'kitty_lucky_paw', 'sote_warhowl', 'pipes_arcwrench', 'bomdia_sunburst',
                      'camper_signalfire', 'radcat_fallout', 'mona_brushstroke',
-                     'bezelbug_facet', 'rocker_powerchord']) {
+                     'bezelbug_facet', 'rocker_powerchord',
+                     'borgirboss_rocketrack']) {
   assert.ok(idxSrc.includes(`./sig/${fname}.js`),  `index.js missing import ./sig/${fname}.js`);
 }
 for (const id of Object.keys(SIG_FILES)) {

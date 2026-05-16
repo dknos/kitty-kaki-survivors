@@ -35,9 +35,10 @@ export const AVATAR_UNLOCK_COSTS = {
   camper:   { flag: 'survive5MinRun' },
   space:    { embers: 200 },
   radcat:   { flag: 'catacombClear' },
-  mona:     { embers: 300, mastery: { any: 100 } },     // any avatar's mastery ≥ 100
-  bezelbug: { flag: 'finalBossWin' },
-  rocker:   { flag: 'casinoJackpot' },
+  mona:       { embers: 300, mastery: { any: 100 } },     // any avatar's mastery ≥ 100
+  bezelbug:   { flag: 'finalBossWin' },
+  rocker:     { flag: 'casinoJackpot' },
+  borgirboss: { flag: 'allBossesHypermode' },             // sweep every boss on hypermode
 };
 
 const DEFAULT = {
@@ -216,7 +217,16 @@ const DEFAULT = {
     catacombClear:     false,
     finalBossWin:      false,
     casinoJackpot:     false,
+    // BorgirBoss gate — flips once the player has cleared every boss with
+    // hypermode active. Read by isAvatarUnlockable for the borgirboss row;
+    // set by commitRunResults when state.run.hyper && bossWinSet.size ≥
+    // BOSS_ROSTER.length.
+    allBossesHypermode: false,
   },
+  // Per-avatar dictionary of bosses defeated under hypermode. Keyed by boss
+  // id so a single hypermode run that kills several bosses counts each one
+  // separately even across restarts. Drives the allBossesHypermode flag.
+  hyperBossWins: {},
 };
 
 // ── Affix relics (final boss loot) ───────────────────────────────────────────
@@ -810,6 +820,33 @@ export function setUnlockFlag(name) {
   meta.unlockFlags[name] = true;
   saveMeta();
   return true;
+}
+
+// Stages whose final-boss kills count toward the BorgirBoss unlock. Keep in
+// sync with STAGES in config.js; mismatches just mean the gate is harder.
+const HYPER_BOSS_STAGES = ['forest', 'twilight', 'cinder', 'void'];
+
+/**
+ * Record a final-boss defeat under hypermode and (when the roster is fully
+ * cleared) flip the `allBossesHypermode` unlock flag for BorgirBoss.
+ *
+ * `stageId` is the stage whose final boss just died (state.run.stage.id).
+ * Idempotent per stage — re-killing on the same stage doesn't duplicate.
+ * Returns true on the FIRST call that completes the roster (so callers can
+ * banner the unlock); false otherwise.
+ */
+export function recordHyperBossKill(stageId) {
+  if (!stageId) return false;
+  const meta = getMeta();
+  if (!meta.hyperBossWins) meta.hyperBossWins = {};
+  if (meta.hyperBossWins[stageId]) return false;
+  meta.hyperBossWins[stageId] = Date.now();
+  // Check completion against the canonical stage list.
+  const haveAll = HYPER_BOSS_STAGES.every(s => meta.hyperBossWins[s]);
+  let flippedNow = false;
+  if (haveAll) flippedNow = setUnlockFlag('allBossesHypermode');
+  saveMeta();
+  return flippedNow;
 }
 
 export function buyHouseUpgrade(id) {

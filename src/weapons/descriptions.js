@@ -111,6 +111,12 @@ const WEAPON_BLURBS = {
     body: (lv) => `Forward-cone sonic wave every ${lv.cooldown.toFixed(2)}s — ${lv.length}m long, ${lv.width.toFixed(1)}m wide. The wave sweeps over ${lv.duration.toFixed(2)}s, hitting each enemy ONCE for ${lv.dmg} damage.`,
     tags: ['Cone', 'Wave', 'Directional'],
   },
+  // BorgirBoss unlock-gated kit. Wide forward fan of explosive rockets.
+  sig_borgirboss_rocketrack: {
+    flavor: 'Rocket Rack — The dump-truck rack swivels and fires; the hill clears.',
+    body: (lv) => `Lobs ${lv.count} rockets in a 40° forward fan every ${lv.cooldown.toFixed(2)}s, ${lv.dmg} damage each. Each rocket pierces ${lv.pierce} enem${lv.pierce > 1 ? 'ies' : 'y'} before fading.`,
+    tags: ['AoE', 'Fan', 'Heavy'],
+  },
 };
 
 // Passive copy. Each line tells the player what the number actually does to

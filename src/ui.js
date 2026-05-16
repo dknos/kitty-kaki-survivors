@@ -1232,11 +1232,12 @@ function formatAvatarLockHint(avatar) {
   if (cost.mastery && cost.mastery[avatar.id] != null) parts.push(`${cost.mastery[avatar.id]} Mastery on ${avatar.name}`);
   if (cost.flag) {
     parts.push({
-      firstMiniBossKill: 'Defeat your first mini-boss',
-      survive5MinRun:    'Survive 5 minutes in one run',
-      catacombClear:     'Clear a Catacomb dungeon',
-      finalBossWin:      'Defeat a final boss',
-      casinoJackpot:     'Hit a casino jackpot',
+      firstMiniBossKill:    'Defeat your first mini-boss',
+      survive5MinRun:       'Survive 5 minutes in one run',
+      catacombClear:        'Clear a Catacomb dungeon',
+      finalBossWin:         'Defeat a final boss',
+      casinoJackpot:        'Hit a casino jackpot',
+      allBossesHypermode:   'Defeat every final boss on Hyper Mode',
     }[cost.flag] || `Condition: ${cost.flag}`);
   }
   return parts.length ? `Unlock: ${parts.join(' + ')}.` : 'Locked.';
