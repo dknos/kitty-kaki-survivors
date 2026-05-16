@@ -1,1 +1,44 @@
-[]
+[
+  {
+    "x": 25.11,
+    "z": 6.11,
+    "variant": "blood",
+    "scale": 0.95,
+    "seed": 2000
+  },
+  {
+    "x": 24.38,
+    "z": -1.22,
+    "variant": "light",
+    "scale": 1.15,
+    "seed": 2001
+  },
+  {
+    "x": -8.98,
+    "z": 31.32,
+    "variant": "blood",
+    "scale": 1.11,
+    "seed": 2002
+  },
+  {
+    "x": -1.07,
+    "z": 30.17,
+    "variant": "light",
+    "scale": 1.03,
+    "seed": 2003
+  },
+  {
+    "x": -37.21,
+    "z": -4.26,
+    "variant": "blood",
+    "scale": 0.99,
+    "seed": 2004
+  },
+  {
+    "x": -37.12,
+    "z": 4.3,
+    "variant": "light",
+    "scale": 0.95,
+    "seed": 2005
+  }
+]

@@ -376,36 +376,204 @@ function _scatterGLB(group, key, count, rMin, rMax, scaleRange, biasPow = 1.6) {
 }
 
 function _buildTwilightDecor(group) {
-  // 0) Real gravestones (iter 14) — 18 Lousberg CC0 gravestones scattered
-  // around the outer ring. Cycle through 3 variants for silhouette variety.
-  // Authored meshes (~30 KB each, 4-8 mats each) but with only 18 instances
-  // the draw-call cost stays well inside budget. Reading these as "this is
-  // a graveyard" is the entire point of the twilight stage.
-  let graves = 0;
-  graves += _scatterGLB(group, 'kit_gravestone',  6, 22, 56, [1.5, 2.5]);
-  graves += _scatterGLB(group, 'kit_gravestone2', 6, 22, 56, [1.5, 2.5]);
-  graves += _scatterGLB(group, 'kit_grave',       6, 22, 56, [1.5, 2.5]);
+  // CURSED ARISTOCRACY — overgrown courtyard reclaimed by rot.
+  // Contract: docs/TWILIGHT_VISUAL_STYLE.md (8-color palette, hedge maze,
+  // ruined fountains, bone-white pillar fragments, ground runes). Hedges are
+  // topiary silhouettes (NOT cubes) built from a merged stacked-cluster
+  // BufferGeometry; placed via deterministic mulberry32(0xBADBEE) RNG so
+  // tools/regen-twilight-hotspots.mjs can replay the same hedge layout and
+  // drop fountain hotspots at the dead-ends.
+  //
+  // Palette slots used here:
+  //   slot 1 #1a0a2e (hedge base shadow)
+  //   slot 2 #2d1547 (hedge mid + rune tint)
+  //   slot 3 #7a5fa5 (hedge highlight via leaf-noise mix)
+  //   slot 4 #e8d4b0 (bone-white pillars + fountain rims)
+  // Fountain liquid (slot 5/6) is owned by Phase-2 twilightFountains.js;
+  // placeholders here are stone rim + dish only, NO emissive.
 
-  // 1) Floating crystal shards (iter 34 quality pass) — replaced the old
-  // OctahedronGeometry diamonds (read as "purple squares" from iso). Now a
-  // tall hex-prism column with two stacked tip cones so each shard reads as
-  // a faceted Blizzard-style crystal even when scale shrinks them in the
-  // back of the fog. BufferGeometryUtils.mergeGeometries lets us keep one
-  // shared geo per InstancedMesh (still one draw call for all 26).
-  const CRYSTALS = 26;
-  const _shardBody = new THREE.CylinderGeometry(0.22, 0.34, 1.1, 6, 1, false);
-  const _shardTipUp   = new THREE.ConeGeometry(0.22, 0.50, 6);
-  _shardTipUp.translate(0, 0.80, 0);
-  const _shardTipDown = new THREE.ConeGeometry(0.34, 0.34, 6);
-  _shardTipDown.rotateX(Math.PI);
-  _shardTipDown.translate(0, -0.72, 0);
-  const crystGeo = (() => {
-    // Manual merge — avoid adding a fresh BufferGeometryUtils import in this
-    // file (the helper is already pulled in by assets.js for static merging,
-    // but a single per-stage build doesn't need it). Push the three sub-
-    // geometries into one BufferGeometry by concatenating attributes.
+  // ── deterministic RNG (mirrors forest A1 fix) ───────────────────────────
+  // mulberry32 seeded 0xBADBEE. Same algorithm + initial state used by
+  // tools/regen-twilight-hotspots.mjs so the hedge layout we derive here is
+  // byte-identical to the one the regen tool replays when computing fountain
+  // dead-end positions. Don't reorder rand() calls without updating the tool.
+  let _rngState = 0xBADBEE >>> 0;
+  function rand() {
+    _rngState = (_rngState + 0x6D2B79F5) >>> 0;
+    let t = _rngState;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  }
+  function scatterRing(rMin, rMax, biasPow = 1.6) {
+    const a = rand() * Math.PI * 2;
+    const u = Math.pow(rand(), 1 / biasPow);
+    const r = rMin + (rMax - rMin) * u;
+    return { x: Math.cos(a) * r, z: Math.sin(a) * r, a };
+  }
+
+  const dummy = new THREE.Object3D();
+
+  // ── 1) hedge segments — deterministic layout ────────────────────────────
+  // Per-hedge RNG draw order (MUST match tools/regen-twilight-hotspots.mjs
+  // deriveHedges() byte-for-byte):
+  //   HEDGE_COUNT: 1 draw  (4..6)
+  //   per hedge:
+  //     1) angle around ring (base step + jitter)  — 1 draw for jitter
+  //     2) radius   18..50                          — 1 draw
+  //     3) length   3..6                            — 1 draw
+  //     4) tangentJitter (-0.35..0.35 rad)          — 1 draw
+  //     5) colorVariant (0/1) for slot 1 vs slot 2  — 1 draw
+  //
+  // Each hedge is a single straight segment whose long axis lies tangent to
+  // the ring at (cx, cz). The two endpoints (cx ± (L/2) * tangent) are the
+  // "dead-ends" where fountains can sit.
+  const HEDGE_COUNT = 4 + ((rand() * 3) | 0); // 4..6
+  const hedgeStep = (Math.PI * 2) / HEDGE_COUNT;
+  const hedgeJitterMax = hedgeStep * 0.30;
+  const hedges = [];
+  for (let h = 0; h < HEDGE_COUNT; h++) {
+    const angle = h * hedgeStep + (rand() - 0.5) * 2 * hedgeJitterMax;
+    const radius = 22 + rand() * 26;     // 22..48 (inside [18,50] with margin for length)
+    const length = 3 + rand() * 3;       // 3..6u
+    const tanJit = (rand() - 0.5) * 0.7; // ±0.35 rad off pure tangent
+    const colorVariant = rand() < 0.5 ? 0 : 1;
+    // Tangent direction at (angle): perpendicular to radial.
+    const tangentAngle = angle + Math.PI / 2 + tanJit;
+    const cx = Math.cos(angle) * radius;
+    const cz = Math.sin(angle) * radius;
+    const tx = Math.cos(tangentAngle);
+    const tz = Math.sin(tangentAngle);
+    // Endpoints (dead-ends) — pushed slightly past the hedge end so a
+    // fountain placed there doesn't clip the topiary mesh.
+    const halfL = length / 2;
+    hedges.push({
+      cx, cz, angle, length, tangentAngle, tx, tz, colorVariant,
+      end1: { x: cx + tx * (halfL + 1.6), z: cz + tz * (halfL + 1.6) },
+      end2: { x: cx - tx * (halfL + 1.6), z: cz - tz * (halfL + 1.6) },
+    });
+  }
+
+  // Hedge geometry — merged stacked-cluster silhouette (NOT a box). Spec:
+  // "tall extruded irregular prism or a stacked-cluster silhouette so each
+  // segment reads as topiary." We merge three jittered cylinders along a
+  // unit X axis (length 1u, scaled per-instance) so the InstancedMesh of N
+  // instances still costs one draw call but reads as bushy topiary.
+  function makeTopiaryGeo() {
+    // Build along +X axis, span [-0.5, +0.5], width Z = 1u, height Y = 1.5u.
+    // We'll scale X per-instance by `length` to stretch.
+    const lobes = [];
+    const LOBE_N = 5;
+    for (let i = 0; i < LOBE_N; i++) {
+      const u = (i / (LOBE_N - 1));
+      const lx = -0.5 + u;                    // -0.5..0.5
+      const ly = 0.75 + (i % 2 === 0 ? 0.05 : -0.05); // slight up-down jiggle
+      const lz = (i % 2 === 0 ? 0.05 : -0.05);
+      const rTop = 0.42 + (i === 0 || i === LOBE_N - 1 ? -0.06 : 0.02);
+      const rBot = 0.5;
+      const h = 1.5;
+      const lobe = new THREE.CylinderGeometry(rTop, rBot, h, 7, 1, false);
+      lobe.translate(lx, ly - h / 2 + 0.75, lz); // center at y=0.75 (half-height)
+      lobes.push(lobe);
+    }
+    // Manual merge — same pattern as forest tipsGeo.
     const merge = new THREE.BufferGeometry();
-    const parts = [_shardBody, _shardTipUp, _shardTipDown];
+    let vc = 0;
+    for (const p of lobes) vc += p.attributes.position.count;
+    const pos = new Float32Array(vc * 3);
+    const nrm = new Float32Array(vc * 3);
+    let off = 0;
+    for (const p of lobes) {
+      const pp = p.attributes.position.array;
+      const pn = p.attributes.normal ? p.attributes.normal.array : null;
+      pos.set(pp, off);
+      if (pn) nrm.set(pn, off);
+      off += pp.length;
+    }
+    merge.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    merge.setAttribute('normal',   new THREE.BufferAttribute(nrm, 3));
+    merge.computeBoundingSphere();
+    for (const p of lobes) p.dispose();
+    return merge;
+  }
+  const hedgeGeo = makeTopiaryGeo();
+  // Use per-instance color (slot 1 base vs slot 2 mid) via InstancedMesh
+  // instanceColor — varies hedge tint without spawning two materials.
+  const hedgeMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff,            // tinted per-instance
+    roughness: 0.92, metalness: 0.0,
+    flatShading: true,
+  });
+  const hedgeInst = new THREE.InstancedMesh(hedgeGeo, hedgeMat, HEDGE_COUNT);
+  hedgeInst.instanceColor = new THREE.InstancedBufferAttribute(
+    new Float32Array(HEDGE_COUNT * 3), 3,
+  );
+  const colSlot1 = new THREE.Color(0x1a0a2e);
+  const colSlot2 = new THREE.Color(0x2d1547);
+  for (let i = 0; i < hedges.length; i++) {
+    const hg = hedges[i];
+    dummy.position.set(hg.cx, 0, hg.cz);
+    // Geo built along +X with length 1u → scale X by hg.length to stretch.
+    // Height stays 1.5u (Y scale = 1). Thickness Z stays 1u per spec.
+    dummy.scale.set(hg.length, 1, 1);
+    dummy.rotation.set(0, -hg.tangentAngle, 0); // rotate around Y to align with tangent
+    dummy.updateMatrix();
+    hedgeInst.setMatrixAt(i, dummy.matrix);
+    const c = hg.colorVariant === 0 ? colSlot1 : colSlot2;
+    hedgeInst.setColorAt(i, c);
+  }
+  hedgeInst.instanceMatrix.needsUpdate = true;
+  if (hedgeInst.instanceColor) hedgeInst.instanceColor.needsUpdate = true;
+  group.add(hedgeInst);
+  _track(hedgeGeo); _track(hedgeMat);
+
+  // ── 2) bone-white stone pillar fragments ────────────────────────────────
+  // Broken pillar bases scattered between hedges. Hex CylinderGeometry low-
+  // poly, slot 4 bone white. Single InstancedMesh — these are simple shapes
+  // (just stumps), so straight cylinders read as "broken stone column."
+  const WALLS = 10;
+  const wallGeo = new THREE.CylinderGeometry(0.45, 0.55, 0.9, 6, 1, false);
+  const wallMat = new THREE.MeshStandardMaterial({
+    color: 0xe8d4b0,     // slot 4 bone white
+    roughness: 0.88, metalness: 0.02,
+    flatShading: true,
+  });
+  const wallInst = new THREE.InstancedMesh(wallGeo, wallMat, WALLS);
+  for (let i = 0; i < WALLS; i++) {
+    const { x, z } = scatterRing(20, 52, 1.4);
+    const sy = 0.55 + rand() * 0.9; // 0.55..1.45 — broken at varied heights
+    const sxz = 0.85 + rand() * 0.35;
+    dummy.position.set(x, 0.45 * sy, z);
+    dummy.scale.set(sxz, sy, sxz);
+    dummy.rotation.set(
+      (rand() - 0.5) * 0.30,        // slight lean (broken)
+      rand() * Math.PI * 2,
+      (rand() - 0.5) * 0.30,
+    );
+    dummy.updateMatrix();
+    wallInst.setMatrixAt(i, dummy.matrix);
+  }
+  wallInst.instanceMatrix.needsUpdate = true;
+  group.add(wallInst);
+  _track(wallGeo); _track(wallMat);
+
+  // ── 3) fountain placeholders — visual stone only, NO emissive ───────────
+  // Phase-2 twilightFountains.js owns the liquid glow/pulse; this layer is
+  // just the stone rim + concave dish so the player sees something there
+  // before the Fountains runtime mounts. Read positions from the same dead-
+  // end derivation the regen tool uses (we'd ideally read the JSON, but to
+  // keep this self-contained for first-load before assets fetch we re-derive).
+  const FOUNTAIN_COUNT = Math.min(8, Math.max(6, 6 + ((rand() * 3) | 0))); // 6..8
+  // Build fountain mesh = rim (CylinderGeometry) + concave dish (inverted
+  // ConeGeometry) merged into one geo, one InstancedMesh.
+  const _rim = new THREE.CylinderGeometry(1.05, 1.15, 0.45, 14, 1, false);
+  _rim.translate(0, 0.225, 0);          // rim sits 0..0.45
+  const _dish = new THREE.ConeGeometry(0.95, 0.35, 14, 1, false);
+  _dish.rotateX(Math.PI);                // invert → tip points down
+  _dish.translate(0, 0.30, 0);          // dish nestles inside the rim
+  const fountainGeo = (() => {
+    const merge = new THREE.BufferGeometry();
+    const parts = [_rim, _dish];
     let vc = 0;
     for (const p of parts) vc += p.attributes.position.count;
     const pos = new Float32Array(vc * 3);
@@ -423,70 +591,104 @@ function _buildTwilightDecor(group) {
     merge.computeBoundingSphere();
     return merge;
   })();
-  _shardBody.dispose(); _shardTipUp.dispose(); _shardTipDown.dispose();
-  const crystMat = new THREE.MeshStandardMaterial({
-    color: 0x8a3acc, emissive: 0xc070ff, emissiveIntensity: 1.4,
-    roughness: 0.22, metalness: 0.15, transparent: true, opacity: 0.92,
-    flatShading: true,   // faceted highlights — reads as cut crystal, not blob
+  _rim.dispose(); _dish.dispose();
+  const fountainMat = new THREE.MeshStandardMaterial({
+    color: 0xe8d4b0,     // slot 4 bone white (same as pillars — fountain rim)
+    roughness: 0.85, metalness: 0.05,
+    flatShading: true,
+    // NO emissive — Phase-2 Fountains agent adds the glowing liquid layer.
   });
-  const crystInst = new THREE.InstancedMesh(crystGeo, crystMat, CRYSTALS);
-  crystInst.layers.enable(BLOOM_LAYER);
-  const baseY = new Float32Array(CRYSTALS);
-  const phase = new Float32Array(CRYSTALS);
-  const amp = new Float32Array(CRYSTALS);
-  const freq = new Float32Array(CRYSTALS);
-  const dummy = new THREE.Object3D();
-  for (let i = 0; i < CRYSTALS; i++) {
-    const { x, z } = _scatterRing(22, 58, 1.6);
-    const y = 1.2 + Math.random() * 0.7;
-    baseY[i] = y;
-    phase[i] = Math.random() * Math.PI * 2;
-    amp[i]   = 0.15 + Math.random() * 0.25;
-    freq[i]  = 0.6  + Math.random() * 0.5;
-    dummy.position.set(x, y, z);
-    // Tall shards skew slightly per-instance so the cluster reads as natural.
-    dummy.scale.set(
-      0.55 + Math.random() * 0.35,
-      0.85 + Math.random() * 0.60,
-      0.55 + Math.random() * 0.35,
-    );
-    // Tilt: small lean off vertical + free yaw. Avoids parade-line uniformity.
-    dummy.rotation.set(
-      (Math.random() - 0.5) * 0.5,
-      Math.random() * Math.PI * 2,
-      (Math.random() - 0.5) * 0.5,
-    );
-    dummy.updateMatrix();
-    crystInst.setMatrixAt(i, dummy.matrix);
+  const fountainInst = new THREE.InstancedMesh(fountainGeo, fountainMat, FOUNTAIN_COUNT);
+  // Pick dead-end endpoints round-robin from hedges, then top up if short.
+  // RNG draws here MUST match the regen tool's scatter pass for parity.
+  const fountainSpots = [];
+  const MIN_FOUNTAIN_DIST = 6;
+  function farEnough(x, z) {
+    for (const p of fountainSpots) {
+      const dx = x - p.x, dz = z - p.z;
+      if (dx * dx + dz * dz < MIN_FOUNTAIN_DIST * MIN_FOUNTAIN_DIST) return false;
+    }
+    return true;
   }
-  crystInst.instanceMatrix.needsUpdate = true;
-  group.add(crystInst);
-  _bobbers = { mesh: crystInst, baseY, phase, amp, freq };
-  _track(crystGeo); _track(crystMat);
+  function inFountainRing(x, z) {
+    const r = Math.hypot(x, z);
+    return r >= 18 && r <= 50;
+  }
+  // Pass 1: walk hedge endpoints in order, accept those that pass the gate.
+  for (const hg of hedges) {
+    for (const end of [hg.end1, hg.end2]) {
+      if (fountainSpots.length >= FOUNTAIN_COUNT) break;
+      if (!inFountainRing(end.x, end.z)) continue;
+      if (!farEnough(end.x, end.z)) continue;
+      // Variant draw — alternate by index for 50/50 split.
+      const variant = fountainSpots.length % 2 === 0 ? 'blood' : 'light';
+      const scale = +(0.9 + rand() * 0.25).toFixed(2); // 0.9..1.15
+      fountainSpots.push({
+        x: +end.x.toFixed(2),
+        z: +end.z.toFixed(2),
+        variant, scale,
+        seed: 2000 + fountainSpots.length,
+      });
+    }
+    if (fountainSpots.length >= FOUNTAIN_COUNT) break;
+  }
+  // Top up if hedge endpoints couldn't satisfy 6+ (e.g. min-dist rejection).
+  let topUp = 0;
+  while (fountainSpots.length < 6 && topUp++ < 300) {
+    const { x, z } = scatterRing(20, 48, 1.3);
+    if (!inFountainRing(x, z)) continue;
+    if (!farEnough(x, z)) continue;
+    const variant = fountainSpots.length % 2 === 0 ? 'blood' : 'light';
+    fountainSpots.push({
+      x: +x.toFixed(2),
+      z: +z.toFixed(2),
+      variant,
+      scale: +(0.9 + rand() * 0.25).toFixed(2),
+      seed: 2000 + fountainSpots.length,
+    });
+  }
+  // Render placeholders (only as many as actually placed — InstancedMesh
+  // count was set to FOUNTAIN_COUNT but extras stay at identity matrix at
+  // origin; fix by setting unused slots far below the ground so they don't
+  // show).
+  for (let i = 0; i < FOUNTAIN_COUNT; i++) {
+    if (i < fountainSpots.length) {
+      const f = fountainSpots[i];
+      dummy.position.set(f.x, 0, f.z);
+      dummy.scale.setScalar(f.scale);
+      dummy.rotation.set(0, rand() * Math.PI * 2, 0);
+    } else {
+      // Hide unused slot far below the play floor.
+      dummy.position.set(0, -1000, 0);
+      dummy.scale.setScalar(0.001);
+      dummy.rotation.set(0, 0, 0);
+    }
+    dummy.updateMatrix();
+    fountainInst.setMatrixAt(i, dummy.matrix);
+  }
+  fountainInst.instanceMatrix.needsUpdate = true;
+  group.add(fountainInst);
+  _track(fountainGeo); _track(fountainMat);
 
-  // 2) Ground rune circles — textured plane (rune-ring art) lying flat on
-  // the ground. Stays off bloom (subtle ambient detail; bloom would smear
-  // them into the fog). Swapped from RingGeometry primitive to the canonical
-  // rune art so the scatter reads as inscribed glyphs, not flat outlines.
-  //
-  // Iter 34 quality pass: prefer the Vertex Imagen 4 hand-painted `ring_arcane`
-  // WebP (manifest "Hand-painted Blizzard-style ground rings") over the
-  // canvas-drawn rune so each rune reads as inked sigil art instead of a
-  // simple tinted circle when 40 of them carpet the floor.
-  const RUNES = 40;
-  const runeGeo = new THREE.PlaneGeometry(1.9, 1.9);
+  // Stash on userData for the Fountains agent + tooling sanity.
+  group.userData.fountainHotspots = fountainSpots;
+
+  // ── 4) ground runes — subtle slot-2 rings, bloom OFF, opacity 0.18 ──────
+  const RUNES = 12;
+  const runeGeo = new THREE.PlaneGeometry(1.7, 1.7);
   const runeMat = new THREE.MeshBasicMaterial({
     map: fxTex('ring_arcane') || makeRuneRingTexture(),
-    color: 0x4ce0ff, transparent: true, opacity: 0.32, side: THREE.DoubleSide,
+    color: 0x2d1547,             // slot 2 mid purple
+    transparent: true, opacity: 0.18, side: THREE.DoubleSide,
     depthWrite: false, blending: THREE.AdditiveBlending,
   });
   const runeInst = new THREE.InstancedMesh(runeGeo, runeMat, RUNES);
   for (let i = 0; i < RUNES; i++) {
-    const { x, z } = _scatterRing(18, 58, 1.5);
-    const s = 0.8 + Math.random() * 1.2;
+    const { x, z } = scatterRing(18, 55, 1.5);
+    const s = 0.7 + rand() * 1.1;
     dummy.position.set(x, -0.06, z);
     dummy.scale.set(s, s, 1);
-    dummy.rotation.set(-Math.PI / 2, 0, Math.random() * Math.PI * 2);
+    dummy.rotation.set(-Math.PI / 2, 0, rand() * Math.PI * 2);
     dummy.updateMatrix();
     runeInst.setMatrixAt(i, dummy.matrix);
   }
@@ -494,7 +696,12 @@ function _buildTwilightDecor(group) {
   group.add(runeInst);
   _track(runeGeo); _track(runeMat);
 
-  return { crystals: CRYSTALS, runes: RUNES, graves };
+  return {
+    hedges: HEDGE_COUNT,
+    walls: WALLS,
+    fountainPlaceholders: fountainSpots.length,
+    runes: RUNES,
+  };
 }
 
 function _buildCinderDecor(group) {
