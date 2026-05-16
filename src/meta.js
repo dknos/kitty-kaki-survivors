@@ -8,6 +8,7 @@
 // bonus baked in applyMetaUpgrades) inside commitRunResults. No circular dep:
 // state.js does not import meta.js. Adding the only import in this file.
 import { state } from './state.js';
+import { DAILY_REWARD_MULT, DAILY_SURVIVOR_BADGE_ID } from './config.js';
 
 // Iter 34 — Phase B of progression redesign (docs/PROGRESSION_REDESIGN.md).
 // SAVE_KEY_V1 stays the rollback path: loadMeta reads v2 first, falls back to
@@ -207,6 +208,15 @@ const DEFAULT = {
   // cosmetics: { id: ['tier_a', 'tier_b', ...] } — per-avatar unlocked
   // cosmetic skin tiers. Surfaced by Phase E carousel.
   cosmetics: {},
+  // ── Punch List #6 (2026-05-16) — cosmetic badge list ──
+  // badges: array of badge id strings unlocked across the player's profile.
+  // Pure cosmetic: each entry adds a pip in the start-screen daily card and
+  // a death-screen banner on first unlock. NO mechanical effect anywhere.
+  // Backward-compat: loadMeta's `{ ...DEFAULT, ...parsed }` spread means
+  // old saves missing this field default to [] without migration.
+  // First member: DAILY_SURVIVOR_BADGE_ID, granted on first Daily Challenge
+  // victory inside commitRunResults().
+  badges: [],
   // Lifetime flags consumed by AVATAR_UNLOCK_COSTS.flag conditions. These
   // are set elsewhere (commitRunResults, mini-boss handler, etc.) and read
   // here via isAvatarUnlockable(). Iter 34 adds 4 keys; the rest are
@@ -1290,10 +1300,31 @@ export function getMeta() {
 }
 
 /**
+ * Punch List #6 (2026-05-16) — cosmetic badge bookkeeping.
+ * Unlocks a badge id into meta.badges if not already present. Returns true
+ * the first time (caller can show a banner), false on subsequent calls.
+ * Caller is responsible for saveMeta(); we don't double-write inside
+ * commitRunResults' single saveMeta tail.
+ */
+export function unlockBadge(badgeId) {
+  const meta = getMeta();
+  if (!Array.isArray(meta.badges)) meta.badges = [];
+  if (meta.badges.includes(badgeId)) return false;
+  meta.badges.push(badgeId);
+  return true;
+}
+
+/** Read-only: has the player unlocked this cosmetic badge? */
+export function hasBadge(badgeId) {
+  const meta = getMeta();
+  return Array.isArray(meta.badges) && meta.badges.includes(badgeId);
+}
+
+/**
  * Commit a finished run's results. Returns { coinsEarned, isBestTime, isBestKills }
  * so the death screen can highlight wins.
  */
-export function commitRunResults({ timeSurvived, kills, dmgDealt, level, victory, stageId, bossRush, weekly, character, fullSweep }) {
+export function commitRunResults({ timeSurvived, kills, dmgDealt, level, victory, stageId, bossRush, weekly, daily, character, fullSweep }) {
   const meta = getMeta();
   // 1 coin per kill, +5 per minute survived. Hyper boosts coin gain.
   // Vault stacks on top of Hyper coin bonus.
@@ -1306,7 +1337,15 @@ export function commitRunResults({ timeSurvived, kills, dmgDealt, level, victory
   // "coin gain bonus" sources stack linearly on top of the (Hyper × Vault)
   // multiplicative chassis.
   const passiveCoinMul = (state && state.run && state.run.passive_coinMul) || 0;
-  const coinMul = (meta.optHyper ? 1.5 : 1) * (1 + 0.25 * vaultLv) * (1 + greedMul + passiveCoinMul);
+  // Punch List #6 — Daily Challenge wins pay a flat 2.5× bonus on top of the
+  // existing (Hyper × Vault) × (1 + additive bonuses) chain. Gated on BOTH
+  // `daily` (caller asserts the run was actually a daily) AND `victory`
+  // (losses/abandons get nothing). Caller passes `daily: state.modes.daily`
+  // from showDeathScreen — `daily` defaults to undefined for non-daily call
+  // sites so the `?:` collapses to 1× and the multiplier stays scoped.
+  const dailyWin = !!(daily && victory);
+  const dailyMul = dailyWin ? DAILY_REWARD_MULT : 1;
+  const coinMul = (meta.optHyper ? 1.5 : 1) * (1 + 0.25 * vaultLv) * (1 + greedMul + passiveCoinMul) * dailyMul;
   const coinsEarned = Math.floor((kills + Math.floor(timeSurvived / 12)) * coinMul);
   // Sigils accumulated this run (via grantSigils since last commit) flush into the return.
   const sigilsEarned = _sigilsThisRun;
@@ -1391,6 +1430,14 @@ export function commitRunResults({ timeSurvived, kills, dmgDealt, level, victory
   if (miniBossKills > 0) setUnlockFlag('firstMiniBossKill');
   if (timeSurvived >= 300) setUnlockFlag('survive5MinRun');
   if (victory) setUnlockFlag('finalBossWin');
+  // Punch List #6 — cosmetic "Daily Survivor" badge on first daily win.
+  // Mutates meta.badges directly (unlockBadge is a no-op if already owned),
+  // saved by the single saveMeta() tail below. Banner is the death screen's
+  // responsibility (sees dailyBadgeUnlocked in the returned summary).
+  let dailyBadgeUnlocked = false;
+  if (dailyWin) {
+    dailyBadgeUnlocked = unlockBadge(DAILY_SURVIVOR_BADGE_ID);
+  }
   saveMeta();
   return {
     coinsEarned, embersEarned, sigilsEarned, isBestTime, isBestKills,
@@ -1398,6 +1445,7 @@ export function commitRunResults({ timeSurvived, kills, dmgDealt, level, victory
     unlockedVoid,
     masteryGained, avatarId,
     weeklyResult,
+    dailyWin, dailyBadgeUnlocked,
   };
 }
 

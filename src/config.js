@@ -234,6 +234,17 @@ export const WEAPONS = {
   maxPassives: 6,
 };
 
+// ── Daily Challenge rewards (Punch List #6, 2026-05-16) ────────────────────
+// Daily wins pay a flat 2.5× coin multiplier on top of the existing
+// (Hyper × Vault × greed) chain — applied multiplicatively in
+// meta.commitRunResults() so the daily-only branch composes cleanly without
+// touching the additive greedMul stack. Loss/abandon runs get NO multiplier.
+// The cosmetic "Daily Survivor" badge unlocks on the first daily win and
+// persists in meta.badges; it has no mechanical effect anywhere in the game
+// (purely a start-screen pip + death-screen banner).
+export const DAILY_REWARD_MULT = 2.5;
+export const DAILY_SURVIVOR_BADGE_ID = 'daily_survivor';
+
 // Playable characters — each overrides starting weapon + a few base stats.
 // `id` is the persistent identifier; `unlock` is null for default or an
 // achievement id / 'sigils:N' / 'flag:fieldName' for gated characters.

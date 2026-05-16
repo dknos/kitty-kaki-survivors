@@ -331,7 +331,14 @@ export function resetState() {
     state.bells.list.length = 0;
     state.bells.initialized = false;
   }
-  // Mode flags snapshot — main.js reads getMeta() and pushes here at run start
+  // Mode flags snapshot — main.js reads getMeta() and pushes here at run start.
+  //
+  // Punch List #6 (2026-05-16) note: profile-wide cosmetic flags (badges,
+  // cosmetic unlocks, etc.) intentionally do NOT live on this per-run state
+  // object — they belong on the persistent meta blob (`getMeta().badges`,
+  // `meta.cosmetics`) so they survive resetState() between runs without a
+  // shadow copy that can drift. Read them via hasBadge()/getMeta(), not via
+  // state.modes.
   state.modes = state.modes || {};
   state.modes.hyper = false;
   state.modes.endless = false;
