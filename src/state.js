@@ -275,6 +275,19 @@ export function resetState() {
   // (User can still flip it back on at runtime; it just doesn't persist
   // across run-reset so a stuck "off" state can't leak into a fresh run.)
   state.run.lowFx = false;
+  // ── Forest Expansion v0.1 (FE-C1A, 2026-05-16) ──
+  // Multi-room state machine for the Forest stage. `roomState` drives the
+  // spawnDirector pause/resume (Cohort 3 Agent 4) and the puzzle system
+  // (Cohort 2 Agent 3). `currentRoom` is the id from FOREST_ROOMS (see
+  // src/forestRooms.js); always reset to 'glade' so a fresh run starts in
+  // the hub regardless of where the prior run ended. `activePuzzle` is the
+  // puzzle id currently in flight (matches FOREST_ROOMS[id].puzzle) or null.
+  // `forestPuzzlesSolved` is per-run: persistent unlocks live on the meta
+  // blob (`meta.forestPuzzlesSolved` — see src/meta.js).
+  state.run.roomState           = 'ARENA';   // 'ARENA' | 'TRANSITIONING' | 'IN_ROOM' | 'PUZZLE_ACTIVE'
+  state.run.currentRoom         = 'glade';   // current room id from FOREST_ROOMS
+  state.run.activePuzzle        = null;      // id of active puzzle, or null
+  state.run.forestPuzzlesSolved = {};        // { flow_weaver: true, ... } — THIS RUN ONLY
   state.run.relicDrop = null;
   state.run.equippedRelic = null;
   state.run.heartPotency = 1;
