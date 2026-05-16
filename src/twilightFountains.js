@@ -40,6 +40,11 @@
 import * as THREE from 'three';
 import { BLOOM_LAYER } from './postfx.js';
 import { sfx } from './audio.js';
+// Punch List #7 — Velocity Veil ribbon trail + splash. Fires AFTER the buff
+// is published (state.run.fountainSpeedBuff is written) so the spawn can
+// snapshot expiresAt at spawn time and never re-read the (soon-to-be-nulled)
+// global flag.
+import { spawnVelocityVeil } from './fx/ribbonTrail.js';
 
 // ─── module state ─────────────────────────────────────────────────────────────
 const _fountains = [];        // { x, z, variant, scale, seed, state, ... }
@@ -341,6 +346,12 @@ export function tickTwilightFountains(dt, state) {
         if (heroPos) {
           _auraRings.push(_spawnAuraRing(scene, heroPos, expiresAt));
         }
+        // Punch List #7 — Velocity Veil ribbon trail + splash particles.
+        // Spawned AFTER fountainSpeedBuff is published so the FX module can
+        // snapshot expiresAt at spawn time. ribbonTrail captures the value
+        // on the descriptor and never re-reads the global flag (which gets
+        // nulled at expiry by this same module — see lifecycle block below).
+        spawnVelocityVeil(scene, state);
       }
       // Schedule fountain cooldown.
       f.cooldownUntil = tNow + COOLDOWN_DURATION;
