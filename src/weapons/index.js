@@ -376,6 +376,7 @@ export function applyEvolution(weaponId) {
     h.dashEvolved = true;
     state.fx.bloomBoost = 1.0;
     state.fx.shake = Math.max(state.fx.shake || 0, 0.5);
+    _fireAscensionFx();
     import('../ui.js').then(({ tryAchievement }) => tryAchievement('first_evolution'));
     const evoDef = EVOLUTIONS.dash;
     if (evoDef) try { import('../codex.js').then(({ notifyEvolutionAchieved }) => notifyEvolutionAchieved(evoDef.id)); } catch (_) {}
@@ -387,7 +388,36 @@ export function applyEvolution(weaponId) {
   owned.inst.evolved = true;
   state.fx.bloomBoost = 1.0;
   state.fx.shake = Math.max(state.fx.shake || 0, 0.5);
+  _fireAscensionFx();
   import('../ui.js').then(({ tryAchievement }) => tryAchievement('first_evolution'));
   const evoDef = EVOLUTIONS[weaponId];
   if (evoDef) try { import('../codex.js').then(({ notifyEvolutionAchieved }) => notifyEvolutionAchieved(evoDef.id)); } catch (_) {}
+}
+
+/**
+ * Ascension Evolution FX hook (Punch List #1, 2026-05-16). Called from both
+ * branches of applyEvolution (regular weapon + dash). Fires the 1.2s burst
+ * + 30s rim, plays the SFX bouquet, and stamps the per-run state flag.
+ *
+ * Dynamic import + try/catch keep the evolution flow defensive: if the FX
+ * module fails to load (e.g. test harness without three.js), the evolution
+ * itself still applies cleanly.
+ */
+function _fireAscensionFx() {
+  state.run.hasEvolvedThisRun = true;
+  const heroMesh = state.hero && state.hero.mesh;
+  const scene = heroMesh && heroMesh.parent;
+  const pos = state.hero && state.hero.pos;
+  const stageId = state.run && state.run.stage && state.run.stage.id;
+  if (scene && pos) {
+    import('../fx/evolveBurst.js').then(({ spawnEvolveBurst }) => {
+      try { spawnEvolveBurst(scene, pos, stageId); } catch (_) {}
+    }).catch(() => {});
+  }
+  // SFX bouquet — existing crystalShatter + new evolutionChime (no-op
+  // until the audio file lands, per audio.js _play() drop-on-missing-bank).
+  import('../audio.js').then(({ sfx }) => {
+    try { sfx.crystalShatter && sfx.crystalShatter(); } catch (_) {}
+    try { sfx.evolutionChime && sfx.evolutionChime(); } catch (_) {}
+  }).catch(() => {});
 }

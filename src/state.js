@@ -251,6 +251,9 @@ export function resetState() {
   state.hero.regenPerSec = 0;
   state.run.kills = 0; state.run.dmgDealt = 0; state.run.dmgTaken = 0; state.run.pickedGems = 0;
   state.run.miniBossKills = 0;
+  // Ascension Evolution gate (Punch List #1, 2026-05-16). Set to true the
+  // first time any weapon evolves this run; gate for badges + achievements.
+  state.run.hasEvolvedThisRun = false;
   state.run._dpsWin.length = 0;
   state.run.dmgByWeapon = {};
   state.run.noDmgKills = 0;
