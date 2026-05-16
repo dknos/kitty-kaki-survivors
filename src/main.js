@@ -45,7 +45,7 @@ import { initTotems, tickTotems, resetTotems } from './totems.js';
 import { initPylons, tickPylons, resetPylons } from './pylons.js';
 import { initBells, tickBells, resetBells } from './bells.js';
 import { initEnemyTells, updateEnemyTells, resetEnemyTells } from './enemyTells.js';
-import { initStageHazards, tickStageHazards, resetStageHazards, loadForestHazards, clearForestHazards, loadTwilightHazards, clearTwilightHazards } from './stageHazards.js';
+import { initStageHazards, tickStageHazards, resetStageHazards, loadForestHazards, clearForestHazards, loadTwilightHazards, clearTwilightHazards, loadCinderHazards, clearCinderHazards } from './stageHazards.js';
 import { applyStageRule, tickStageRule, clearStageRule } from './stageRules.js';
 import { loadArenaDecor, clearArenaDecor } from './arenaDecor.js';
 import { loadForestAmber, tickForestAmber, clearForestAmber } from './forestAmber.js';
@@ -541,6 +541,9 @@ function _teardownActiveRun() {
   // activation flags live on _ballistas; wiping the array wipes the activation
   // state alongside it, so nothing leaks across runs.
   if (state.scene) clearCinderBallistas(state.scene);
+  // Drop cinder slow-zones too — paired with ballistas since both key off the
+  // same catapult derivation. No-op on non-cinder stages.
+  if (state.scene) clearCinderHazards(state.scene);
 
   // Finalize Helltide BEFORE resetState wipes its state. teardownHelltide
   // reads state.run.helltideActive + helltideEmbersBanked to credit lifetime
@@ -937,6 +940,7 @@ function applyMetaUpgrades() {
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearCinderBallistas(state.scene);
+      clearCinderHazards(state.scene);
     } else if (stage.id === 'twilight') {
       // Phase-2 swarm: Blood/Light Fountains — proximity drink → 1.75× move
       // speed for 4s, 30s per-fountain cooldown. Fire-and-forget; hero.js
@@ -955,12 +959,21 @@ function applyMetaUpgrades() {
       clearForestAmber(state.scene);
       clearForestHazards(state.scene);
       clearCinderBallistas(state.scene);
+      clearCinderHazards(state.scene);
     } else if (stage.id === 'cinder') {
       // Phase-2 swarm: Cinder Ballistas — proximity-triggered 10s repair →
       // permanent auto-fire piercing bolts. Fire-and-forget; tickCinderBallistas
       // bails when _ballistas is empty so a frame-late spawn is invisible.
       loadCinderBallistas(state.scene).catch((e) => {
         console.warn('[main] loadCinderBallistas failed:', e);
+      });
+      // Swarm Phase 3: catapult slow-zones — funnel swarms AROUND the ruined
+      // siege engines (figure-eight kiting per docs/CINDER_VISUAL_STYLE.md).
+      // Fire-and-forget; enemies.js short-circuits on null until
+      // state.run.cinderSlowZones is published, so zones spawning a frame
+      // late is invisible.
+      loadCinderHazards(state.scene).catch((e) => {
+        console.warn('[main] loadCinderHazards failed:', e);
       });
       // Defensive: forest/twilight decor must be gone on cinder.
       clearForestAmber(state.scene);
@@ -976,6 +989,7 @@ function applyMetaUpgrades() {
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearCinderBallistas(state.scene);
+      clearCinderHazards(state.scene);
     }
   }
   // Per-stage ambient bed (loop). `forest` and `twilight` ship ambient files
