@@ -705,117 +705,344 @@ function _buildTwilightDecor(group) {
 }
 
 function _buildCinderDecor(group) {
-  // 1) Cracked rock formations — jittered icosahedrons, dark red.
-  const ROCKS = 32;
-  const rockGeo = new THREE.IcosahedronGeometry(0.8, 0);
-  // Jitter the vertex positions so each instance looks cracked. (The geometry
-  // is shared across instances, so we jitter once — gives a chunky silhouette
-  // that reads as "broken basalt" rather than "perfect d20".)
-  const pos = rockGeo.attributes.position;
-  for (let i = 0; i < pos.count; i++) {
-    pos.setX(i, pos.getX(i) + (Math.random() - 0.5) * 0.25);
-    pos.setY(i, pos.getY(i) + (Math.random() - 0.5) * 0.25);
-    pos.setZ(i, pos.getZ(i) + (Math.random() - 0.5) * 0.25);
+  // ROTTING BATTLEGROUND — mud-churned warzone scarred by a siege gone wrong.
+  // Contract: docs/CINDER_VISUAL_STYLE.md (8-color palette, ruined catapult
+  // obstacles, crater scars, ballista turret hotspots). This decor is
+  // **additive** on top of the existing Eruption lava system (stageHazards.js
+  // line 297+); we never touch _lavas or _spawnLavaNearHero.
+  //
+  // Palette slots used here (cinder, per style guide):
+  //   slot 1 #0a0604 (charred black — siege engine wood, crater interior)
+  //   slot 2 #3a342f (ash gray — catapult stone counterweight, crater rim)
+  //   slot 3 #7a3d1a (rust orange dim — corroded metal bands on wood)
+  //   slot 4 #ff5522 (ember orange hot — smoldering accents, ambient embers)
+  //   slot 5 #d4c4a8 (ash white — ballista chassis highlight, wood platform)
+  //   slot 6 #5a1810 (dried blood — crater interior overlay)
+  // Slot 7/8 (ballista glow + repair aura) belong to Phase-2 Ballistas Agent.
+  //
+  // ── deterministic RNG (split-stream model — cleaner than twilight's single
+  // tape, see advisor note). Four independent mulberry32 streams seeded off
+  // the canonical 0xDADADA root so each concern (catapults / ballistas /
+  // craters / embers) is replayable in isolation. The regen tool only needs
+  // to drive the catapult + ballista streams in lock-step with this file;
+  // craters and embers can be added/reordered without breaking the tool.
+  function makeMulberry(seed) {
+    let state = seed >>> 0;
+    return function rand() {
+      state = (state + 0x6D2B79F5) >>> 0;
+      let t = state;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
   }
-  rockGeo.computeVertexNormals();
-  // Iter 14: darken cinder rocks to basalt-black with hotter emissive cracks.
-  // The old 0x4a1814 / 0x2a0604 hue read as terracotta clay; the user
-  // feedback was that the cinder stage felt "samey" — pushing the material
-  // toward 0x1a0e0c lets the lava cracks (additive bloom planes) pop.
-  const rockMat = new THREE.MeshStandardMaterial({
-    color: 0x1a0e0c, roughness: 1.0, metalness: 0,
-    emissive: 0x661a08, emissiveIntensity: 0.55,
-  });
-  const rockInst = new THREE.InstancedMesh(rockGeo, rockMat, ROCKS);
-  const dummy = new THREE.Object3D();
-  for (let i = 0; i < ROCKS; i++) {
-    const { x, z } = _scatterRing(20, 60, 1.6);
-    const s = 0.7 + Math.random() * 1.4;
-    dummy.position.set(x, 0.3 * s, z);
-    dummy.scale.set(s, s * (0.6 + Math.random() * 0.6), s);
-    dummy.rotation.set(Math.random() * 0.6, Math.random() * Math.PI * 2, Math.random() * 0.6);
-    dummy.updateMatrix();
-    rockInst.setMatrixAt(i, dummy.matrix);
-  }
-  rockInst.instanceMatrix.needsUpdate = true;
-  group.add(rockInst);
-  _track(rockGeo); _track(rockMat);
+  const SEED = 0xDADADA;
+  const rngCatapult = makeMulberry(SEED);
+  const rngBallista = makeMulberry((SEED ^ 0x10000) >>> 0);
+  const rngCrater   = makeMulberry((SEED ^ 0x20000) >>> 0);
+  const rngEmber    = makeMulberry((SEED ^ 0x30000) >>> 0);
 
-  // 2) Lava cracks — thin emissive planes that radiate from origin. On
-  // BLOOM_LAYER so they glow through the warm fog.
-  const CRACKS = 10;
-  const crackGeo = new THREE.PlaneGeometry(1, 0.18);
-  const crackMat = new THREE.MeshBasicMaterial({
-    color: 0xff5a1a, transparent: true, opacity: 0.85, side: THREE.DoubleSide,
+  const dummy = new THREE.Object3D();
+
+  // ── 1) ruined catapults — 3-4 composite obstacles at radius 22-45u ──────
+  // Per-instance composite Group (NOT InstancedMesh — only 3-4 of them, the
+  // per-instance arm tilt + child mesh palette differ enough that composite
+  // groups are simpler than a custom merged geometry). Each catapult:
+  //   - stone counterweight base (slot 2 BoxGeometry 1.5×1×1.5)
+  //   - 2 wooden frame uprights (slot 1 BoxGeometry 0.3×3×0.3)
+  //   - broken throwing arm (slot 1 BoxGeometry 0.4×0.4×2.5, tilted 30-50°)
+  //   - 2 rust band torus accents (slot 3, optional)
+  // Catapult positions drive the ballista clearance contract — the regen tool
+  // replays this stream to know where the obstacles sit.
+  // RNG draw order per catapult (regen tool MUST mirror byte-for-byte):
+  //   COUNT: 1 draw   (3..4 via 3 + ((rand() * 2) | 0))
+  //   per catapult:
+  //     1) angle jitter   (rand() - 0.5) * 2 * jitterMax
+  //     2) radius         22 + rand() * 23   → 22..45
+  //     3) facing yaw     rand() * Math.PI * 2
+  //     4) arm tilt       0.52 + rand() * 0.35  (30..50°, in radians)
+  //     5) arm spin       rand() * Math.PI * 2
+  const CATAPULT_COUNT = 3 + ((rngCatapult() * 2) | 0); // 3..4
+  const catapultStep = (Math.PI * 2) / CATAPULT_COUNT;
+  const catapultJitterMax = catapultStep * 0.25;
+  const catapults = [];
+
+  // Shared geometries — cached + tracked once, instanced via composite groups.
+  const baseGeo  = new THREE.BoxGeometry(1.5, 1.0, 1.5);
+  const uprightGeo = new THREE.BoxGeometry(0.3, 3.0, 0.3);
+  const armGeo   = new THREE.BoxGeometry(0.4, 0.4, 2.5);
+  const bandGeo  = new THREE.TorusGeometry(0.22, 0.05, 6, 12);
+  const baseMat  = new THREE.MeshStandardMaterial({
+    color: 0x3a342f, roughness: 0.95, metalness: 0.05, flatShading: true,
+  });
+  const woodMat  = new THREE.MeshStandardMaterial({
+    color: 0x0a0604, roughness: 0.98, metalness: 0.0, flatShading: true,
+  });
+  const bandMat  = new THREE.MeshStandardMaterial({
+    color: 0x7a3d1a, roughness: 0.85, metalness: 0.35, flatShading: true,
+  });
+  _track(baseGeo); _track(uprightGeo); _track(armGeo); _track(bandGeo);
+  _track(baseMat); _track(woodMat); _track(bandMat);
+
+  for (let c = 0; c < CATAPULT_COUNT; c++) {
+    const angle = c * catapultStep + (rngCatapult() - 0.5) * 2 * catapultJitterMax;
+    const radius = 22 + rngCatapult() * 23;      // 22..45
+    const yaw = rngCatapult() * Math.PI * 2;
+    const armTilt = 0.52 + rngCatapult() * 0.35; // 30..50° in radians
+    const armSpin = rngCatapult() * Math.PI * 2; // rotation around vertical
+    const cx = Math.cos(angle) * radius;
+    const cz = Math.sin(angle) * radius;
+    catapults.push({ x: cx, z: cz, yaw });
+
+    const g = new THREE.Group();
+    g.position.set(cx, 0, cz);
+    g.rotation.y = yaw;
+
+    // Stone counterweight base — sits on floor, centered.
+    const baseMesh = new THREE.Mesh(baseGeo, baseMat);
+    baseMesh.position.set(0, 0.5, 0);
+    g.add(baseMesh);
+
+    // Two wooden uprights flanking the base.
+    const up1 = new THREE.Mesh(uprightGeo, woodMat);
+    up1.position.set(0.55, 1.5, 0);
+    g.add(up1);
+    const up2 = new THREE.Mesh(uprightGeo, woodMat);
+    up2.position.set(-0.55, 1.5, 0);
+    g.add(up2);
+
+    // Broken throwing arm — tilted at random ascending angle, appears to
+    // have snapped mid-throw. Anchored at top of uprights and angled
+    // forward-up.
+    const arm = new THREE.Mesh(armGeo, woodMat);
+    arm.position.set(0, 2.7, 0);
+    arm.rotation.set(0, armSpin, armTilt); // tilt + random yaw spin
+    g.add(arm);
+
+    // Rust band accents on the uprights — two torus rings, decorative.
+    const band1 = new THREE.Mesh(bandGeo, bandMat);
+    band1.position.set(0.55, 1.0, 0);
+    band1.rotation.x = Math.PI / 2;
+    g.add(band1);
+    const band2 = new THREE.Mesh(bandGeo, bandMat);
+    band2.position.set(-0.55, 2.2, 0);
+    band2.rotation.x = Math.PI / 2;
+    g.add(band2);
+
+    group.add(g);
+  }
+
+  // ── 2) ballista placeholders — 4-6 stone bases at radius 20-50u ─────────
+  // Phase-2 Ballistas Agent renders runtime entities; we ship only the stone
+  // ring + wood platform so the player sees SOMETHING there before activation.
+  // NO emissive, NO bloom on placeholders. Positions chosen by rejection
+  // sampling: must respect 8u min-distance from other ballistas AND 6u
+  // min-distance from any catapult center. The regen tool mirrors this loop
+  // exactly so the on-disk JSON aligns with the runtime placeholder layout.
+  //
+  // RNG draw order (regen tool mirrors):
+  //   COUNT: 1 draw   (4..6 via 4 + ((rand() * 3) | 0))
+  //   per accepted slot:
+  //     a) angle  → 1 draw
+  //     b) radius → 1 draw  via 20 + rand() * 30
+  //     c) scale  → 1 draw  via 0.9 + rand() * 0.20
+  //   rejected samples consume their (angle, radius) draws — caller must
+  //   replay the same accept/reject decisions.
+  const BALLISTA_TARGET = 4 + ((rngBallista() * 3) | 0); // 4..6
+  const MIN_BALLISTA_DIST_SQ = 8 * 8;
+  const MIN_CATAPULT_DIST_SQ = 6 * 6;
+  const ballistaSpots = [];
+  let ballistaGuard = 0;
+  while (ballistaSpots.length < BALLISTA_TARGET && ballistaGuard++ < 400) {
+    const a = rngBallista() * Math.PI * 2;
+    const r = 20 + rngBallista() * 30; // 20..50
+    const scale = +(0.9 + rngBallista() * 0.20).toFixed(2); // 0.90..1.10
+    const x = Math.cos(a) * r;
+    const z = Math.sin(a) * r;
+    // Reject if too close to another ballista.
+    let bad = false;
+    for (const p of ballistaSpots) {
+      const dx = x - p.x, dz = z - p.z;
+      if (dx * dx + dz * dz < MIN_BALLISTA_DIST_SQ) { bad = true; break; }
+    }
+    if (bad) continue;
+    // Reject if too close to any catapult center.
+    for (const cat of catapults) {
+      const dx = x - cat.x, dz = z - cat.z;
+      if (dx * dx + dz * dz < MIN_CATAPULT_DIST_SQ) { bad = true; break; }
+    }
+    if (bad) continue;
+    ballistaSpots.push({
+      x: +x.toFixed(2),
+      z: +z.toFixed(2),
+      scale,
+      seed: 4000 + ballistaSpots.length,
+      facing: Math.atan2(-z, -x), // toward play center, per style guide
+    });
+  }
+
+  // Render placeholder bases — InstancedMesh of stone rim + wood platform.
+  // Build a tiny merged geometry: short cylinder (rim) + flat disk (platform).
+  const _rimGeo = new THREE.CylinderGeometry(0.55, 0.6, 0.3, 12, 1, false);
+  _rimGeo.translate(0, 0.15, 0);
+  const _platGeo = new THREE.CylinderGeometry(0.45, 0.45, 0.1, 12, 1, false);
+  _platGeo.translate(0, 0.35, 0);
+  function mergeParts(parts) {
+    const merge = new THREE.BufferGeometry();
+    let vc = 0;
+    for (const p of parts) vc += p.attributes.position.count;
+    const pos = new Float32Array(vc * 3);
+    const nrm = new Float32Array(vc * 3);
+    let off = 0;
+    for (const p of parts) {
+      const pp = p.attributes.position.array;
+      const pn = p.attributes.normal ? p.attributes.normal.array : null;
+      pos.set(pp, off);
+      if (pn) nrm.set(pn, off);
+      off += pp.length;
+    }
+    merge.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    merge.setAttribute('normal',   new THREE.BufferAttribute(nrm, 3));
+    merge.computeBoundingSphere();
+    return merge;
+  }
+  const ballistaGeo = mergeParts([_rimGeo, _platGeo]);
+  _rimGeo.dispose(); _platGeo.dispose();
+  // Per-instance color: rim slot 4 ash-white, platform slot 1 wood (we
+  // merge into one mat with the ash-white tint since the platform is small;
+  // wood platform reads from the slight luminance drop in the silhouette).
+  const ballistaMat = new THREE.MeshStandardMaterial({
+    color: 0xd4c4a8,       // slot 5 ash white
+    roughness: 0.85, metalness: 0.05,
+    flatShading: true,
+    // NO emissive — Phase-2 Ballistas Agent owns slot 7/8 glow + repair aura.
+  });
+  const BALLISTA_SLOTS = Math.max(BALLISTA_TARGET, ballistaSpots.length);
+  const ballistaInst = new THREE.InstancedMesh(ballistaGeo, ballistaMat, BALLISTA_SLOTS);
+  for (let i = 0; i < BALLISTA_SLOTS; i++) {
+    if (i < ballistaSpots.length) {
+      const b = ballistaSpots[i];
+      dummy.position.set(b.x, 0, b.z);
+      dummy.scale.setScalar(b.scale);
+      dummy.rotation.set(0, b.facing, 0);
+    } else {
+      // Hide unused slot far below the play floor.
+      dummy.position.set(0, -1000, 0);
+      dummy.scale.setScalar(0.001);
+      dummy.rotation.set(0, 0, 0);
+    }
+    dummy.updateMatrix();
+    ballistaInst.setMatrixAt(i, dummy.matrix);
+  }
+  ballistaInst.instanceMatrix.needsUpdate = true;
+  group.add(ballistaInst);
+  _track(ballistaGeo); _track(ballistaMat);
+  group.userData.cinderBallistaHotspots = ballistaSpots;
+
+  // ── 3) craters — 4-6 ground decals at radius 18-50u, NO bloom ───────────
+  // Two nested planes per crater (slot 6 dried-blood interior + slot 2 ash
+  // rim). Bloom OFF, additive OFF — these are scars, not active hazards.
+  // Pure decoration: no slow-zone, no damage. Eruption lava owns the
+  // dangerous floor mechanics on cinder.
+  const CRATER_COUNT = 4 + ((rngCrater() * 3) | 0); // 4..6
+  const interiorGeo = new THREE.PlaneGeometry(1, 1);
+  const rimGeo = new THREE.PlaneGeometry(1, 1);
+  const interiorMat = new THREE.MeshStandardMaterial({
+    color: 0x5a1810,           // slot 6 dried blood
+    emissive: 0x5a1810,
+    emissiveIntensity: 0.18,   // ≤0.2 per style guide line 184 ("still warm")
+    roughness: 1.0, metalness: 0,
+    transparent: true, opacity: 0.6, side: THREE.DoubleSide,
     depthWrite: false,
   });
-  const crackInst = new THREE.InstancedMesh(crackGeo, crackMat, CRACKS);
-  crackInst.layers.enable(BLOOM_LAYER);
-  for (let i = 0; i < CRACKS; i++) {
-    const a = (i / CRACKS) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
-    // Start a few units out from origin (keep the spawn point clean) and
-    // stretch a 6-18u crack outward.
-    const r0 = 4 + Math.random() * 3;
-    const len = 6 + Math.random() * 12;
-    const mid = r0 + len * 0.5;
-    const x = Math.cos(a) * mid;
-    const z = Math.sin(a) * mid;
-    dummy.position.set(x, -0.05, z);
-    dummy.scale.set(len, 0.5 + Math.random() * 0.6, 1);
-    // Lay flat (-π/2 on X) then rotate around Y to point outward. We bake
-    // both into a single Z-up plane lying on the ground.
-    dummy.rotation.set(-Math.PI / 2, 0, -a);
+  const rimMat = new THREE.MeshStandardMaterial({
+    color: 0x3a342f,           // slot 2 ash gray
+    roughness: 1.0, metalness: 0,
+    transparent: true, opacity: 0.55, side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  const interiorInst = new THREE.InstancedMesh(interiorGeo, interiorMat, CRATER_COUNT);
+  const rimInst = new THREE.InstancedMesh(rimGeo, rimMat, CRATER_COUNT);
+  // NOTE: NO BLOOM_LAYER enable on either — craters must not compete with
+  // live lava puddles for the player's eye.
+  for (let i = 0; i < CRATER_COUNT; i++) {
+    const a = rngCrater() * Math.PI * 2;
+    const r = 18 + rngCrater() * 32; // 18..50
+    const s = 2 + rngCrater() * 1.0; // 2..3u diameter
+    const yawRot = rngCrater() * Math.PI * 2; // hide decal tile repeat
+    const cx = Math.cos(a) * r;
+    const cz = Math.sin(a) * r;
+    // Inner blood plane — slightly above ground to avoid z-fight with floor.
+    dummy.position.set(cx, -0.04, cz);
+    dummy.scale.set(s * 0.7, s * 0.7, 1);
+    dummy.rotation.set(-Math.PI / 2, 0, yawRot);
     dummy.updateMatrix();
-    crackInst.setMatrixAt(i, dummy.matrix);
+    interiorInst.setMatrixAt(i, dummy.matrix);
+    // Outer ash rim — wider, sits just below the inner decal.
+    dummy.position.set(cx, -0.05, cz);
+    dummy.scale.set(s, s, 1);
+    dummy.rotation.set(-Math.PI / 2, 0, yawRot);
+    dummy.updateMatrix();
+    rimInst.setMatrixAt(i, dummy.matrix);
   }
-  crackInst.instanceMatrix.needsUpdate = true;
-  group.add(crackInst);
-  _track(crackGeo); _track(crackMat);
+  interiorInst.instanceMatrix.needsUpdate = true;
+  rimInst.instanceMatrix.needsUpdate = true;
+  // Order matters for transparency: rim first (under), interior second (over).
+  group.add(rimInst); group.add(interiorInst);
+  _track(interiorGeo); _track(rimGeo); _track(interiorMat); _track(rimMat);
 
-  // Iter 14: charred-stump set dress (8 broken Lousberg pillars laid low,
-  // scaled tiny + dark-tinted) reads as "scorched ground debris" — fills
-  // the gap that made cinder feel sparser than the other stages.
-  let stumps = 0;
-  for (let i = 0; i < 10; i++) {
-    const clone = cloneCached('kit_pillar_broken');
-    if (!clone) break;
-    const { x, z } = _scatterRing(20, 58, 1.5);
-    clone.scale.setScalar(0.9 + Math.random() * 0.8);
-    clone.position.set(x, 0, z);
-    clone.rotation.set(
-      (Math.random() - 0.5) * 0.4,
-      Math.random() * Math.PI * 2,
-      (Math.random() - 0.5) * 0.4,
-    );
-    // Tint dark grey-black to read as char/basalt.
-    clone.traverse(o => {
-      if (o.isMesh && o.material) {
-        const mats = Array.isArray(o.material) ? o.material : [o.material];
-        for (const m of mats) {
-          if (m.color) {
-            // Clone the material so we don't mutate the shared GLTF mat.
-            const newMat = m.clone();
-            newMat.color.setHex(0x1a0c08);
-            newMat.roughness = 1.0;
-            if (newMat.emissive) newMat.emissive.setHex(0x3a0a04);
-            newMat.emissiveIntensity = 0.25;
-            if (Array.isArray(o.material)) {
-              const idx = o.material.indexOf(m);
-              o.material[idx] = newMat;
-            } else {
-              o.material = newMat;
-            }
-          }
-        }
-        o.castShadow = false;
-        o.receiveShadow = true;
-      }
-    });
-    group.add(clone);
-    stumps++;
+  // ── 4) ambient embers / ash — ~30 small bloom-lit octahedrons ────────────
+  // Slot 4 ember orange, low to ground, additive bloom feel. Optional gentle
+  // bob via the same _bobbers slot used by forest crystals — clearArenaDecor
+  // wipes the slot between stage swaps so reuse is safe.
+  const EMBER_COUNT = 30;
+  const emberGeo = new THREE.OctahedronGeometry(0.10, 0);
+  const emberMat = new THREE.MeshStandardMaterial({
+    color: 0xff5522,            // slot 4 ember orange hot
+    emissive: 0xff5522,
+    emissiveIntensity: 1.2,     // spec: 0.8..1.2 (subtle ambient smolder)
+    roughness: 0.4, metalness: 0.0,
+    flatShading: true,
+    transparent: true, opacity: 0.92,
+  });
+  const emberInst = new THREE.InstancedMesh(emberGeo, emberMat, EMBER_COUNT);
+  emberInst.layers.enable(BLOOM_LAYER);
+  const emberBaseY = new Float32Array(EMBER_COUNT);
+  const emberPhase = new Float32Array(EMBER_COUNT);
+  const emberAmp   = new Float32Array(EMBER_COUNT);
+  const emberFreq  = new Float32Array(EMBER_COUNT);
+  for (let i = 0; i < EMBER_COUNT; i++) {
+    const a = rngEmber() * Math.PI * 2;
+    const u = Math.pow(rngEmber(), 1 / 1.5); // outward bias
+    const r = 18 + (55 - 18) * u;
+    const x = Math.cos(a) * r;
+    const z = Math.sin(a) * r;
+    const y = 0.12 + rngEmber() * 0.25; // low to the ground
+    emberBaseY[i] = y;
+    emberPhase[i] = rngEmber() * Math.PI * 2;
+    emberAmp[i]   = 0.05 + rngEmber() * 0.08;
+    emberFreq[i]  = 0.6 + rngEmber() * 0.7;
+    const s = 0.6 + rngEmber() * 0.9;
+    dummy.position.set(x, y, z);
+    dummy.scale.setScalar(s);
+    dummy.rotation.set(rngEmber() * Math.PI, rngEmber() * Math.PI * 2, rngEmber() * Math.PI);
+    dummy.updateMatrix();
+    emberInst.setMatrixAt(i, dummy.matrix);
   }
+  emberInst.instanceMatrix.needsUpdate = true;
+  group.add(emberInst);
+  _track(emberGeo); _track(emberMat);
+  // Register ambient bob on the shared _bobbers slot — same pattern the
+  // forest crystals use. The animation tick reads {mesh, baseY, phase, amp,
+  // freq} and applies a sin-wave Y offset.
+  _bobbers = { mesh: emberInst, baseY: emberBaseY, phase: emberPhase, amp: emberAmp, freq: emberFreq };
 
-  return { rocks: ROCKS, cracks: CRACKS, stumps };
+  return {
+    catapults: CATAPULT_COUNT,
+    craters: CRATER_COUNT,
+    ballistaPlaceholders: ballistaSpots.length,
+    embers: EMBER_COUNT,
+  };
 }
 
 function _buildCatacombDecor(group) {
