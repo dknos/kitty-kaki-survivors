@@ -8,7 +8,7 @@ import { WORLD, SPAWN, AVATARS, CHARACTERS, STAGES, archetypeForAvatar } from '.
 import { preloadAll, lazyLoadGLTF, disposeCachedGLTF, BASE, GLTF_CACHE } from './assets.js';
 import { createComposer, resizeComposer, BLOOM_LAYER, applyAccessibilityOptions } from './postfx.js';
 import { buildEnv } from './env.js';
-import { unlockAudio, startMusic, setMusicTier, setVolume, setMasterVolume, setMusicVolume, setSfxVolume, suspendAudio, resumeAudio, sfx } from './audio.js';
+import { unlockAudio, startMusic, setMusicTier, setVolume, setMasterVolume, setMusicVolume, setSfxVolume, suspendAudio, resumeAudio, sfx, playStageAmbient } from './audio.js';
 import { getMeta, shopLevel, selectedCharacter, selectedAvatar, dailyChallengeConfig, equippedRelic, selectedStage, QUEST_TEMPLATES, weeklyMutatorConfig, commitWeeklyRun, setOption, SHOP_TREE, recordAvatarRun } from './meta.js';
 import { applyWeeklyMutator } from './weeklyMutator.js';
 import { recordRun } from './leaderboard.js';
@@ -520,6 +520,8 @@ function _teardownActiveRun() {
 
   // Tear down arena decor (re-built when the next run's stage tint applies).
   if (state.scene) clearArenaDecor(state.scene);
+  // Stop the stage ambient bed — re-armed when the next run picks its stage.
+  playStageAmbient(null);
 
   // Finalize Helltide BEFORE resetState wipes its state. teardownHelltide
   // reads state.run.helltideActive + helltideEmbersBanked to credit lifetime
@@ -898,6 +900,15 @@ function applyMetaUpgrades() {
   // on top of the tint so each arena reads visually distinct, not just recolored.
   if (stage && state.scene) {
     loadArenaDecor(stage.id, state.scene);
+  }
+  // Per-stage ambient bed (loop). Currently only `forest` ships an ambient
+  // file (assets/audio/forest/forest_ambient.ogg); other stages no-op until
+  // their packs land. Routed through the music submaster so the Music Volume
+  // slider controls it. Stop on null/unknown stage.
+  if (stage) {
+    playStageAmbient(stage.id);
+  } else {
+    playStageAmbient(null);
   }
 }
 

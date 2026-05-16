@@ -208,6 +208,13 @@ const SFX_MANIFEST = {
   uiError:      ['audio/ui/ui_error_a.ogg',   'audio/ui/ui_error_b.ogg'],
   modalOpen:    ['audio/ui/modal_open_a.ogg', 'audio/ui/modal_open_b.ogg'],
   modalClose:   ['audio/ui/modal_close_a.ogg','audio/ui/modal_close_b.ogg'],
+  // Forest stage SFX (Phase-2 Amber Interactable Agent hooks). All CC0 Kenney
+  // (impact-sounds + sci-fi-sounds), processed to -16 LUFS to match the SFX
+  // bus. See assets/audio/forest/ATTRIBUTION.md.
+  crystalShatter:   ['audio/forest/crystal_shatter_a.ogg',
+                     'audio/forest/crystal_shatter_b.ogg',
+                     'audio/forest/crystal_shatter_c.ogg'],
+  amberDetonation:  ['audio/forest/amber_detonation.ogg'],
 };
 
 const SFX_BANK = Object.fromEntries(Object.keys(SFX_MANIFEST).map(k => [k, []]));
@@ -374,6 +381,17 @@ export const sfx = {
       _play('uiHover', { gain: 0.22 });
     };
   })(),
+
+  // ── Forest stage (Phase-2 Amber Interactable Agent hooks) ──────────────────
+  // Crystal shatters fire on any amber interaction destruction (incl. chain-
+  // hits from other amber). 3 random variants + ±3% pitch jitter so a chain
+  // detonation sequence doesn't sound mechanical. Throttled 30ms — multiple
+  // shatters in a single frame collapse to one audible event.
+  crystalShatter:   _throttled('crystalShatter',   () => _play('crystalShatter',   { gain: 0.45 })),
+  // Amber detonation — louder than shatter (this is the primary boom). One
+  // sample for now; agent can layer multiple amber detonations via the timing
+  // it already controls (8-12 shards + 0.6s shockwave timeline).
+  amberDetonation:  _throttled('amberDetonation',  () => _play('amberDetonation',  { gain: 0.65 })),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -538,6 +556,94 @@ function _startModePoll() {
   }, 500);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Stage ambient bed — long looping ambient track for combat stages (Forest is
+// first; cinder/twilight/void can plug in similarly later). Uses an
+// HTMLAudioElement.loop = true piped through MediaElementSource into
+// _musicBus so it tracks Music Volume AND avoids re-decoding the 186KB buffer
+// on every play. Different from menuBed (procedural) and SFX_BANK (one-shots).
+//
+// The Forest ambient is a 40s seamless loop (cross-faded head/tail) — playing
+// it via <audio loop=true> is cheap and Chrome handles the wrap natively.
+// ─────────────────────────────────────────────────────────────────────────────
+const STAGE_AMBIENT_URLS = {
+  forest: 'audio/forest/forest_ambient.ogg',
+};
+let _stageAmbient = null;        // { stageId, el, srcNode, gainNode }
+
+function _stopStageAmbient() {
+  if (!_stageAmbient) return;
+  try { _stageAmbient.el.pause(); } catch (_) {}
+  try { _stageAmbient.srcNode.disconnect(); } catch (_) {}
+  try { _stageAmbient.gainNode.disconnect(); } catch (_) {}
+  _stageAmbient = null;
+}
+
+/**
+ * Start (or swap) the looping ambient bed for a stage. Call from the stage-
+ * load path (main.js loadArenaDecor sibling). No-op if the same stage is
+ * already playing. Call with stageId=null to stop the bed entirely.
+ *
+ * Safe to call before unlockAudio() — defers until the ctx is alive. Routes
+ * through _musicBus so Music Volume slider controls it.
+ */
+export function playStageAmbient(stageId) {
+  // Stop if no/unsupported stage requested.
+  if (!stageId || !STAGE_AMBIENT_URLS[stageId]) {
+    _stopStageAmbient();
+    return;
+  }
+  // Already on this stage? leave it alone.
+  if (_stageAmbient && _stageAmbient.stageId === stageId) return;
+
+  // Need a live audio context to wire MediaElementSource into _musicBus.
+  // If we don't have one yet (no user gesture), defer until unlockAudio
+  // surfaces a running ctx. main.js calls unlockAudio on first gesture.
+  ensureCtx();
+  if (!_ctx || _ctx.state === 'closed') return;
+
+  _stopStageAmbient();
+
+  const url = new URL('../assets/' + STAGE_AMBIENT_URLS[stageId], import.meta.url).href;
+  const el = new Audio(url);
+  el.loop = true;
+  el.preload = 'auto';
+  // Slightly under unity so the source's -22 LUFS sits comfortably below
+  // the procedural music tier even when both are active.
+  el.volume = 1.0;
+
+  let srcNode;
+  try {
+    srcNode = _ctx.createMediaElementSource(el);
+  } catch (err) {
+    // Some browsers throw if the element was already attached. Bail safely.
+    console.warn('[audio] stage ambient source create fail', err && err.message);
+    return;
+  }
+  const gainNode = _ctx.createGain();
+  gainNode.gain.value = 0.55;  // bed gain — sits under SFX + procedural music
+  srcNode.connect(gainNode).connect(_musicBus);
+
+  _stageAmbient = { stageId, el, srcNode, gainNode };
+
+  // Play. If ctx is suspended (rare here — we'd have bailed above) browser
+  // policy will throw an unmuted-autoplay error; catch + retry on next
+  // unlockAudio call by stashing the intent.
+  const playPromise = el.play();
+  if (playPromise && typeof playPromise.catch === 'function') {
+    playPromise.catch((err) => {
+      // Most common: ctx not yet resumed. The next unlockAudio call will
+      // resume it; we replay then.
+      console.warn('[audio] stage ambient autoplay deferred', err && err.message);
+    });
+  }
+}
+
+/** Stop the current stage ambient bed. Idempotent. */
+export function stopStageAmbient() {
+  _stopStageAmbient();
+}
+
 // ── Visibility helpers ───────────────────────────────────────────────────────
 // main.js owns the visibilitychange listener; these helpers do the audio side.
 
@@ -551,6 +657,12 @@ export function suspendAudio() {
   // resumes cleanly on focus return.
   stopMenuBed();
   _menuBedActive = false;
+  // Pause the stage ambient HTMLAudioElement so it doesn't keep buffering
+  // through the muted-tab window. The ctx-suspend would mute it anyway, but
+  // the element's playback clock keeps advancing — pause is cleaner.
+  if (_stageAmbient && _stageAmbient.el) {
+    try { _stageAmbient.el.pause(); } catch (_) {}
+  }
 }
 
 /** Resume the audio context + restart menuBed if mode warrants it. */
@@ -560,4 +672,9 @@ export function resumeAudio() {
   }
   // Next mode-poll tick will retrigger the bed for menu/town/interior.
   _startModePoll();
+  // Resume the stage ambient if one was active before the tab blur.
+  if (_stageAmbient && _stageAmbient.el && _stageAmbient.el.paused) {
+    const p = _stageAmbient.el.play();
+    if (p && typeof p.catch === 'function') p.catch(() => {});
+  }
 }
