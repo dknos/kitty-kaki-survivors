@@ -18,10 +18,10 @@
 import { state } from './state.js';
 import { ENEMY_TIERS, SPAWN, STAGE, NEMESIS_SPAWN } from './config.js';
 import { spawnEnemy, spawnNemesis } from './enemies.js';
-import { showBanner } from './ui.js';
+import { showBanner, showNemesisTease, hideNemesisArrow } from './ui.js';
 import { sfx } from './audio.js';
 import { spawnChestNearHero } from './chest.js';
-import { shopLevel } from './meta.js';
+import { shopLevel, getMeta } from './meta.js';
 import { nameForMiniBoss, FINAL_BOSS_NAME } from './bossTelegraphs.js';
 import { spawnHeart, spawnStar } from './pickups.js';
 import { dropGem } from './xp.js';
@@ -36,22 +36,46 @@ let _finalBossSpawned = false;
 let _miniBossIdx = 0;
 let _miniBossWarnedFor = -1;
 
-// Nemesis Elite (C3) — singleton hunter that spawns outside the standard
-// wave / boss schedule. `active` holds the live enemy object (null when no
-// nemesis is on the field); `nextSpawnAt` is the absolute state.time.game
-// instant the next nemesis is allowed to spawn. Single-active rule: if the
-// timer fires while a nemesis is still alive, we SKIP the spawn (no
-// doubling up) but don't push the timer back — the next clean check after
-// the kill will respect the post-kill cooldown.
-function _rollNemesisFirstSpawn() {
-  return NEMESIS_SPAWN.firstMinSec + Math.random() * NEMESIS_SPAWN.firstJitterSec;
+// Nemesis Elite (C3 + Punch List #2) — singleton hunter that spawns outside
+// the standard wave / boss schedule. `active` holds the live enemy object
+// (null when no nemesis is on the field); `nextSpawnAt` is the absolute
+// state.time.game instant the next nemesis is allowed to spawn.
+//
+// Punch List #2 (2026-05-16) wired three new concepts:
+//   - First spawn is anchored to NEMESIS_SPAWN.wave * waveSec (480s by
+//     default) instead of the random 90-120s C3 window.
+//   - At telegraphWave * waveSec (420s) the director fires a banner + arrow
+//     telegraph for ALL players, gated only by `telegraphed` (once per run).
+//   - The actual spawn is gated by `meta.unlockFlags.finalBossWin === true`
+//     (first-victory meta gate). New players never see the spawn but DO see
+//     the telegraph (tension teaches the mechanic).
+//   - `_nemesisState.angle` carries the pre-rolled spawn direction from the
+//     telegraph fire to the actual spawn so the arrow points at the same
+//     vector the hunter eventually appears from.
+//
+// Single-active rule preserved: if the timer fires while a nemesis is still
+// alive, we SKIP the spawn (no doubling up) but don't push the timer back —
+// the next clean check after the kill will respect the post-kill cooldown.
+function _firstNemesisSpawnAt() {
+  return NEMESIS_SPAWN.wave * NEMESIS_SPAWN.waveSec;
+}
+function _nemesisTelegraphAt() {
+  return NEMESIS_SPAWN.telegraphWave * NEMESIS_SPAWN.waveSec;
 }
 function _rollNemesisRespawn(now) {
   return now + NEMESIS_SPAWN.respawnMinSec + Math.random() * NEMESIS_SPAWN.respawnJitterSec;
 }
+function _hasFirstVictory() {
+  try {
+    const m = getMeta();
+    return !!(m && m.unlockFlags && m.unlockFlags.finalBossWin);
+  } catch (_) { return false; }
+}
 const _nemesisState = {
   active: null,
-  nextSpawnAt: _rollNemesisFirstSpawn(),
+  nextSpawnAt: _firstNemesisSpawnAt(),
+  telegraphed: false,       // run-scoped: telegraph fires once per run
+  angle: 0,                 // pre-rolled spawn direction (radians, world XZ)
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -100,8 +124,10 @@ export function initSpawnDirector() {
   _miniBossIdx = 0;
   _miniBossWarnedFor = -1;
   _nemesisState.active = null;
-  _nemesisState.nextSpawnAt = _rollNemesisFirstSpawn();
-  _nemesisState.telegraphedFor = -1;
+  _nemesisState.nextSpawnAt = _firstNemesisSpawnAt();
+  _nemesisState.telegraphed = false;
+  _nemesisState.angle = 0;
+  try { hideNemesisArrow(); } catch (_) {}
 }
 
 function spawnMiniBoss() {
@@ -236,8 +262,10 @@ export function tickSpawnDirector(dt) {
     _miniBossIdx = 0;
     _miniBossWarnedFor = -1;
     _nemesisState.active = null;
-    _nemesisState.nextSpawnAt = _rollNemesisFirstSpawn();
-    _nemesisState.telegraphedFor = -1;
+    _nemesisState.nextSpawnAt = _firstNemesisSpawnAt();
+    _nemesisState.telegraphed = false;
+    _nemesisState.angle = 0;
+    try { hideNemesisArrow(); } catch (_) {}
   }
   _lastSeenTime = t;
 
@@ -306,25 +334,58 @@ export function tickSpawnDirector(dt) {
     showBanner(`${FINAL_BOSS_NAME.name} — ${FINAL_BOSS_NAME.subtitle.toUpperCase()}`, 3.0, '#ffe14a');
   }
 
-  // ── Nemesis Elite (C3) ──
+  // ── Nemesis Elite (C3 + Punch List #2) ──
   // Hunts player relentlessly, ignores standard wave logic. Single active.
   // Boss-rush mode pauses the nemesis schedule so the boss fights stay clean.
+  //
+  // Two-stage flow (Punch List #2):
+  //   1. Telegraph at telegraphWave * waveSec — banner + arrow fire for ALL
+  //      players (newbies AND vets). Pre-rolls the spawn angle so the arrow
+  //      points where the hunter will appear.
+  //   2. Spawn at wave * waveSec — gated by meta first-victory flag. If a
+  //      newbie, the angle/arrow simply fade after arrowLifetimeSec and no
+  //      hunter ever shows up this run (tension built for free, mechanic
+  //      taught without overwhelming).
+  if (!bossRush && !_nemesisState.telegraphed && t >= _nemesisTelegraphAt()) {
+    _nemesisState.telegraphed = true;
+    _nemesisState.angle = Math.random() * Math.PI * 2;
+    try { showNemesisTease(_nemesisState.angle, NEMESIS_SPAWN.arrowLifetimeSec); } catch (_) {}
+    if (sfx && sfx.bossWarn) sfx.bossWarn();
+  }
+
   if (!bossRush && _nemesisState.active === null && t >= _nemesisState.nextSpawnAt) {
-    // Spawn at ring edge well off-screen so the player has 3s telegraph time
-    // before the nemesis closes distance (4.0 u/s × 3s = 12u of warning).
-    const hp = state.hero.pos;
-    const angle = Math.random() * Math.PI * 2;
-    const r = NEMESIS_SPAWN.spawnRadius;
-    const nx = hp.x + Math.cos(angle) * r;
-    const nz = hp.z + Math.sin(angle) * r;
-    const ne = spawnNemesis(nx, nz);
-    if (ne) {
-      _nemesisState.active = ne;
-      showBanner('⚔ THE NEMESIS HUNTS', 3.0, '#ff2020');
-      if (sfx && sfx.bossWarn) sfx.bossWarn();
-      // Camera punch so the banner has weight.
-      state.fx.chromaticPulse = Math.max(state.fx.chromaticPulse || 0, 0.7);
-      state.fx.bloomBoost = Math.max(state.fx.bloomBoost || 0, 0.45);
+    // Meta-gate: actual spawn only fires if player has won at least one
+    // run. Telegraph already fired above for newbies.
+    const isFirstSpawn = (_nemesisState.nextSpawnAt === _firstNemesisSpawnAt());
+    const gateOK = !isFirstSpawn || _hasFirstVictory();
+    if (!gateOK) {
+      // New player: skip the spawn entirely AND push the next check past
+      // wave 8 so we don't re-evaluate every tick. Respawn cadence path
+      // never fires for newbies because we never set an active nemesis.
+      _nemesisState.nextSpawnAt = Number.POSITIVE_INFINITY;
+    } else {
+      // Spawn at ring edge well off-screen so the player has 3s telegraph
+      // time before the nemesis closes distance (4.0 u/s × 3s = 12u of
+      // warning). Reuse the pre-rolled telegraph angle when available so the
+      // arrow lines up with the actual spawn direction; fall back to a
+      // fresh roll for respawn paths.
+      const hp = state.hero.pos;
+      const angle = (isFirstSpawn && _nemesisState.telegraphed)
+        ? _nemesisState.angle
+        : Math.random() * Math.PI * 2;
+      const r = NEMESIS_SPAWN.spawnRadius;
+      const nx = hp.x + Math.cos(angle) * r;
+      const nz = hp.z + Math.sin(angle) * r;
+      const ne = spawnNemesis(nx, nz);
+      if (ne) {
+        _nemesisState.active = ne;
+        try { hideNemesisArrow(); } catch (_) {}
+        showBanner('⚔ THE NEMESIS HUNTS', 3.0, '#ff2020');
+        if (sfx && sfx.bossWarn) sfx.bossWarn();
+        // Camera punch so the banner has weight.
+        state.fx.chromaticPulse = Math.max(state.fx.chromaticPulse || 0, 0.7);
+        state.fx.bloomBoost = Math.max(state.fx.bloomBoost || 0, 0.45);
+      }
     }
   }
   // Safety: if the active nemesis died via a path that didn't reach
