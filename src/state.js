@@ -145,6 +145,11 @@ export const state = {
     // level-up/sigil offer. Reset to 0 at the top of showLevelUpModal so the
     // cap (SIGIL_REROLL.capPerOffer) never leaks across queued offers.
     rerollsThisOffer: 0,
+    // Punch List #3 (2026-05-16) — Dissolve-to-Gold death FX kill-switch.
+    // When true, `spawnDissolveBurst` early-outs and skips the 24-instance
+    // burst (the kill ring + blob-shadow scale-down still fire). Toggle from
+    // devtools console (`state.run.lowFx = true`) if perf-report comes in.
+    lowFx: false,
   },
 
   // ── FX ──
@@ -266,6 +271,10 @@ export function resetState() {
   // Punch List #4 — coin-paid reroll counter (cleared per-offer; resetState
   // also wipes it so a fresh run starts at zero).
   state.run.rerollsThisOffer = 0;
+  // Punch List #3 — Dissolve-to-Gold kill-switch defaults off each run.
+  // (User can still flip it back on at runtime; it just doesn't persist
+  // across run-reset so a stuck "off" state can't leak into a fresh run.)
+  state.run.lowFx = false;
   state.run.relicDrop = null;
   state.run.equippedRelic = null;
   state.run.heartPotency = 1;

@@ -17,6 +17,7 @@ import { takeDamage as heroTakeDamage } from './hero.js';
 import { dropGem } from './xp.js';
 import { spawnDamageNumber } from './damageNumbers.js';
 import { spawnKillRing } from './fx.js';
+import { spawnDissolveBurst } from './fx/dissolveBurst.js';
 import { spawnImpactBurst, burstExplosion } from './vfxBurst.js';
 import { spawnEnemyProjectile } from './enemyProjectiles.js';
 import { spawnChest } from './chest.js';
@@ -662,6 +663,15 @@ export function killEnemy(enemy) {
   if (!enemy.alive) return;
   enemy.alive = false;
   enemy.mesh.visible = false;
+
+  // Punch List #3 (2026-05-16) — Dissolve-to-Gold death burst. Pre-pooled
+  // (256 cap, ZERO per-death allocation) so this is safe at hundreds of
+  // deaths/sec. `state.run.lowFx` kill-switch is checked inside spawn. Fired
+  // here at the top of killEnemy so EVERY death branch (trash, elite,
+  // totem, pylon, bell, nemesis, mini/final boss) gets the dust pop without
+  // duplicating the call in each early-return.
+  const _stageId = (state.run && state.run.stage && state.run.stage.id) || 'forest';
+  try { spawnDissolveBurst(enemy.mesh.position, _stageId); } catch (_) { /* fx must never block gameplay */ }
 
   // Totem branch: custom death handling lives in src/totems.js (drops chest,
   // schedules respawn, removes mesh from scene since totems aren't pooled).
