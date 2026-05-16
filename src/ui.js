@@ -5769,6 +5769,89 @@ export function showHallOfRecords() {
   window.addEventListener('keydown', winKey, true);
 }
 
+// ── Nemesis Tease (Punch List #2, 2026-05-16) ───────────────────────────────
+// HUD-only directional arrow pinned near the screen edge, rotated to point at
+// the spawn vector. Lives in `_root` so it scales with the rest of the HUD,
+// stays out of the world-FX pipeline (no Three.js coupling, no BLOOM_LAYER
+// management), and survives a 60s lifetime without polling.
+//
+// Contract: `angle` is the WORLD-space angle the eventual Nemesis spawn will
+// come from, measured the same way spawnDirector picks it (atan2-style:
+// cos(a)·r East, sin(a)·r South in world XZ). The arrow points OUTWARD toward
+// that direction so the player can read "the hunter is out there." Single
+// active arrow — repeat calls replace.
+let _nemesisArrow = null;
+let _nemesisArrowHideTO = null;
+const NEMESIS_RED = '#ff2020';   // matches existing 'THE NEMESIS HUNTS' banner
+
+export function showNemesisArrow(angle, lifetimeSec = 60) {
+  if (!_root) return;
+  if (_nemesisArrow && _nemesisArrow.parentNode) _nemesisArrow.parentNode.removeChild(_nemesisArrow);
+  if (_nemesisArrowHideTO) clearTimeout(_nemesisArrowHideTO);
+
+  // Screen-space placement: orbit the centre on a fixed radius so the arrow
+  // sits just inside the viewport edge. Map world angle (XZ plane) to screen
+  // angle. Convention: world +x = right (screen 0°), world +z = down on the
+  // top-down camera (screen 90°), so we can reuse angle directly.
+  const orbitVMin = 38;        // % of min(vw,vh) — keeps arrow visible on both axes
+  const cssAngleDeg = (angle * 180) / Math.PI;
+  // tx/ty are translation offsets from centre; rotate -90deg because the SVG
+  // triangle points "up" by default and we want it to point along the angle.
+  const tx = `calc(${Math.cos(angle) * orbitVMin}vmin)`;
+  const ty = `calc(${Math.sin(angle) * orbitVMin}vmin)`;
+
+  _nemesisArrow = document.createElement('div');
+  _nemesisArrow.setAttribute('aria-hidden', 'true');
+  _nemesisArrow.style.cssText = `
+    position: fixed; left: 50%; top: 50%;
+    transform: translate(-50%, -50%) translate(${tx}, ${ty}) rotate(${cssAngleDeg + 90}deg);
+    width: 48px; height: 48px;
+    pointer-events: none; z-index: 79;
+    filter: drop-shadow(0 0 12px ${NEMESIS_RED}cc) drop-shadow(0 0 4px ${NEMESIS_RED});
+    animation: kk-nemesis-arrow-pulse 1.2s ease-in-out infinite;
+    opacity: 0.92;
+  `;
+  _nemesisArrow.innerHTML = `
+    <svg viewBox="0 0 48 48" width="48" height="48" xmlns="http://www.w3.org/2000/svg">
+      <polygon points="24,4 40,36 24,28 8,36"
+        fill="${NEMESIS_RED}" stroke="#ffd2d2" stroke-width="1.5" stroke-linejoin="round"/>
+    </svg>
+  `;
+  _ensureNemesisArrowKeyframes();
+  _root.appendChild(_nemesisArrow);
+  _nemesisArrowHideTO = setTimeout(() => { hideNemesisArrow(); }, lifetimeSec * 1000);
+}
+
+export function hideNemesisArrow() {
+  if (_nemesisArrowHideTO) { clearTimeout(_nemesisArrowHideTO); _nemesisArrowHideTO = null; }
+  if (_nemesisArrow && _nemesisArrow.parentNode) _nemesisArrow.parentNode.removeChild(_nemesisArrow);
+  _nemesisArrow = null;
+}
+
+let _nemesisArrowStyleInjected = false;
+function _ensureNemesisArrowKeyframes() {
+  if (_nemesisArrowStyleInjected || typeof document === 'undefined') return;
+  const s = document.createElement('style');
+  s.textContent = `
+    @keyframes kk-nemesis-arrow-pulse {
+      0%, 100% { opacity: 0.92; }
+      50%      { opacity: 0.55; }
+    }
+  `;
+  document.head.appendChild(s);
+  _nemesisArrowStyleInjected = true;
+}
+
+/**
+ * Composite tease — banner + arrow in one call. Spawn director uses this at
+ * the telegraph wave. `angle` is the pre-rolled spawn direction so the arrow
+ * actually points at where the Nemesis will appear one wave later.
+ */
+export function showNemesisTease(angle, arrowLifetimeSec = 60) {
+  showBanner('HUNTER ARRIVES — WAVE 8', 3.0, NEMESIS_RED);
+  showNemesisArrow(angle, arrowLifetimeSec);
+}
+
 // ── Banner ───────────────────────────────────────────────────────────────────
 let _banner = null;
 let _bannerHideTO = null;

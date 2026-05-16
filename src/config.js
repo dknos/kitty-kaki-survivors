@@ -180,14 +180,31 @@ export const NEMESIS_TIER = {
 };
 
 /**
- * Spawn cadence (sec) for the Nemesis Elite. First spawn in [first.min, first.max],
- * subsequent spawns in [respawn.min, respawn.max] measured from the kill time.
- * Single-active rule: if a nemesis is still alive when the timer fires, the
- * tick is skipped (no doubling up).
+ * Spawn cadence (sec) for the Nemesis Elite.
+ *
+ * Punch List #2 (2026-05-16) — Nemesis Tease + meta-gate:
+ *   - Game has no explicit "wave N" clock; we synthesise one as
+ *     wave * waveSec seconds of game time (60s/wave, standard
+ *     survivors-style convention). Wave 8 = 480s, which lines up with
+ *     STAGE.miniBossSchedule[1] = 480 — the second mini-boss beat.
+ *   - At telegraphWave (wave 7 = 420s) the director fires an arrow + banner
+ *     telegraph for ALL players (newbies AND vets) so the mechanic is
+ *     taught even when no spawn follows.
+ *   - At wave (wave 8 = 480s) the actual Nemesis spawns ONLY if
+ *     meta.unlockFlags.finalBossWin === true (first-victory meta gate).
+ *     New players see tension build for free; veterans get the hunter.
+ *   - respawn cadence ([respawn.min, respawn.max] measured from kill time)
+ *     is unchanged.
+ *   - Single-active rule preserved: if a nemesis is still alive when the
+ *     timer fires, the tick is skipped (no doubling up).
  */
 export const NEMESIS_SPAWN = {
-  firstMinSec: 90,
-  firstJitterSec: 30,         // first spawn ∈ [90, 120]
+  // Wave-based first spawn (Punch List #2). wave * waveSec → seconds.
+  wave: 8,                    // first spawn fires at game-time wave * waveSec
+  telegraphWave: 7,           // arrow + banner fires one wave earlier
+  waveSec: 60,                // seconds per synthetic "wave"
+  arrowLifetimeSec: 60,       // directional arrow visible 60s or until spawn
+  // Post-kill respawn cadence (unchanged from C3).
   respawnMinSec: 120,
   respawnJitterSec: 60,       // post-kill ∈ [120, 180]
   spawnRadius: 50,            // distance from hero (well off-screen)
