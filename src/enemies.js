@@ -1053,6 +1053,22 @@ export function updateEnemies(dt) {
         if (W.slowMul < slow) slow = W.slowMul;
       }
     }
+    // Forest chokepoint slow-zones (swarm Phase 3) — same shape as webs.
+    // Zones are derived from amber hotspots in stageHazards.loadForestHazards
+    // and published to state.run.forestSlowZones so this loop can read without
+    // an import cycle. Short-circuit when not forest so other stages pay zero
+    // cost. r² is precomputed; mul=0.55 funnels swarms into single-file lines
+    // through the cluster gaps.
+    const fzones = state.run && state.run.forestSlowZones;
+    if (fzones) {
+      for (let z = 0; z < fzones.length; z++) {
+        const Z = fzones[z];
+        const zdx = ep.x - Z.x, zdz = ep.z - Z.z;
+        if (zdx * zdx + zdz * zdz <= Z.r2) {
+          if (Z.mul < slow) slow = Z.mul;
+        }
+      }
+    }
     // Stage-rule global slow (Forest "Overgrowth" spore pulse).
     const ruleSlow = (state.run && state.run.stageRuleEnemySlow) || 1;
     if (ruleSlow < slow) slow = ruleSlow;
