@@ -25,9 +25,10 @@
  *   `applyVulnerability(enemy, mul, duration)` (mirrors `_frozenUntil`).
  *   Detonation applies 1.25× incoming-damage for 0.8s to each enemy caught in
  *   the 4u AoE. Any future weapon/effect can use the same hook.
- * - Chain-lightning arcs: mirrors src/weapons/chain.js double-tube TubeGeometry
- *   pattern (palette-locked to slot 8 cyan-white). chain.js helpers are
- *   module-private so we duplicate ~40 lines rather than touch a weapon file.
+ * - Chain-lightning arcs: rendered by src/chainFx.js (shared with chain
+ *   weapon — A4 backlog refactor). We pass palette slot 8 (cyan-white) for
+ *   both outer + inner so arcs read as forest-spec rather than the weapon's
+ *   cyan/white. main.js calls tickChainArcs once per frame for all consumers.
  *
  * Palette (8-color, locked):
  *   slot 3 #5f8fb5 — shard fragments (bloom OFF, decor only)
@@ -39,6 +40,7 @@ import * as THREE from 'three';
 import { BLOOM_LAYER } from './postfx.js';
 import { damageEnemy, queryRadius, applyVulnerability } from './enemies.js';
 import { sfx } from './audio.js';
+import { spawnChainArc, disposeAllChainArcs } from './chainFx.js';
 
 // ─── module state ─────────────────────────────────────────────────────────────
 const _entities = [];        // { x, z, scale, seed, state, hp, pulsePhase, mesh, light, fxTimer, fx, ... }
@@ -46,9 +48,8 @@ let _hotspotsLoaded = null;
 let _group = null;           // parent Group added to scene (single removal target)
 const _disposables = [];     // geos/mats tracked for clearForestAmber
 
-// Chain-lightning arc list (mirrors src/weapons/chain.js shape).
-// { group, mats, geos, t, life }
-const _arcs = [];
+// Chain-lightning arcs are owned by src/chainFx.js — spawned via
+// spawnChainArc and ticked/disposed centrally. This module just calls in.
 
 // Vulnerability debuff (A3): backed by enemies.js applyVulnerability(enemy, mul, duration).
 // Any future weapon/effect can apply the same debuff via that helper — stacking
@@ -74,7 +75,7 @@ const DET_LIFE = 1.0;                // total detonation FX duration
 const RING_DURATION = 0.6;           // shockwave ring expand+fade
 const RING_MAX_RADIUS = 4.0;
 const RING_LINE_WIDTH = 0.08;        // ring "line weight" world units (spec)
-const ARC_LIFE = 0.4;                // chain-arc fade duration (spec 0.0-0.4s)
+const ARC_LIFE = 0.4;                // chain-arc fade duration (spec 0.0-0.4s) — passed to spawnChainArc
 const SHARD_LIFE = 0.8;              // shard particle lifetime
 const SHARD_COUNT_MIN = 8;
 const SHARD_COUNT_MAX = 12;
@@ -136,84 +137,10 @@ function _seededRand(seed) {
   };
 }
 
-// ─── chain-arc renderer (mirrors src/weapons/chain.js style) ──────────────────
-// Two-layer tube: thick outer glow + thin hot inner core. Both palette slot 8
-// (forest spec) — cannot reuse chain.js's 0x4fb6ff/0xffffff because those are
-// off-palette for the forest stage. Hot-core feel comes from opacity + radius.
-const ARC_Y = 0.7;
-function _arcPoints(a, b, segments, jitter) {
-  const pts = [];
-  const dx = b.x - a.x;
-  const dz = b.z - a.z;
-  const len = Math.max(0.001, Math.hypot(dx, dz));
-  const px = -dz / len;
-  const pz =  dx / len;
-  for (let i = 0; i <= segments; i++) {
-    const t = i / segments;
-    const taper = Math.sin(t * Math.PI);
-    const off = (Math.random() * 2 - 1) * jitter * taper;
-    const yJit = (Math.random() * 2 - 1) * jitter * 0.35 * taper;
-    pts.push(new THREE.Vector3(
-      a.x + dx * t + px * off,
-      ARC_Y + yJit,
-      a.z + dz * t + pz * off,
-    ));
-  }
-  return pts;
-}
-function _spawnArc(scene, a, b) {
-  const dist = Math.hypot(b.x - a.x, b.z - a.z);
-  const segments = Math.max(5, Math.min(10, Math.floor(dist / 1.2)));
-  const jitter = Math.min(1.1, 0.25 + dist * 0.06);
-  const pts = _arcPoints(a, b, segments, jitter);
-  const curve = new THREE.CatmullRomCurve3(pts);
-  const tubeSegs = Math.max(8, pts.length * 2);
-
-  // Outer glow — wider, lower opacity.
-  const outerGeo = new THREE.TubeGeometry(curve, tubeSegs, 0.14, 6, false);
-  const outerMat = new THREE.MeshBasicMaterial({
-    color: COLOR_CHAIN, transparent: true, opacity: 0.55,
-    blending: THREE.AdditiveBlending, depthWrite: false,
-  });
-  const outer = new THREE.Mesh(outerGeo, outerMat);
-  outer.frustumCulled = false;
-  outer.layers.enable(BLOOM_LAYER);
-
-  // Inner core — thin, full opacity (reads as bright via bloom additive).
-  const innerGeo = new THREE.TubeGeometry(curve, tubeSegs, 0.05, 6, false);
-  const innerMat = new THREE.MeshBasicMaterial({
-    color: COLOR_CHAIN, transparent: true, opacity: 1.0,
-    blending: THREE.AdditiveBlending, depthWrite: false,
-  });
-  const inner = new THREE.Mesh(innerGeo, innerMat);
-  inner.frustumCulled = false;
-  inner.layers.enable(BLOOM_LAYER);
-
-  const g = new THREE.Group();
-  g.add(outer); g.add(inner);
-  scene.add(g);
-  _arcs.push({ group: g, mats: [outerMat, innerMat], geos: [outerGeo, innerGeo], t: 0, life: ARC_LIFE });
-  return { tipX: b.x, tipZ: b.z };
-}
-function _tickArcs(dt, scene) {
-  for (let i = _arcs.length - 1; i >= 0; i--) {
-    const a = _arcs[i];
-    a.t += dt;
-    const k = a.t / a.life;
-    if (k >= 1) {
-      if (a.group.parent) a.group.parent.remove(a.group);
-      else if (scene) scene.remove(a.group);
-      for (const g of a.geos) g.dispose();
-      for (const m of a.mats) m.dispose();
-      _arcs.splice(i, 1);
-    } else {
-      // Outer fades faster than inner core (Spider Web FX quality bar — crisp
-      // inner rim, soft outer halo).
-      a.mats[0].opacity = 0.55 * (1 - k);
-      a.mats[1].opacity = 1.0  * (1 - k * k);
-    }
-  }
-}
+// ─── chain-arc renderer ──────────────────────────────────────────────────────
+// Owned by src/chainFx.js (A4 refactor). We call spawnChainArc with the forest
+// slot-8 palette; chainFx handles geometry + fade. main.js ticks the shared
+// arc list once per frame, so we don't need a local _tickArcs here.
 
 // ─── shockwave ring ───────────────────────────────────────────────────────────
 // Expanding cyan-white ring on the ground plane, line weight 0.08, additive,
@@ -361,8 +288,13 @@ function _resolveDetonation(scene, entity) {
     for (let i = 0; i < n; i++) {
       const e = scored[i].e;
       const ep = e.mesh.position;
-      // Visual: jagged arc from epicenter to enemy.
-      _spawnArc(scene, { x: cx, z: cz }, { x: ep.x, z: ep.z });
+      // Visual: jagged arc from epicenter to enemy. Forest slot-8 palette
+      // (both outer + inner = cyan-white) — chainFx handles fade + dispose.
+      spawnChainArc(scene, { x: cx, z: cz }, { x: ep.x, z: ep.z }, {
+        outerColor: COLOR_CHAIN,
+        innerColor: COLOR_CHAIN,
+        life: ARC_LIFE,
+      });
       try { damageEnemy(e, CHAIN_DAMAGE, 'forest_amber'); } catch (_) {}
       arcEndpoints.push({ x: ep.x, z: ep.z });
     }
@@ -487,8 +419,8 @@ export function tickForestAmber(dt, state) {
     }
   }
 
-  // ── 2) Tick chain-arcs (in-flight FX from any source) ─────────────────────
-  if (_arcs.length > 0) _tickArcs(dt, scene);
+  // ── 2) Chain arcs are ticked centrally in main.js via tickChainArcs(dt) ───
+  //       (A4 refactor — chainFx.js owns the shared arc list).
 
   // ── 3) Per-entity update + collect new detonation triggers ─────────────────
   // Collect epicenters of all amber that detonated THIS tick so we can do the
@@ -605,14 +537,10 @@ export function tickForestAmber(dt, state) {
 
 // ─── public: clear ───────────────────────────────────────────────────────────
 export function clearForestAmber(scene) {
-  // Tear down in-flight chain arcs first (they live as scene children).
-  for (const a of _arcs) {
-    if (a.group.parent) a.group.parent.remove(a.group);
-    else if (scene) scene.remove(a.group);
-    for (const g of a.geos) { try { g.dispose(); } catch (_) {} }
-    for (const m of a.mats) { try { m.dispose(); } catch (_) {} }
-  }
-  _arcs.length = 0;
+  // Tear down in-flight chain arcs first — owned by src/chainFx.js. This
+  // drops EVERY live arc (including any spawned by chain.js), which is the
+  // right call on stage teardown since the scene is being swapped out.
+  disposeAllChainArcs(scene);
 
   // Tear down per-entity ring + shard sets.
   for (const e of _entities) {

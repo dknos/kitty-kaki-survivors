@@ -3,16 +3,19 @@
  * `chains` more enemies within `chainRadius`. Each arc deals diminishing damage.
  * Visual: short-lived bright line segments, fade over ~0.18s.
  */
-import * as THREE from 'three';
 import { state } from '../state.js';
 import { damageEnemy, queryRadius } from '../enemies.js';
 import { sfx } from '../audio.js';
-import { BLOOM_LAYER } from '../postfx.js';
+import { spawnChainArc } from '../chainFx.js';
 
-const ARC_LIFE = 0.18;
-const ARC_Y = 0.7;
-
-const _activeArcs = []; // {line, mat, t}
+// Chain-arc visual is owned by src/chainFx.js (A4 refactor). The colors below
+// stay weapon-local because they're palette-locked to the chain-lightning
+// weapon's identity (cyan glow + white-hot core); stage interactables call the
+// same spawnChainArc with their own palette.
+const ARC_LIFE = 0.18;          // weapon arc fades faster than forest amber's
+const ARC_OUTER_COLOR = 0x4fb6ff;
+const ARC_INNER_COLOR = 0xffffff;
+const BRANCH_LIFE_MUL = 0.55;   // ~35% branch fork lives ~half as long
 
 function _findNearest(pos, exclude) {
   let cands = null;
@@ -46,111 +49,47 @@ function _findNearestWithin(pos, radius, exclude) {
   return best;
 }
 
-// Build a noisy lightning path between two points. Returns an array of Vector3.
-// `segments` controls jaggedness; `jitter` is the max perpendicular offset.
-function _lightningPoints(a, b, segments, jitter) {
-  const pts = [];
-  const dx = b.x - a.x;
-  const dz = b.z - a.z;
-  const len = Math.max(0.001, Math.hypot(dx, dz));
-  // Perpendicular (in XZ plane) for offset displacement
-  const px = -dz / len;
-  const pz =  dx / len;
-  for (let i = 0; i <= segments; i++) {
-    const t = i / segments;
-    // Taper jitter near the endpoints so the arc anchors cleanly
-    const taper = Math.sin(t * Math.PI);
-    const off = (Math.random() * 2 - 1) * jitter * taper;
-    const yJit = (Math.random() * 2 - 1) * jitter * 0.35 * taper;
-    pts.push(new THREE.Vector3(
-      a.x + dx * t + px * off,
-      ARC_Y + yJit,
-      a.z + dz * t + pz * off,
-    ));
-  }
-  return pts;
-}
-
-function _arcGroupFromPoints(pts) {
-  // Two-layer tube: thick outer glow + thin hot inner core, both additive.
-  const curve = new THREE.CatmullRomCurve3(pts);
-  const tubeSegs = Math.max(8, pts.length * 2);
-
-  const outerGeo = new THREE.TubeGeometry(curve, tubeSegs, 0.14, 6, false);
-  const outerMat = new THREE.MeshBasicMaterial({
-    color: 0x4fb6ff, transparent: true, opacity: 0.55,
-    blending: THREE.AdditiveBlending, depthWrite: false,
-  });
-  const outer = new THREE.Mesh(outerGeo, outerMat);
-  outer.frustumCulled = false;
-  outer.layers.enable(BLOOM_LAYER);
-
-  const innerGeo = new THREE.TubeGeometry(curve, tubeSegs, 0.05, 6, false);
-  const innerMat = new THREE.MeshBasicMaterial({
-    color: 0xffffff, transparent: true, opacity: 1.0,
-    blending: THREE.AdditiveBlending, depthWrite: false,
-  });
-  const inner = new THREE.Mesh(innerGeo, innerMat);
-  inner.frustumCulled = false;
-  inner.layers.enable(BLOOM_LAYER);
-
-  const group = new THREE.Group();
-  group.add(outer);
-  group.add(inner);
-  return { group, mats: [outerMat, innerMat], geos: [outerGeo, innerGeo] };
-}
-
 function _drawArc(a, b) {
-  // Main jagged path between source and target
-  const dist = Math.hypot(b.x - a.x, b.z - a.z);
-  const segments = Math.max(5, Math.min(10, Math.floor(dist / 1.2)));
-  const jitter = Math.min(1.1, 0.25 + dist * 0.06);
-  const pts = _lightningPoints(a, b, segments, jitter);
+  // Main arc: spawnChainArc fills in dist-derived segments/jitter from the
+  // shared formula (identical to the pre-refactor inline values).
+  spawnChainArc(state.scene, a, b, {
+    outerColor: ARC_OUTER_COLOR,
+    innerColor: ARC_INNER_COLOR,
+    life: ARC_LIFE,
+  });
 
-  const main = _arcGroupFromPoints(pts);
-  state.scene.add(main.group);
-  _activeArcs.push({ group: main.group, mats: main.mats, geos: main.geos, t: 0 });
-
-  // ~35% chance: spawn a small branch fork from a mid-point that dies faster.
-  if (Math.random() < 0.35 && pts.length >= 4) {
-    const idx = 1 + Math.floor(Math.random() * (pts.length - 2));
-    const root = pts[idx];
-    // Branch heads off perpendicular ~0.8-1.6u long, with sharper jitter
+  // ~35% chance: spawn a small branch fork from a perpendicular tip that
+  // dies faster. This is chain.js-specific (forest amber's chain arcs don't
+  // branch). The branch tip is computed in the weapon's local space; the
+  // shared module just renders whatever endpoints we hand it.
+  if (Math.random() < 0.35) {
+    const dx = b.x - a.x;
+    const dz = b.z - a.z;
+    // Anchor the branch root on the mid-segment of the arc path (~1/3-2/3
+    // along the line — matches the pre-refactor "idx among pts.length"
+    // distribution well enough for visual parity since pts is jitter-driven
+    // and we no longer expose the path).
+    const tMid = 0.25 + Math.random() * 0.5;
+    const rootX = a.x + dx * tMid;
+    const rootZ = a.z + dz * tMid;
     const ang = Math.random() * Math.PI * 2;
     const blen = 0.8 + Math.random() * 0.8;
-    const tip = new THREE.Vector3(
-      root.x + Math.cos(ang) * blen,
-      ARC_Y,
-      root.z + Math.sin(ang) * blen,
-    );
-    const bpts = _lightningPoints(root, tip, 3, 0.35);
-    const branch = _arcGroupFromPoints(bpts);
-    // Branches: half-life of the main arc, narrower outer
-    state.scene.add(branch.group);
-    _activeArcs.push({ group: branch.group, mats: branch.mats, geos: branch.geos, t: 0, life: ARC_LIFE * 0.55 });
+    const tipX = rootX + Math.cos(ang) * blen;
+    const tipZ = rootZ + Math.sin(ang) * blen;
+    spawnChainArc(state.scene, { x: rootX, z: rootZ }, { x: tipX, z: tipZ }, {
+      outerColor: ARC_OUTER_COLOR,
+      innerColor: ARC_INNER_COLOR,
+      life: ARC_LIFE * BRANCH_LIFE_MUL,
+      // Sharper jitter, shorter path — pre-refactor used segments=3,
+      // jitter=0.35 for branches regardless of distance.
+      segments: 3,
+      jitter: 0.35,
+    });
   }
 }
 
-export function tickChainArcs(dt) {
-  for (let i = _activeArcs.length - 1; i >= 0; i--) {
-    const a = _activeArcs[i];
-    const life = a.life || ARC_LIFE;
-    a.t += dt;
-    const k = a.t / life;
-    if (k >= 1) {
-      state.scene.remove(a.group);
-      for (const g of a.geos) g.dispose();
-      for (const m of a.mats) m.dispose();
-      _activeArcs.splice(i, 1);
-    } else {
-      // Inner core stays bright longer, outer fades faster
-      const fadeOuter = 1 - k;
-      const fadeInner = 1 - k * k;
-      if (a.mats[0]) a.mats[0].opacity = 0.55 * fadeOuter;
-      if (a.mats[1]) a.mats[1].opacity = 1.00 * fadeInner;
-    }
-  }
-}
+// Arc tick is owned by src/chainFx.js — main.js calls tickChainArcs once per
+// frame for all consumers. Nothing weapon-side to export here.
 
 export default {
   id: 'chain',
