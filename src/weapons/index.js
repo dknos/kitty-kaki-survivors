@@ -12,7 +12,7 @@ import { unlockZoomLevel, getMaxZoomNotch, getZoomNotchCount } from '../input.js
 
 import orbitals from './orbitals.js';
 import autoAim, { spawnGlasswindShards, syncProjectileVisuals, flushProjectileVisuals, releaseProjectileVisuals } from './autoAim.js';
-import chain, { tickChainArcs } from './chain.js';
+import chain from './chain.js';
 import web, { tickWebs } from './web.js';
 import frostbloom from './frostbloom.js';
 import sigilbell from './sigilbell.js';
@@ -98,8 +98,8 @@ export function tickWeapons(dt) {
   }
   // 2) Update all live projectiles (spawned by weapons above)
   tickProjectiles(dt);
-  // 3) Fade chain-lightning arcs
-  tickChainArcs(dt);
+  // 3) Chain-lightning arc fade is owned by src/chainFx.js (A4 refactor) —
+  //    main.js ticks the shared arc list once per frame after all spawners.
   // 4) Update sticky webs (decay + visual)
   tickWebs(dt);
 }

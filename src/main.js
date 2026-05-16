@@ -18,6 +18,7 @@ import { initInput, sampleInput, getZoom, resetZoom } from './input.js';
 import { initHero, updateHero, updateDeathAnim, takeDamage as heroTakeDamage, rebuildHero } from './hero.js';
 import { initEnemies, updateEnemies, prewarmPools } from './enemies.js';
 import { initWeapons, tickWeapons, acquireWeapon, weaponChoices, _resetEvoAnnouncements, REGISTRY as WEAPON_REGISTRY } from './weapons/index.js';
+import { tickChainArcs } from './chainFx.js';
 import { initProjectileVisuals, releaseProjectileVisuals } from './weapons/autoAim.js';
 import { initXP, updateGems, applyLevelUpChoice } from './xp.js';
 import { initSpawnDirector, tickSpawnDirector, secondsUntilNextMiniBoss } from './spawnDirector.js';
@@ -1389,6 +1390,12 @@ function frame(now) {
   if (state.run && state.run.stage && state.run.stage.id === 'void') {
     _p=perfStart(); tickVoidTeleportPads(logicDt, state); perfMark('voidTeleportPads', _p);
   }
+  // A4 refactor: single shared chain-arc tick for ALL consumers (chain.js
+  // weapon + forestAmber interactable). Runs AFTER both spawners so new arcs
+  // get a clean t=0 first frame, matching the pre-refactor weapon behavior
+  // byte-for-byte and matching the pre-refactor forest behavior within ~1%
+  // opacity drift on frame 0 (life=0.4s, dt~0.016s → k≈0.04).
+  _p=perfStart(); tickChainArcs(logicDt);         perfMark('chainArcs', _p);
   _p=perfStart(); tickStageRule(state, logicDt);  perfMark('stageRule', _p);
   _p=perfStart(); tickMiniEvents(logicDt);        perfMark('miniEvents', _p);
   _p=perfStart(); tickArenaProps(logicDt);        perfMark('arenaProps', _p);
