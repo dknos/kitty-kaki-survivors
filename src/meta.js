@@ -1525,6 +1525,22 @@ export function achievementCount() {
 }
 
 /**
+ * Punch List #4 (2026-05-16) — generic coin debit used by in-game spends
+ * outside the shop tree (the sigil-offer reroll button calls this). Returns
+ * true on success, false if the wallet can't cover `n`. Persists immediately
+ * so a mid-run crash doesn't double-grant the spend.
+ */
+export function spendCoins(n) {
+  const amt = Math.max(0, Math.floor(n || 0));
+  if (amt <= 0) return false;
+  const meta = getMeta();
+  if ((meta.coins || 0) < amt) return false;
+  meta.coins -= amt;
+  saveMeta();
+  return true;
+}
+
+/**
  * Attempt to buy one level of a shop upgrade. Returns true on success, false if
  * maxed or not enough coins.
  */

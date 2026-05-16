@@ -20,6 +20,8 @@ import {
   weeklyMutatorConfig,
   // Iter 10a — settings overhaul
   exportMeta, importMeta, resetMeta,
+  // Punch List #4 — coin debit for the sigil-offer reroll button
+  spendCoins,
   // Punch List #6 — cosmetic Daily Survivor badge query for start-screen pip
   hasBadge,
 } from './meta.js';
@@ -28,7 +30,7 @@ import {
 // don't have to await a dynamic import on every drag event.
 import { applyAccessibilityOptions } from './postfx.js';
 import { setMasterVolume, setMusicVolume, setSfxVolume, sfx } from './audio.js';
-import { CHARACTERS, STAGES, AVATARS, DAILY_SURVIVOR_BADGE_ID } from './config.js';
+import { CHARACTERS, STAGES, AVATARS, SIGIL_REROLL, DAILY_SURVIVOR_BADGE_ID } from './config.js';
 import { SLOT_SYMBOLS, rollReel, resolveOutcome, applyOutcome } from './slotMachine.js';
 import { pushFocusScope, popFocusScope } from './uiFocus.js';
 import { mountLegend as mountPromptLegend, formatPrompt } from './buttonPrompts.js';
@@ -984,6 +986,12 @@ export function showLevelUpModal(choices) {
   // z:9999 with no mouseleave fired (the source detaches / gets occluded).
   try { hideTooltip(); } catch (_) {}
   if (_modal) hideLevelUpModal();
+  // Punch List #4 (2026-05-16) — coin-paid reroll counter is PER-OFFER, so
+  // wipe it every time a fresh modal opens. Covers all three entry paths:
+  // xp.js _triggerLevelUp, xp.js applyLevelUpChoice cascade, and the local
+  // doSkip cascade below. Without this the cap (SIGIL_REROLL.capPerOffer)
+  // would leak across queued levels in a multi-level XP injection.
+  if (state && state.run) state.run.rerollsThisOffer = 0;
 
   const registry = _registry || {};
   // Try to ensure registry is loaded (fire-and-forget; cards will fall back gracefully)
@@ -1029,6 +1037,13 @@ export function showLevelUpModal(choices) {
       box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 20px rgba(0,0,0,0.5);`;
     return b;
   }
+  // Punch List #4 (2026-05-16) — current coin cost of the next reroll on
+  // THIS offer. 30 → 50 → 70 ... ramps by SIGIL_REROLL.costRamp per use,
+  // capped at SIGIL_REROLL.capPerOffer rerolls per offer.
+  function _coinRerollCost() {
+    const used = (state.run && state.run.rerollsThisOffer) || 0;
+    return SIGIL_REROLL.firstCost + used * SIGIL_REROLL.costRamp;
+  }
   function rebuildQol() {
     qolRow.innerHTML = '';
     if (state.hero.rerolls > 0) {
@@ -1044,10 +1059,61 @@ export function showLevelUpModal(choices) {
       b.onclick = () => doSkip();
       qolRow.appendChild(b);
     }
+    // Punch List #4 — coin-paid reroll (always shown; orthogonal to the
+    // consumable `state.hero.rerolls` charge above). Cost ramps 30 → 50 → 70
+    // per offer; cap at SIGIL_REROLL.capPerOffer per offer. Disabled state is
+    // visual only — clicks while disabled still fire sfx.uiError so the
+    // player gets feedback when they can't afford or have hit the cap.
+    const used = (state.run && state.run.rerollsThisOffer) || 0;
+    const capped = used >= SIGIL_REROLL.capPerOffer;
+    const cost = _coinRerollCost();
+    const meta = getMeta();
+    const broke = (meta.coins || 0) < cost;
+    const disabled = capped || broke;
+    const pill = capped
+      ? `<span style="font-family:${F.mono};font-size:calc(var(--kk-font-scale, 1) * 11px);opacity:0.78;margin-left:6px;">MAX</span>`
+      : `<span style="font-family:${F.mono};font-size:calc(var(--kk-font-scale, 1) * 11px);opacity:0.78;margin-left:6px;">${cost}🪙</span>`;
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.innerHTML = `Reroll ${pill}`;
+    b.style.cssText = `padding: 10px 22px; cursor: ${disabled ? 'not-allowed' : 'pointer'};
+      background: linear-gradient(180deg, rgba(20,28,22,0.86), rgba(8,14,12,0.92));
+      border: 1px solid ${C.edge}; border-radius: 8px;
+      color: ${disabled ? 'rgba(245,239,225,0.35)' : C.amber};
+      font-family: ${F.display}; font-size: calc(var(--kk-font-scale, 1) * 13px); font-weight: 700;
+      letter-spacing: 0.26em;
+      opacity: ${disabled ? '0.55' : '1'};
+      box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 20px rgba(0,0,0,0.5);`;
+    b.onclick = () => doCoinReroll();
+    qolRow.appendChild(b);
   }
   function doReroll() {
     if (state.hero.rerolls <= 0) return;
     state.hero.rerolls -= 1;
+    import('./weapons/index.js').then(({ weaponChoices }) => {
+      const fresh = weaponChoices(3 + ((state && state.run && state.run.casinoExtraChoices) || 0));
+      state.levelUpChoices = fresh;
+      paintCards(row, fresh, _registry || {});
+      rebuildQol();
+      if (typeof row._kkRefreshFocus === 'function') row._kkRefreshFocus();
+    });
+  }
+  // Punch List #4 — coin-paid reroll. Distinct from doReroll (which uses
+  // the consumable `state.hero.rerolls` charges). Guards: cap, affordability.
+  // Both negative paths play sfx.uiError; success path plays sfx.uiClick.
+  function doCoinReroll() {
+    const used = (state.run && state.run.rerollsThisOffer) || 0;
+    if (used >= SIGIL_REROLL.capPerOffer) {
+      try { sfx.uiError && sfx.uiError(); } catch (_) {}
+      return;
+    }
+    const cost = _coinRerollCost();
+    if (!spendCoins(cost)) {
+      try { sfx.uiError && sfx.uiError(); } catch (_) {}
+      return;
+    }
+    state.run.rerollsThisOffer = used + 1;
+    try { sfx.uiClick && sfx.uiClick(); } catch (_) {}
     import('./weapons/index.js').then(({ weaponChoices }) => {
       const fresh = weaponChoices(3 + ((state && state.run && state.run.casinoExtraChoices) || 0));
       state.levelUpChoices = fresh;

@@ -64,6 +64,17 @@ export const XP = {
   gemMagnetAccel: 60,         // unused after iter 33a (direct-seek magnet)
 };
 
+// Punch List #4 (2026-05-16) — coin-paid reroll on the level-up/sigil offer
+// modal. First reroll costs `firstCost`, each subsequent one adds `costRamp`
+// (30 → 50 → 70 ...). Hard-capped at `capPerOffer` rerolls per offer; the
+// counter resets at the top of showLevelUpModal so a fresh level-up always
+// gets a clean budget (cap does NOT leak across queued levels).
+export const SIGIL_REROLL = {
+  firstCost:   30,
+  costRamp:    20,
+  capPerOffer: 3,
+};
+
 export const SPAWN = {
   // iter 33t — bumped further; user saw 16 alive at run start because hero
   // kill-rate outpaced 64/sec topup. Now 213/sec topup (32 per 0.15s tick)
