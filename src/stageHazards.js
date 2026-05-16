@@ -40,6 +40,15 @@ let _pollenInst = null;
 let _lavaInst = null;
 let _twilightFogPlane = null;
 
+// Forest chokepoint slow-zones — derived once from the same hotspot JSON the
+// Amber agent reads. Stored module-side as `{x, z, r2, mul}` (r² precomputed so
+// the enemy hot path needs only one multiply per zone). Published to
+// `state.run.forestSlowZones` so enemies.js can read without an import cycle.
+const FOREST_SLOWZONE_RADIUS = 2.5;
+const FOREST_SLOWZONE_R2     = FOREST_SLOWZONE_RADIUS * FOREST_SLOWZONE_RADIUS;
+const FOREST_SLOWZONE_MUL    = 0.55;
+let _forestSlowZones = null;
+
 // Active hazard rosters per stage. Populated lazily on entering a run.
 const _pollens = []; // {x, z, ttl, life}
 const _lavas = [];   // {x, z, ttl, life, armingUntil, radius}
@@ -366,4 +375,48 @@ export function resetStageHazards() {
   if (_lavaInst)   { for (let i = 0; i < LAVA_CAP; i++)   _hide(_lavaInst, i);   _lavaInst.instanceMatrix.needsUpdate = true; }
   if (_twilightFogPlane) _twilightFogPlane.visible = false;
   if (state.hero) state.hero.hazardSlow = 1.0;
+  // Drop any forest slow-zones too. The visual marker (if ever shipped)
+  // would be cleared by clearForestHazards; resetStageHazards only nukes the
+  // data side so a stale roster doesn't bleed into the next run.
+  _forestSlowZones = null;
+  if (state.run) state.run.forestSlowZones = null;
+}
+
+// ─── Forest chokepoint slow-zones ────────────────────────────────────────────
+// Single-file funnel pass for swarms — derives zones from the 18 deterministic
+// amber hotspots (chokepoints == hotspot positions per docs/FOREST_VISUAL_STYLE.md).
+// Enemies.js reads `state.run.forestSlowZones` inside its existing slow-aggregator
+// loop (same pattern as Sticky Web). No per-frame work needed here; the
+// load/publish/read split keeps the tick hot path zone-allocation-free.
+//
+// Visual marker intentionally omitted on first pass — the forest already stacks
+// pollen sprites + amber idle pulse + rune rings + shockwaves, and another
+// slot-5 ground ring risks muddying the read against amber telegraphs. Revisit
+// after playtest if zones feel invisible.
+export async function loadForestHazards(scene, hotspotsUrl = 'assets/forest_amber_hotspots.json') {
+  // Idempotent: nuke any prior roster before rebuilding.
+  clearForestHazards(scene);
+  let hotspots = null;
+  try {
+    const res = await fetch(hotspotsUrl);
+    hotspots = await res.json();
+  } catch (e) {
+    console.warn('[stageHazards] forest hotspot fetch failed:', e);
+    return 0;
+  }
+  if (!Array.isArray(hotspots) || hotspots.length === 0) return 0;
+  // Precompute r² so the enemy-loop hot path is mul-free per zone.
+  _forestSlowZones = hotspots.map((h) => ({
+    x: h.x, z: h.z,
+    r2: FOREST_SLOWZONE_R2,
+    mul: FOREST_SLOWZONE_MUL,
+  }));
+  // Publish so enemies.js can read without importing this module.
+  if (state.run) state.run.forestSlowZones = _forestSlowZones;
+  return _forestSlowZones.length;
+}
+
+export function clearForestHazards(_scene) {
+  _forestSlowZones = null;
+  if (state.run) state.run.forestSlowZones = null;
 }

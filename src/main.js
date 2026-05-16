@@ -45,7 +45,7 @@ import { initTotems, tickTotems, resetTotems } from './totems.js';
 import { initPylons, tickPylons, resetPylons } from './pylons.js';
 import { initBells, tickBells, resetBells } from './bells.js';
 import { initEnemyTells, updateEnemyTells, resetEnemyTells } from './enemyTells.js';
-import { initStageHazards, tickStageHazards, resetStageHazards } from './stageHazards.js';
+import { initStageHazards, tickStageHazards, resetStageHazards, loadForestHazards, clearForestHazards } from './stageHazards.js';
 import { applyStageRule, tickStageRule, clearStageRule } from './stageRules.js';
 import { loadArenaDecor, clearArenaDecor } from './arenaDecor.js';
 import { loadForestAmber, tickForestAmber, clearForestAmber } from './forestAmber.js';
@@ -525,6 +525,9 @@ function _teardownActiveRun() {
   playStageAmbient(null);
   // Tear down forest amber alongside decor (no-op on non-forest stages).
   if (state.scene) clearForestAmber(state.scene);
+  // Drop forest slow-zones too — paired with amber since both key off the
+  // same hotspot JSON. No-op on non-forest stages.
+  if (state.scene) clearForestHazards(state.scene);
 
   // Finalize Helltide BEFORE resetState wipes its state. teardownHelltide
   // reads state.run.helltideActive + helltideEmbersBanked to credit lifetime
@@ -910,11 +913,19 @@ function applyMetaUpgrades() {
       loadForestAmber(state.scene).catch((e) => {
         console.warn('[main] loadForestAmber failed:', e);
       });
+      // Swarm Phase 3: chokepoint slow-zones around amber hotspots — funnels
+      // swarms into single-file lines through cluster gaps. Fire-and-forget;
+      // enemies.js short-circuits on null until state.run.forestSlowZones is
+      // published, so zones spawning a frame late is invisible.
+      loadForestHazards(state.scene).catch((e) => {
+        console.warn('[main] loadForestHazards failed:', e);
+      });
     } else {
       // Defensive: stage transition from forest → other should drop amber too.
       // resetState() path already calls clearForestAmber via the block above,
       // but applyMetaUpgrades runs on stage select without a reset (mid-run).
       clearForestAmber(state.scene);
+      clearForestHazards(state.scene);
     }
   }
   // Per-stage ambient bed (loop). Currently only `forest` ships an ambient
