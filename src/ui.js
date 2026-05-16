@@ -20,13 +20,15 @@ import {
   weeklyMutatorConfig,
   // Iter 10a — settings overhaul
   exportMeta, importMeta, resetMeta,
+  // Punch List #6 — cosmetic Daily Survivor badge query for start-screen pip
+  hasBadge,
 } from './meta.js';
 // Iter 10a — accessibility uniform pusher + audio mix setters routed from
 // the Options menu sliders. Imported eagerly so the Options modal sliders
 // don't have to await a dynamic import on every drag event.
 import { applyAccessibilityOptions } from './postfx.js';
 import { setMasterVolume, setMusicVolume, setSfxVolume, sfx } from './audio.js';
-import { CHARACTERS, STAGES, AVATARS } from './config.js';
+import { CHARACTERS, STAGES, AVATARS, DAILY_SURVIVOR_BADGE_ID } from './config.js';
 import { SLOT_SYMBOLS, rollReel, resolveOutcome, applyOutcome } from './slotMachine.js';
 import { pushFocusScope, popFocusScope } from './uiFocus.js';
 import { mountLegend as mountPromptLegend, formatPrompt } from './buttonPrompts.js';
@@ -1374,7 +1376,10 @@ export function showDeathScreen() {
     }
   }
 
-  // Commit run to persistent meta and pull rewards/highlights
+  // Commit run to persistent meta and pull rewards/highlights.
+  // Punch List #6: pass `daily` so commitRunResults can apply the 2.5×
+  // coin multiplier + unlock the cosmetic Daily Survivor badge on first win.
+  // Gate is the live state.modes.daily (applyMetaUpgrades' source of truth).
   const summary = commitRunResults({
     timeSurvived: state.time.game,
     kills: state.run.kills,
@@ -1383,6 +1388,7 @@ export function showDeathScreen() {
     victory: state.victory,
     stageId: state.run.stage ? state.run.stage.id : null,
     greedMul: state.run.passive_greedMul || 0,
+    daily: !!(state.modes && state.modes.daily),
   });
   const meta = getMeta();
   // First-victory unlock banners
@@ -1393,6 +1399,11 @@ export function showDeathScreen() {
   // 2.4s delay slots after the stage banners so they don't stomp each other
   // when multiple unlocks fire from the same victory run.
   if (summary.unlockedClockwork) setTimeout(() => showBanner('★ CHARACTER UNLOCKED: CLOCKWORK', 4.0, '#7fffe4'), 2400);
+  // Punch List #6 — Daily Survivor cosmetic badge unlock. 2.0s delay sits
+  // between the daily-best toast (0.8s) and the clockwork slot (2.4s).
+  // Cyan accent matches the existing daily-mode banner family; emoji is the
+  // shield used for the start-screen pip so the player recognises it later.
+  if (summary.dailyBadgeUnlocked) setTimeout(() => showBanner('🛡 DAILY SURVIVOR BADGE', 4.0, C.cyan), 2000);
   // Iter 34 — Phase E: post-run mastery banner. recordAvatarRun returns the
   // count earned this run (Math.floor(kills/10) + 5/mb + 15/final). Skip the
   // banner for runs that earned 0 (short deaths) so we don't spam empty toasts.
@@ -1430,13 +1441,20 @@ export function showDeathScreen() {
     <div style="font-family:${F.body}; letter-spacing:0.20em; text-transform:uppercase; font-size:calc(var(--kk-font-scale, 1) * 12px); color:rgba(245,239,225,0.72);">${label}</div>
     <div style="font-family:${F.mono}; font-size:calc(var(--kk-font-scale, 1) * 15px); color:#c87bff; text-align:right;">${value}</div>
   `;
+  // Punch List #6 — annotate the Coins row with a 2.5× pill on daily wins
+  // so the player can see *why* their payout doubled. Cyan to match the
+  // badge banner; small font-size so it doesn't visually compete with the
+  // "BEST" gold pills above.
+  const dailyCoinExtra = summary.dailyWin
+    ? ` <span style="color:${C.cyan}; font-size:calc(var(--kk-font-scale, 1) * 11px); letter-spacing:0.10em;">× DAILY 2.5×</span>`
+    : '';
   stats.innerHTML = [
     statRow('Time Survived',  fmtTime(state.time.game), bestT),
     statRow('Level Reached',  state.hero.level),
     statRow('Kills',          state.run.kills, bestK),
     statRow('Damage Dealt',   Math.floor(state.run.dmgDealt).toLocaleString()),
     `<div style="grid-column:1/-1; height:1px; background:${C.edge}; margin:6px 0;"></div>`,
-    statRow('Coins Earned',   `+${summary.coinsEarned}`),
+    statRow('Coins Earned',   `+${summary.coinsEarned}`, dailyCoinExtra),
     statRow('Embers Earned',  `+${summary.embersEarned || 0} 🔥`),
     sigilRow('Sigils Earned', `✦ +${summary.sigilsEarned || 0}`),
     statRow('Total Coins',    meta.coins.toLocaleString()),
@@ -2062,10 +2080,20 @@ export function showStartScreen(text) {
     const best = todayIsRecord
       ? `BEST ${m.dailyRun.bestKills}K · ${fmtTime(m.dailyRun.bestTime)}`
       : 'NO RUNS YET';
+    // Punch List #6 — cosmetic "Daily Survivor" badge pip. Granted on first
+    // daily win in commitRunResults (gated to victory only — losses get
+    // nothing). Pure cosmetic; tiny shield row inside the card so the player
+    // sees their cumulative daily-win status without obstructing the toggle.
+    // Cyan accent (C.cyan = #7fffe4) matches the death-screen banner above.
+    const earnedBadge = hasBadge(DAILY_SURVIVOR_BADGE_ID);
+    const badgeRow = earnedBadge
+      ? `<div style="font-family:${F.body}; font-size:calc(var(--kk-font-scale, 1) * 9.5px); margin-top:2px; letter-spacing:0.14em; text-transform:uppercase; color:${C.cyan}; text-shadow:0 0 6px rgba(127,255,228,0.55);">🛡 Daily Survivor</div>`
+      : '';
     dailyBtn.innerHTML = `
       <div style="font-family:${F.display}; font-size:calc(var(--kk-font-scale, 1) * 13px); font-weight:700; letter-spacing:0.28em;">Daily ${on ? '★' : ''}</div>
       <div style="font-family:${F.body}; font-size:calc(var(--kk-font-scale, 1) * 9.5px); opacity:0.82; margin-top:3px; letter-spacing:0.12em; text-transform:uppercase;">${escapeHtml(cfg.date)} · ${escapeHtml(cfg.modifier)}</div>
       <div style="font-family:${F.mono}; font-size:calc(var(--kk-font-scale, 1) * 10px); opacity:0.85; margin-top:2px;">${best}</div>
+      ${badgeRow}
       ${_shareIconHTML}
     `;
     dailyBtn.style.cssText = `padding: 10px 26px 10px 18px; cursor: pointer; position:relative;
