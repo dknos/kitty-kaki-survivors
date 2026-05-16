@@ -20,6 +20,7 @@ import { initEnemies, updateEnemies, prewarmPools } from './enemies.js';
 import { initWeapons, tickWeapons, acquireWeapon, weaponChoices, _resetEvoAnnouncements, REGISTRY as WEAPON_REGISTRY } from './weapons/index.js';
 import { tickChainArcs } from './chainFx.js';
 import { tickEvolveBursts, disposeAllEvolveBursts, setEvolveBurstStateRef } from './fx/evolveBurst.js';
+import { initDissolveBurst, tickDissolveBursts, disposeAllDissolveBursts, setDissolveBurstStateRef } from './fx/dissolveBurst.js';
 import { initProjectileVisuals, releaseProjectileVisuals } from './weapons/autoAim.js';
 import { initXP, updateGems, applyLevelUpChoice } from './xp.js';
 import { initSpawnDirector, tickSpawnDirector, secondsUntilNextMiniBoss } from './spawnDirector.js';
@@ -221,6 +222,13 @@ async function boot() {
   // Ascension Evolution FX (Punch List #1) needs a state handle so the
   // 30s player rim can follow state.hero.pos without a static import cycle.
   setEvolveBurstStateRef(state);
+  // Dissolve-to-Gold death FX (Punch List #3). Init the pre-pooled
+  // InstancedMesh (cap 256, ZERO per-death allocation) and wire the state
+  // handle so `state.run.lowFx` can short-circuit the spawn path. Must run
+  // AFTER the scene exists (initFX above) and BEFORE initEnemies binds the
+  // killEnemy hook (defensive; init is idempotent so order is forgiving).
+  initDissolveBurst(scene);
+  setDissolveBurstStateRef(state);
   initVFXBurst(scene);
   initTotems(scene);
   initPylons(scene);
@@ -558,6 +566,11 @@ function _teardownActiveRun() {
   // teardown shape; matters when the player dies mid-rim (would otherwise
   // ghost-attach a glowing ring to the next run's hero spawn position).
   if (state.scene) disposeAllEvolveBursts(state.scene);
+  // Punch List #3 — drop any live dissolve burst slots so a stranded gold-
+  // dust mote from the last enemy doesn't ghost into the next run's
+  // pre-spawn camera frame. The InstancedMesh itself stays alive (it's
+  // reused across runs — same shape as fx.js kill ring init pattern).
+  if (state.scene) disposeAllDissolveBursts(state.scene);
 
   // Finalize Helltide BEFORE resetState wipes its state. teardownHelltide
   // reads state.run.helltideActive + helltideEmbersBanked to credit lifetime
@@ -1418,6 +1431,7 @@ function frame(now) {
   // opacity drift on frame 0 (life=0.4s, dt~0.016s → k≈0.04).
   _p=perfStart(); tickChainArcs(logicDt);         perfMark('chainArcs', _p);
   _p=perfStart(); tickEvolveBursts(logicDt);      perfMark('evolveBursts', _p);
+  _p=perfStart(); tickDissolveBursts(logicDt);    perfMark('dissolveBursts', _p);
   _p=perfStart(); tickStageRule(state, logicDt);  perfMark('stageRule', _p);
   _p=perfStart(); tickMiniEvents(logicDt);        perfMark('miniEvents', _p);
   _p=perfStart(); tickArenaProps(logicDt);        perfMark('arenaProps', _p);
