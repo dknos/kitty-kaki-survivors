@@ -217,6 +217,19 @@ const DEFAULT = {
   // First member: DAILY_SURVIVOR_BADGE_ID, granted on first Daily Challenge
   // victory inside commitRunResults().
   badges: [],
+  // ── Forest Expansion v0.1 (FE-C1A, 2026-05-16) ──
+  // forestWeapons: array of weapon id strings unlocked across the player's
+  // profile via Forest puzzle completion. Mirrors the `badges: []` pattern —
+  // backward-compat: loadMeta's `{ ...DEFAULT, ...parsed }` spread means old
+  // saves missing this field default to [] without migration. Read via
+  // hasForestWeapon(); written via unlockForestWeapon().
+  forestWeapons: [],
+  // forestPuzzlesSolved: object map of puzzle id → true, lifetime across all
+  // runs (separate from state.run.forestPuzzlesSolved, which is per-run). Used
+  // by the Hall of Records / codex to surface "first solve" badges and by
+  // future v0.2 progression to gate skips. Same backward-compat path as
+  // badges/forestWeapons via DEFAULT spread.
+  forestPuzzlesSolved: {},
   // Lifetime flags consumed by AVATAR_UNLOCK_COSTS.flag conditions. These
   // are set elsewhere (commitRunResults, mini-boss handler, etc.) and read
   // here via isAvatarUnlockable(). Iter 34 adds 4 keys; the rest are
@@ -1318,6 +1331,49 @@ export function unlockBadge(badgeId) {
 export function hasBadge(badgeId) {
   const meta = getMeta();
   return Array.isArray(meta.badges) && meta.badges.includes(badgeId);
+}
+
+/**
+ * Forest Expansion v0.1 (FE-C1A, 2026-05-16) — profile-wide weapon unlock.
+ * Adds `weaponId` to meta.forestWeapons if not already present, then persists
+ * immediately. Returns true on the first unlock (caller can show a banner),
+ * false if the weapon was already owned. Unlike unlockBadge(), this helper
+ * calls saveMeta() inline so puzzle-system callers don't need a trailing save
+ * commit (per docs/FOREST_EXPANSION_PLAN.md §5 risk-1: save corruption).
+ *
+ * @param {string} weaponId
+ * @returns {boolean} true if newly unlocked, false if already owned
+ */
+export function unlockForestWeapon(weaponId) {
+  const meta = getMeta();
+  if (!Array.isArray(meta.forestWeapons)) meta.forestWeapons = [];
+  if (meta.forestWeapons.includes(weaponId)) return false;
+  meta.forestWeapons.push(weaponId);
+  saveMeta();
+  return true;
+}
+
+/** Read-only: has the player unlocked this Forest puzzle-gated weapon? */
+export function hasForestWeapon(weaponId) {
+  const meta = getMeta();
+  return Array.isArray(meta.forestWeapons) && meta.forestWeapons.includes(weaponId);
+}
+
+/**
+ * Forest Expansion v0.1 (FE-C1A, 2026-05-16) — lifetime puzzle-solved flag.
+ * Marks `puzzleId` as solved in meta.forestPuzzlesSolved (separate from the
+ * per-run state.run.forestPuzzlesSolved map; this one survives run-reset).
+ * Persists inline for the same reason as unlockForestWeapon.
+ *
+ * @param {string} puzzleId
+ */
+export function markForestPuzzleSolved(puzzleId) {
+  const meta = getMeta();
+  if (!meta.forestPuzzlesSolved || typeof meta.forestPuzzlesSolved !== 'object') {
+    meta.forestPuzzlesSolved = {};
+  }
+  meta.forestPuzzlesSolved[puzzleId] = true;
+  saveMeta();
 }
 
 /**
