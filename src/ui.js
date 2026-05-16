@@ -20,13 +20,17 @@ import {
   weeklyMutatorConfig,
   // Iter 10a — settings overhaul
   exportMeta, importMeta, resetMeta,
+  // Punch List #4 — coin debit for the sigil-offer reroll button
+  spendCoins,
+  // Punch List #6 — cosmetic Daily Survivor badge query for start-screen pip
+  hasBadge,
 } from './meta.js';
 // Iter 10a — accessibility uniform pusher + audio mix setters routed from
 // the Options menu sliders. Imported eagerly so the Options modal sliders
 // don't have to await a dynamic import on every drag event.
 import { applyAccessibilityOptions } from './postfx.js';
 import { setMasterVolume, setMusicVolume, setSfxVolume, sfx } from './audio.js';
-import { CHARACTERS, STAGES, AVATARS } from './config.js';
+import { CHARACTERS, STAGES, AVATARS, SIGIL_REROLL, DAILY_SURVIVOR_BADGE_ID } from './config.js';
 import { SLOT_SYMBOLS, rollReel, resolveOutcome, applyOutcome } from './slotMachine.js';
 import { pushFocusScope, popFocusScope } from './uiFocus.js';
 import { mountLegend as mountPromptLegend, formatPrompt } from './buttonPrompts.js';
@@ -982,6 +986,12 @@ export function showLevelUpModal(choices) {
   // z:9999 with no mouseleave fired (the source detaches / gets occluded).
   try { hideTooltip(); } catch (_) {}
   if (_modal) hideLevelUpModal();
+  // Punch List #4 (2026-05-16) — coin-paid reroll counter is PER-OFFER, so
+  // wipe it every time a fresh modal opens. Covers all three entry paths:
+  // xp.js _triggerLevelUp, xp.js applyLevelUpChoice cascade, and the local
+  // doSkip cascade below. Without this the cap (SIGIL_REROLL.capPerOffer)
+  // would leak across queued levels in a multi-level XP injection.
+  if (state && state.run) state.run.rerollsThisOffer = 0;
 
   const registry = _registry || {};
   // Try to ensure registry is loaded (fire-and-forget; cards will fall back gracefully)
@@ -1027,6 +1037,13 @@ export function showLevelUpModal(choices) {
       box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 20px rgba(0,0,0,0.5);`;
     return b;
   }
+  // Punch List #4 (2026-05-16) — current coin cost of the next reroll on
+  // THIS offer. 30 → 50 → 70 ... ramps by SIGIL_REROLL.costRamp per use,
+  // capped at SIGIL_REROLL.capPerOffer rerolls per offer.
+  function _coinRerollCost() {
+    const used = (state.run && state.run.rerollsThisOffer) || 0;
+    return SIGIL_REROLL.firstCost + used * SIGIL_REROLL.costRamp;
+  }
   function rebuildQol() {
     qolRow.innerHTML = '';
     if (state.hero.rerolls > 0) {
@@ -1042,10 +1059,61 @@ export function showLevelUpModal(choices) {
       b.onclick = () => doSkip();
       qolRow.appendChild(b);
     }
+    // Punch List #4 — coin-paid reroll (always shown; orthogonal to the
+    // consumable `state.hero.rerolls` charge above). Cost ramps 30 → 50 → 70
+    // per offer; cap at SIGIL_REROLL.capPerOffer per offer. Disabled state is
+    // visual only — clicks while disabled still fire sfx.uiError so the
+    // player gets feedback when they can't afford or have hit the cap.
+    const used = (state.run && state.run.rerollsThisOffer) || 0;
+    const capped = used >= SIGIL_REROLL.capPerOffer;
+    const cost = _coinRerollCost();
+    const meta = getMeta();
+    const broke = (meta.coins || 0) < cost;
+    const disabled = capped || broke;
+    const pill = capped
+      ? `<span style="font-family:${F.mono};font-size:calc(var(--kk-font-scale, 1) * 11px);opacity:0.78;margin-left:6px;">MAX</span>`
+      : `<span style="font-family:${F.mono};font-size:calc(var(--kk-font-scale, 1) * 11px);opacity:0.78;margin-left:6px;">${cost}🪙</span>`;
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.innerHTML = `Reroll ${pill}`;
+    b.style.cssText = `padding: 10px 22px; cursor: ${disabled ? 'not-allowed' : 'pointer'};
+      background: linear-gradient(180deg, rgba(20,28,22,0.86), rgba(8,14,12,0.92));
+      border: 1px solid ${C.edge}; border-radius: 8px;
+      color: ${disabled ? 'rgba(245,239,225,0.35)' : C.amber};
+      font-family: ${F.display}; font-size: calc(var(--kk-font-scale, 1) * 13px); font-weight: 700;
+      letter-spacing: 0.26em;
+      opacity: ${disabled ? '0.55' : '1'};
+      box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 20px rgba(0,0,0,0.5);`;
+    b.onclick = () => doCoinReroll();
+    qolRow.appendChild(b);
   }
   function doReroll() {
     if (state.hero.rerolls <= 0) return;
     state.hero.rerolls -= 1;
+    import('./weapons/index.js').then(({ weaponChoices }) => {
+      const fresh = weaponChoices(3 + ((state && state.run && state.run.casinoExtraChoices) || 0));
+      state.levelUpChoices = fresh;
+      paintCards(row, fresh, _registry || {});
+      rebuildQol();
+      if (typeof row._kkRefreshFocus === 'function') row._kkRefreshFocus();
+    });
+  }
+  // Punch List #4 — coin-paid reroll. Distinct from doReroll (which uses
+  // the consumable `state.hero.rerolls` charges). Guards: cap, affordability.
+  // Both negative paths play sfx.uiError; success path plays sfx.uiClick.
+  function doCoinReroll() {
+    const used = (state.run && state.run.rerollsThisOffer) || 0;
+    if (used >= SIGIL_REROLL.capPerOffer) {
+      try { sfx.uiError && sfx.uiError(); } catch (_) {}
+      return;
+    }
+    const cost = _coinRerollCost();
+    if (!spendCoins(cost)) {
+      try { sfx.uiError && sfx.uiError(); } catch (_) {}
+      return;
+    }
+    state.run.rerollsThisOffer = used + 1;
+    try { sfx.uiClick && sfx.uiClick(); } catch (_) {}
     import('./weapons/index.js').then(({ weaponChoices }) => {
       const fresh = weaponChoices(3 + ((state && state.run && state.run.casinoExtraChoices) || 0));
       state.levelUpChoices = fresh;
@@ -1374,7 +1442,10 @@ export function showDeathScreen() {
     }
   }
 
-  // Commit run to persistent meta and pull rewards/highlights
+  // Commit run to persistent meta and pull rewards/highlights.
+  // Punch List #6: pass `daily` so commitRunResults can apply the 2.5×
+  // coin multiplier + unlock the cosmetic Daily Survivor badge on first win.
+  // Gate is the live state.modes.daily (applyMetaUpgrades' source of truth).
   const summary = commitRunResults({
     timeSurvived: state.time.game,
     kills: state.run.kills,
@@ -1383,6 +1454,7 @@ export function showDeathScreen() {
     victory: state.victory,
     stageId: state.run.stage ? state.run.stage.id : null,
     greedMul: state.run.passive_greedMul || 0,
+    daily: !!(state.modes && state.modes.daily),
   });
   const meta = getMeta();
   // First-victory unlock banners
@@ -1393,6 +1465,11 @@ export function showDeathScreen() {
   // 2.4s delay slots after the stage banners so they don't stomp each other
   // when multiple unlocks fire from the same victory run.
   if (summary.unlockedClockwork) setTimeout(() => showBanner('★ CHARACTER UNLOCKED: CLOCKWORK', 4.0, '#7fffe4'), 2400);
+  // Punch List #6 — Daily Survivor cosmetic badge unlock. 2.0s delay sits
+  // between the daily-best toast (0.8s) and the clockwork slot (2.4s).
+  // Cyan accent matches the existing daily-mode banner family; emoji is the
+  // shield used for the start-screen pip so the player recognises it later.
+  if (summary.dailyBadgeUnlocked) setTimeout(() => showBanner('🛡 DAILY SURVIVOR BADGE', 4.0, C.cyan), 2000);
   // Iter 34 — Phase E: post-run mastery banner. recordAvatarRun returns the
   // count earned this run (Math.floor(kills/10) + 5/mb + 15/final). Skip the
   // banner for runs that earned 0 (short deaths) so we don't spam empty toasts.
@@ -1430,13 +1507,20 @@ export function showDeathScreen() {
     <div style="font-family:${F.body}; letter-spacing:0.20em; text-transform:uppercase; font-size:calc(var(--kk-font-scale, 1) * 12px); color:rgba(245,239,225,0.72);">${label}</div>
     <div style="font-family:${F.mono}; font-size:calc(var(--kk-font-scale, 1) * 15px); color:#c87bff; text-align:right;">${value}</div>
   `;
+  // Punch List #6 — annotate the Coins row with a 2.5× pill on daily wins
+  // so the player can see *why* their payout doubled. Cyan to match the
+  // badge banner; small font-size so it doesn't visually compete with the
+  // "BEST" gold pills above.
+  const dailyCoinExtra = summary.dailyWin
+    ? ` <span style="color:${C.cyan}; font-size:calc(var(--kk-font-scale, 1) * 11px); letter-spacing:0.10em;">× DAILY 2.5×</span>`
+    : '';
   stats.innerHTML = [
     statRow('Time Survived',  fmtTime(state.time.game), bestT),
     statRow('Level Reached',  state.hero.level),
     statRow('Kills',          state.run.kills, bestK),
     statRow('Damage Dealt',   Math.floor(state.run.dmgDealt).toLocaleString()),
     `<div style="grid-column:1/-1; height:1px; background:${C.edge}; margin:6px 0;"></div>`,
-    statRow('Coins Earned',   `+${summary.coinsEarned}`),
+    statRow('Coins Earned',   `+${summary.coinsEarned}`, dailyCoinExtra),
     statRow('Embers Earned',  `+${summary.embersEarned || 0} 🔥`),
     sigilRow('Sigils Earned', `✦ +${summary.sigilsEarned || 0}`),
     statRow('Total Coins',    meta.coins.toLocaleString()),
@@ -2062,10 +2146,20 @@ export function showStartScreen(text) {
     const best = todayIsRecord
       ? `BEST ${m.dailyRun.bestKills}K · ${fmtTime(m.dailyRun.bestTime)}`
       : 'NO RUNS YET';
+    // Punch List #6 — cosmetic "Daily Survivor" badge pip. Granted on first
+    // daily win in commitRunResults (gated to victory only — losses get
+    // nothing). Pure cosmetic; tiny shield row inside the card so the player
+    // sees their cumulative daily-win status without obstructing the toggle.
+    // Cyan accent (C.cyan = #7fffe4) matches the death-screen banner above.
+    const earnedBadge = hasBadge(DAILY_SURVIVOR_BADGE_ID);
+    const badgeRow = earnedBadge
+      ? `<div style="font-family:${F.body}; font-size:calc(var(--kk-font-scale, 1) * 9.5px); margin-top:2px; letter-spacing:0.14em; text-transform:uppercase; color:${C.cyan}; text-shadow:0 0 6px rgba(127,255,228,0.55);">🛡 Daily Survivor</div>`
+      : '';
     dailyBtn.innerHTML = `
       <div style="font-family:${F.display}; font-size:calc(var(--kk-font-scale, 1) * 13px); font-weight:700; letter-spacing:0.28em;">Daily ${on ? '★' : ''}</div>
       <div style="font-family:${F.body}; font-size:calc(var(--kk-font-scale, 1) * 9.5px); opacity:0.82; margin-top:3px; letter-spacing:0.12em; text-transform:uppercase;">${escapeHtml(cfg.date)} · ${escapeHtml(cfg.modifier)}</div>
       <div style="font-family:${F.mono}; font-size:calc(var(--kk-font-scale, 1) * 10px); opacity:0.85; margin-top:2px;">${best}</div>
+      ${badgeRow}
       ${_shareIconHTML}
     `;
     dailyBtn.style.cssText = `padding: 10px 26px 10px 18px; cursor: pointer; position:relative;

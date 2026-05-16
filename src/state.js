@@ -141,6 +141,10 @@ export const state = {
     noDmgKills: 0,       // kills since last hit (reset on damage)
     flawless: true,      // false once hero takes any damage this run
     speedrunChecked: false, // one-shot flag for speedrun_lv10
+    // Punch List #4 (2026-05-16) — coin-paid rerolls used on the CURRENT
+    // level-up/sigil offer. Reset to 0 at the top of showLevelUpModal so the
+    // cap (SIGIL_REROLL.capPerOffer) never leaks across queued offers.
+    rerollsThisOffer: 0,
   },
 
   // ── FX ──
@@ -259,6 +263,9 @@ export function resetState() {
   state.run.noDmgKills = 0;
   state.run.flawless = true;
   state.run.speedrunChecked = false;
+  // Punch List #4 — coin-paid reroll counter (cleared per-offer; resetState
+  // also wipes it so a fresh run starts at zero).
+  state.run.rerollsThisOffer = 0;
   state.run.relicDrop = null;
   state.run.equippedRelic = null;
   state.run.heartPotency = 1;
@@ -331,7 +338,14 @@ export function resetState() {
     state.bells.list.length = 0;
     state.bells.initialized = false;
   }
-  // Mode flags snapshot — main.js reads getMeta() and pushes here at run start
+  // Mode flags snapshot — main.js reads getMeta() and pushes here at run start.
+  //
+  // Punch List #6 (2026-05-16) note: profile-wide cosmetic flags (badges,
+  // cosmetic unlocks, etc.) intentionally do NOT live on this per-run state
+  // object — they belong on the persistent meta blob (`getMeta().badges`,
+  // `meta.cosmetics`) so they survive resetState() between runs without a
+  // shadow copy that can drift. Read them via hasBadge()/getMeta(), not via
+  // state.modes.
   state.modes = state.modes || {};
   state.modes.hyper = false;
   state.modes.endless = false;

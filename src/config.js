@@ -64,6 +64,17 @@ export const XP = {
   gemMagnetAccel: 60,         // unused after iter 33a (direct-seek magnet)
 };
 
+// Punch List #4 (2026-05-16) — coin-paid reroll on the level-up/sigil offer
+// modal. First reroll costs `firstCost`, each subsequent one adds `costRamp`
+// (30 → 50 → 70 ...). Hard-capped at `capPerOffer` rerolls per offer; the
+// counter resets at the top of showLevelUpModal so a fresh level-up always
+// gets a clean budget (cap does NOT leak across queued levels).
+export const SIGIL_REROLL = {
+  firstCost:   30,
+  costRamp:    20,
+  capPerOffer: 3,
+};
+
 export const SPAWN = {
   // iter 33t — bumped further; user saw 16 alive at run start because hero
   // kill-rate outpaced 64/sec topup. Now 213/sec topup (32 per 0.15s tick)
@@ -233,6 +244,17 @@ export const WEAPONS = {
   maxSlots: 6,
   maxPassives: 6,
 };
+
+// ── Daily Challenge rewards (Punch List #6, 2026-05-16) ────────────────────
+// Daily wins pay a flat 2.5× coin multiplier on top of the existing
+// (Hyper × Vault × greed) chain — applied multiplicatively in
+// meta.commitRunResults() so the daily-only branch composes cleanly without
+// touching the additive greedMul stack. Loss/abandon runs get NO multiplier.
+// The cosmetic "Daily Survivor" badge unlocks on the first daily win and
+// persists in meta.badges; it has no mechanical effect anywhere in the game
+// (purely a start-screen pip + death-screen banner).
+export const DAILY_REWARD_MULT = 2.5;
+export const DAILY_SURVIVOR_BADGE_ID = 'daily_survivor';
 
 // Playable characters — each overrides starting weapon + a few base stats.
 // `id` is the persistent identifier; `unlock` is null for default or an
