@@ -238,6 +238,23 @@ const SFX_MANIFEST = {
   ballistaRepairLoop:  ['audio/cinder/ballista_repair_loop.ogg'],
   ballistaActivate:    ['audio/cinder/ballista_activate.ogg'],
   ballistaFire:        ['audio/cinder/ballista_fire.ogg'],
+  // Void stage SFX (Phase-2 Teleport Pads Agent hooks). CC0 Kenney layers
+  // (forceField for the rift whoosh + shimmer; impactBell_heavy for the cyan
+  // chime and the pad-ready bell) + a synthesized sub-bass cosmic drone in
+  // the ambient. All -16 LUFS to match the SFX bus. See
+  // assets/audio/void/ATTRIBUTION.md.
+  //
+  // voidTeleport: 0.95 s whoosh + chime. Plays ONCE per teleport — agent calls
+  // it from the activation handler, not per pad (origin + destination share
+  // the same sound per VOID_VISUAL_STYLE.md §Audio).
+  voidTeleport:        ['audio/void/void_teleport.ogg'],
+  // voidPadReady: 0.27 s subtle bell (inside VOID_VISUAL_STYLE.md §Audio
+  // binding 0.2-0.3 s range — see ATTRIBUTION.md "Spec Notes" for the
+  // task-brief-vs-style-guide reconciliation). Fires when a pad's 6 s
+  // cooldown expires. Sample is short + tonally consistent so 2-3 plays
+  // on the same frame (multiple pads coming off cooldown simultaneously)
+  // layer gracefully through the sfx submaster without mudding.
+  voidPadReady:        ['audio/void/void_pad_ready.ogg'],
 };
 
 const SFX_BANK = Object.fromEntries(Object.keys(SFX_MANIFEST).map(k => [k, []]));
@@ -439,6 +456,20 @@ export const sfx = {
   // every 2s) don't mud the mix. Sample is short (0.65s) to leave dynamic
   // headroom for overlapping plays through the SFX submaster.
   ballistaFire:       _throttled('ballistaFire',       () => _play('ballistaFire',       { gain: 0.55 })),
+
+  // ── Void stage (Phase-2 Teleport Pads Agent hooks) ────────────────────────
+  // voidTeleport: WHOOSH + chime on rift activation. Single hit per teleport
+  // (origin + destination share the one sound per VOID_VISUAL_STYLE.md §Audio
+  // — Pads Agent must call this exactly once per teleport, not once per pad).
+  // Gain 0.55 — punchy but not startling; fires often enough across a run
+  // that it can't be a jump-scare.
+  voidTeleport: _throttled('voidTeleport', () => _play('voidTeleport', { gain: 0.55 })),
+  // voidPadReady: subtle bell when a pad's 6 s cooldown expires. ~−6 dB below
+  // voidTeleport (0.28 vs 0.55) so it reads as diegetic "this pad is usable
+  // again" feedback, not a UI ping. Throttle drops same-frame double-fires;
+  // if multiple pads come off cooldown on a single tick the sample's
+  // short tonal profile keeps the layered mix clean.
+  voidPadReady: _throttled('voidPadReady', () => _play('voidPadReady', { gain: 0.28 })),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -617,6 +648,7 @@ const STAGE_AMBIENT_URLS = {
   forest: 'audio/forest/forest_ambient.ogg',
   twilight: 'audio/twilight/twilight_ambient.ogg',
   cinder: 'audio/cinder/cinder_ambient.ogg',
+  void: 'audio/void/void_ambient.ogg',
 };
 let _stageAmbient = null;        // { stageId, el, srcNode, gainNode }
 
