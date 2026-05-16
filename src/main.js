@@ -51,6 +51,7 @@ import { loadArenaDecor, clearArenaDecor } from './arenaDecor.js';
 import { loadForestAmber, tickForestAmber, clearForestAmber } from './forestAmber.js';
 import { loadTwilightFountains, tickTwilightFountains, clearTwilightFountains } from './twilightFountains.js';
 import { loadCinderBallistas, tickCinderBallistas, clearCinderBallistas } from './cinderBallistas.js';
+import { loadVoidTeleportPads, tickVoidTeleportPads, clearVoidTeleportPads } from './voidTeleportPads.js';
 import { initMiniEvents, tickMiniEvents, resetMiniEvents, teardownMiniEvents } from './miniEvents.js';
 import { initArenaProps, spawnArenaProps, tickArenaProps, resetArenaProps } from './arenaProps.js';
 import { notifyTutorialEvent } from './tutorial.js';
@@ -544,6 +545,10 @@ function _teardownActiveRun() {
   // Drop cinder slow-zones too — paired with ballistas since both key off the
   // same catapult derivation. No-op on non-cinder stages.
   if (state.scene) clearCinderHazards(state.scene);
+  // Tear down void teleport pads (no-op on non-void stages). Per-entity
+  // cooldown timestamps live on _pads; wiping the array wipes the cooldown
+  // state alongside it, so nothing leaks across runs.
+  if (state.scene) clearVoidTeleportPads(state.scene);
 
   // Finalize Helltide BEFORE resetState wipes its state. teardownHelltide
   // reads state.run.helltideActive + helltideEmbersBanked to credit lifetime
@@ -941,6 +946,7 @@ function applyMetaUpgrades() {
       clearTwilightHazards(state.scene);
       clearCinderBallistas(state.scene);
       clearCinderHazards(state.scene);
+      clearVoidTeleportPads(state.scene);
     } else if (stage.id === 'twilight') {
       // Phase-2 swarm: Blood/Light Fountains — proximity drink → 1.75× move
       // speed for 4s, 30s per-fountain cooldown. Fire-and-forget; hero.js
@@ -960,6 +966,7 @@ function applyMetaUpgrades() {
       clearForestHazards(state.scene);
       clearCinderBallistas(state.scene);
       clearCinderHazards(state.scene);
+      clearVoidTeleportPads(state.scene);
     } else if (stage.id === 'cinder') {
       // Phase-2 swarm: Cinder Ballistas — proximity-triggered 10s repair →
       // permanent auto-fire piercing bolts. Fire-and-forget; tickCinderBallistas
@@ -980,6 +987,26 @@ function applyMetaUpgrades() {
       clearForestHazards(state.scene);
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
+      clearVoidTeleportPads(state.scene);
+    } else if (stage.id === 'void') {
+      // Phase-2 swarm: Void Teleport Pads — proximity-triggered (≤1.2u) instant
+      // pad-to-pad teleport with 6s per-pad cooldown + 0.4s iFrames on arrival.
+      // Fire-and-forget; tickVoidTeleportPads bails when _pads is empty so a
+      // frame-late spawn is invisible. Destination resolution: explicit
+      // pairWith if set (suppressed if paired pad in cooldown), else nearest
+      // OTHER non-cooldown pad. Suppressed teleports still consume the step
+      // trigger via the origin's localStepGuard — player must step off and
+      // back on to retry.
+      loadVoidTeleportPads(state.scene).catch((e) => {
+        console.warn('[main] loadVoidTeleportPads failed:', e);
+      });
+      // Defensive: forest/twilight/cinder decor must be gone on void.
+      clearForestAmber(state.scene);
+      clearForestHazards(state.scene);
+      clearTwilightFountains(state.scene);
+      clearTwilightHazards(state.scene);
+      clearCinderBallistas(state.scene);
+      clearCinderHazards(state.scene);
     } else {
       // Defensive: stage transition from forest/twilight/cinder → other should
       // drop all. resetState() path already calls these via the block above,
@@ -990,6 +1017,7 @@ function applyMetaUpgrades() {
       clearTwilightHazards(state.scene);
       clearCinderBallistas(state.scene);
       clearCinderHazards(state.scene);
+      clearVoidTeleportPads(state.scene);
     }
   }
   // Per-stage ambient bed (loop). `forest` and `twilight` ship ambient files
@@ -1355,6 +1383,11 @@ function frame(now) {
   // tickCinderBallistas bails when _ballistas is empty.
   if (state.run && state.run.stage && state.run.stage.id === 'cinder') {
     _p=perfStart(); tickCinderBallistas(logicDt, state); perfMark('cinderBallistas', _p);
+  }
+  // Void-only: Teleport Pad interactables. No-op on other stages —
+  // tickVoidTeleportPads bails when _pads is empty.
+  if (state.run && state.run.stage && state.run.stage.id === 'void') {
+    _p=perfStart(); tickVoidTeleportPads(logicDt, state); perfMark('voidTeleportPads', _p);
   }
   _p=perfStart(); tickStageRule(state, logicDt);  perfMark('stageRule', _p);
   _p=perfStart(); tickMiniEvents(logicDt);        perfMark('miniEvents', _p);
