@@ -299,6 +299,14 @@ export function updateHero(dt) {
   if (state.run.signature_engulfSlowUntil && state.run.signature_engulfSlowUntil > state.time.game) speedMul *= 0.5;
   // Frosted-affix aura slow (set per-frame by enemies.js agent 8a; defaults to 1).
   if (state.run.affix_frostSlow) speedMul *= state.run.affix_frostSlow;
+  // Twilight Fountain drink buff — published by src/twilightFountains.js when
+  // the player drinks within proximity of a fountain. 1.75× for 4 seconds,
+  // 30s per-fountain cooldown. Mirrors the engulf/frost publish-and-read
+  // pattern above so this stays stat-recompute-safe (Option A in
+  // twilightFountains.js header).
+  if (state.run.fountainSpeedBuff && state.run.fountainSpeedBuff.expiresAt > state.time.game) {
+    speedMul *= state.run.fountainSpeedBuff.mul;
+  }
   const speed = HERO.speed * speedMul * hazardSlow;
   // While dashing, override input direction with the locked dashDir
   const dx = dashing ? h.dashDir.x : (mv.x + mv.y) * SQRT_HALF;

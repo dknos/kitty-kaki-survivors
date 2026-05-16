@@ -49,6 +49,7 @@ import { initStageHazards, tickStageHazards, resetStageHazards, loadForestHazard
 import { applyStageRule, tickStageRule, clearStageRule } from './stageRules.js';
 import { loadArenaDecor, clearArenaDecor } from './arenaDecor.js';
 import { loadForestAmber, tickForestAmber, clearForestAmber } from './forestAmber.js';
+import { loadTwilightFountains, tickTwilightFountains, clearTwilightFountains } from './twilightFountains.js';
 import { initMiniEvents, tickMiniEvents, resetMiniEvents, teardownMiniEvents } from './miniEvents.js';
 import { initArenaProps, spawnArenaProps, tickArenaProps, resetArenaProps } from './arenaProps.js';
 import { notifyTutorialEvent } from './tutorial.js';
@@ -528,6 +529,10 @@ function _teardownActiveRun() {
   // Drop forest slow-zones too — paired with amber since both key off the
   // same hotspot JSON. No-op on non-forest stages.
   if (state.scene) clearForestHazards(state.scene);
+  // Tear down twilight fountains (no-op on non-twilight stages). Mirrors
+  // the forestAmber teardown shape; clear path also nulls
+  // state.run.fountainSpeedBuff so the buff can't leak across runs.
+  if (state.scene) clearTwilightFountains(state.scene);
 
   // Finalize Helltide BEFORE resetState wipes its state. teardownHelltide
   // reads state.run.helltideActive + helltideEmbersBanked to credit lifetime
@@ -920,12 +925,25 @@ function applyMetaUpgrades() {
       loadForestHazards(state.scene).catch((e) => {
         console.warn('[main] loadForestHazards failed:', e);
       });
-    } else {
-      // Defensive: stage transition from forest → other should drop amber too.
-      // resetState() path already calls clearForestAmber via the block above,
-      // but applyMetaUpgrades runs on stage select without a reset (mid-run).
+      // Defensive: re-entering forest should drop any leftover twilight FX.
+      clearTwilightFountains(state.scene);
+    } else if (stage.id === 'twilight') {
+      // Phase-2 swarm: Blood/Light Fountains — proximity drink → 1.75× move
+      // speed for 4s, 30s per-fountain cooldown. Fire-and-forget; hero.js
+      // short-circuits on null until state.run.fountainSpeedBuff is published.
+      loadTwilightFountains(state.scene).catch((e) => {
+        console.warn('[main] loadTwilightFountains failed:', e);
+      });
+      // Defensive: forest decor must be gone on twilight.
       clearForestAmber(state.scene);
       clearForestHazards(state.scene);
+    } else {
+      // Defensive: stage transition from forest/twilight → other should drop
+      // both. resetState() path already calls these via the block above, but
+      // applyMetaUpgrades runs on stage select without a reset (mid-run).
+      clearForestAmber(state.scene);
+      clearForestHazards(state.scene);
+      clearTwilightFountains(state.scene);
     }
   }
   // Per-stage ambient bed (loop). `forest` and `twilight` ship ambient files
@@ -1281,6 +1299,11 @@ function frame(now) {
   // other stages — tickForestAmber bails when _entities is empty.
   if (state.run && state.run.stage && state.run.stage.id === 'forest') {
     _p=perfStart(); tickForestAmber(logicDt, state); perfMark('forestAmber', _p);
+  }
+  // Twilight-only: Blood/Light Fountains. No-op on other stages —
+  // tickTwilightFountains bails when _fountains is empty.
+  if (state.run && state.run.stage && state.run.stage.id === 'twilight') {
+    _p=perfStart(); tickTwilightFountains(logicDt, state); perfMark('twilightFountains', _p);
   }
   _p=perfStart(); tickStageRule(state, logicDt);  perfMark('stageRule', _p);
   _p=perfStart(); tickMiniEvents(logicDt);        perfMark('miniEvents', _p);
