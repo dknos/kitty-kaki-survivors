@@ -34,6 +34,15 @@ import sigBezelbugFacet    from './sig/bezelbug_facet.js';
 import sigRockerPowerchord from './sig/rocker_powerchord.js';
 // BorgirBoss (unlock-gated 13th avatar, post-Phase F).
 import sigBorgirbossRocketrack from './sig/borgirboss_rocketrack.js';
+// Forest Expansion C1B (FE-C1B) — special weapons unlocked by Forest puzzles.
+// Registered in REGISTRY so `tickWeapons` picks them up, but `hidden: true`
+// keeps them out of the level-up card pool (see weaponChoices filter below).
+// Auto-equipped into a hidden 5th slot at run start when the player has
+// unlocked them via `meta.forestWeapons` (puzzle reward).
+import sapWeaver    from './sapWeaver.js';
+import choirLance   from './choirLance.js';
+import prismWarden  from './prismWarden.js';
+import { getMeta } from '../meta.js';
 import { passiveChoices, applyPassive, PASSIVES } from './passives.js';
 export { applyPassive, PASSIVES };
 
@@ -57,7 +66,42 @@ export const REGISTRY = {
   [sigBezelbugFacet.id]:    sigBezelbugFacet,
   [sigRockerPowerchord.id]: sigRockerPowerchord,
   [sigBorgirbossRocketrack.id]: sigBorgirbossRocketrack,
+  // Forest Expansion C1B — hidden special weapons (auto-equipped per
+  // meta.forestWeapons; filtered out of weaponChoices via the `hidden` flag).
+  [sapWeaver.id]:    sapWeaver,
+  [choirLance.id]:   choirLance,
+  [prismWarden.id]:  prismWarden,
 };
+
+// FE-C1B — list of weapon ids that count as Forest "special" (5th-slot)
+// weapons. These are auto-equipped at run start per `meta.forestWeapons`
+// (the puzzle-reward unlock list owned by Agent 1 — backward-compat: read
+// defensively with `|| []`). Order is stable so equip is deterministic.
+const FOREST_SPECIAL_IDS = ['sap_weaver', 'choir_lance', 'prism_warden'];
+
+// Auto-equip Forest special weapons (FE-C1B) into the hidden 5th slot at run
+// start. Idempotent: we early-return on any weapon id that's already in
+// `state.weapons`, so the Cellar's repeated starter acquires (which loop
+// through acquireWeapon multiple times) trigger this helper many times but
+// each forest weapon is only pushed once. resetState() clears
+// `state.weapons.length = 0` between runs, so the next run starts the loop
+// fresh — no run-id bookkeeping needed.
+function _equipForestSpecialsForRun() {
+  let meta = null;
+  try { meta = getMeta(); } catch (_) { meta = null; }
+  const unlocked = (meta && Array.isArray(meta.forestWeapons)) ? meta.forestWeapons : [];
+  if (unlocked.length === 0) return;
+  for (const id of FOREST_SPECIAL_IDS) {
+    if (!unlocked.includes(id)) continue;
+    const mod = REGISTRY[id];
+    if (!mod) continue;
+    if (state.weapons.find(w => w.id === id)) continue;
+    const entry = { id, level: 1, inst: {} };
+    state.weapons.push(entry);
+    const level = mod.levels[0];
+    if (mod.init) try { mod.init(state, level, entry.inst); } catch (e) { console.warn('[weapons] forest init', id, e); }
+  }
+}
 
 const WORLD_BOUND = 200; // projectile cull bound (square half-extent around hero)
 const PROJ_HIT_RADIUS = 0.6;
@@ -86,6 +130,14 @@ export function acquireWeapon(id) {
   state.weapons.push(entry);
   const level = mod.levels[0];
   if (mod.init) mod.init(state, level, entry.inst);
+  // FE-C1B: the first weapon acquired this run is the starter (see
+  // main.js _startRun / _restartRun). Use this lifecycle moment to also
+  // auto-equip any Forest special weapons the player has unlocked.
+  // `_equipForestSpecialsForRun()` is internally idempotent (per-id
+  // membership check), so subsequent acquires this run (Cellar duplicates
+  // = level-ups, which hit the early-return branch above; level-up cards,
+  // which hit either branch) are no-ops here.
+  _equipForestSpecialsForRun();
 }
 
 export function tickWeapons(dt) {
@@ -202,6 +254,9 @@ export function weaponChoices(n) {
 
   for (const id of ids) {
     const mod = REGISTRY[id];
+    // FE-C1B: hidden weapons (Forest specials, slot 5) never appear in the
+    // level-up card pool — they're equipped automatically per meta unlock.
+    if (mod && mod.hidden) continue;
     const have = owned.get(id);
     if (have) {
       if (have.level < mod.maxLevel) {
