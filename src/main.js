@@ -50,6 +50,7 @@ import { applyStageRule, tickStageRule, clearStageRule } from './stageRules.js';
 import { loadArenaDecor, clearArenaDecor } from './arenaDecor.js';
 import { loadForestAmber, tickForestAmber, clearForestAmber } from './forestAmber.js';
 import { loadTwilightFountains, tickTwilightFountains, clearTwilightFountains } from './twilightFountains.js';
+import { loadCinderBallistas, tickCinderBallistas, clearCinderBallistas } from './cinderBallistas.js';
 import { initMiniEvents, tickMiniEvents, resetMiniEvents, teardownMiniEvents } from './miniEvents.js';
 import { initArenaProps, spawnArenaProps, tickArenaProps, resetArenaProps } from './arenaProps.js';
 import { notifyTutorialEvent } from './tutorial.js';
@@ -536,6 +537,10 @@ function _teardownActiveRun() {
   // Drop twilight slow-zones too — paired with fountains since both key off
   // the same hedge derivation. No-op on non-twilight stages.
   if (state.scene) clearTwilightHazards(state.scene);
+  // Tear down cinder ballistas (no-op on non-cinder stages). Per-entity
+  // activation flags live on _ballistas; wiping the array wipes the activation
+  // state alongside it, so nothing leaks across runs.
+  if (state.scene) clearCinderBallistas(state.scene);
 
   // Finalize Helltide BEFORE resetState wipes its state. teardownHelltide
   // reads state.run.helltideActive + helltideEmbersBanked to credit lifetime
@@ -931,6 +936,7 @@ function applyMetaUpgrades() {
       // Defensive: re-entering forest should drop any leftover twilight FX.
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
+      clearCinderBallistas(state.scene);
     } else if (stage.id === 'twilight') {
       // Phase-2 swarm: Blood/Light Fountains — proximity drink → 1.75× move
       // speed for 4s, 30s per-fountain cooldown. Fire-and-forget; hero.js
@@ -948,14 +954,28 @@ function applyMetaUpgrades() {
       // Defensive: forest decor must be gone on twilight.
       clearForestAmber(state.scene);
       clearForestHazards(state.scene);
-    } else {
-      // Defensive: stage transition from forest/twilight → other should drop
-      // both. resetState() path already calls these via the block above, but
-      // applyMetaUpgrades runs on stage select without a reset (mid-run).
+      clearCinderBallistas(state.scene);
+    } else if (stage.id === 'cinder') {
+      // Phase-2 swarm: Cinder Ballistas — proximity-triggered 10s repair →
+      // permanent auto-fire piercing bolts. Fire-and-forget; tickCinderBallistas
+      // bails when _ballistas is empty so a frame-late spawn is invisible.
+      loadCinderBallistas(state.scene).catch((e) => {
+        console.warn('[main] loadCinderBallistas failed:', e);
+      });
+      // Defensive: forest/twilight decor must be gone on cinder.
       clearForestAmber(state.scene);
       clearForestHazards(state.scene);
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
+    } else {
+      // Defensive: stage transition from forest/twilight/cinder → other should
+      // drop all. resetState() path already calls these via the block above,
+      // but applyMetaUpgrades runs on stage select without a reset (mid-run).
+      clearForestAmber(state.scene);
+      clearForestHazards(state.scene);
+      clearTwilightFountains(state.scene);
+      clearTwilightHazards(state.scene);
+      clearCinderBallistas(state.scene);
     }
   }
   // Per-stage ambient bed (loop). `forest` and `twilight` ship ambient files
@@ -1316,6 +1336,11 @@ function frame(now) {
   // tickTwilightFountains bails when _fountains is empty.
   if (state.run && state.run.stage && state.run.stage.id === 'twilight') {
     _p=perfStart(); tickTwilightFountains(logicDt, state); perfMark('twilightFountains', _p);
+  }
+  // Cinder-only: Ballista Turret interactables. No-op on other stages —
+  // tickCinderBallistas bails when _ballistas is empty.
+  if (state.run && state.run.stage && state.run.stage.id === 'cinder') {
+    _p=perfStart(); tickCinderBallistas(logicDt, state); perfMark('cinderBallistas', _p);
   }
   _p=perfStart(); tickStageRule(state, logicDt);  perfMark('stageRule', _p);
   _p=perfStart(); tickMiniEvents(logicDt);        perfMark('miniEvents', _p);
