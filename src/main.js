@@ -277,6 +277,13 @@ async function boot() {
       ensurePool(scene, 'fx/dust_puff_v1',         96, { bypassWhenLowFx: true });
       ensurePool(scene, 'fx/aura_rings_v1',        16, { bypassWhenLowFx: false });
       ensurePool(scene, 'fx/borgir_explosion_v1',  32, { bypassWhenLowFx: false });
+      console.log('[sprites] bootstrap ok — 4 atlases loaded, 4 pools live (hit_flash, dust_puff, aura_rings, borgir_explosion)');
+      // Visibility probe: persistent looping aura at world origin so we can
+      // tell "system works, triggers don't" from "system doesn't render".
+      // If you see a cyan/white ring slowly pulsing at the very center of
+      // the arena, the sprite system is rendering correctly. Remove this
+      // line once trigger paths are verified.
+      try { spawnSprite('fx/aura_rings_v1', { x: 0, y: 0.5, z: 0, scale: 5, anim: 'idle' }); } catch (_) {}
     } catch (e) {
       console.warn('[sprites] bootstrap failed:', e);
     }
