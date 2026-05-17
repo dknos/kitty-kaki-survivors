@@ -99,6 +99,18 @@ The texture instance is a module-private singleton inside each consumer
 file so the loader fires exactly once per scene (`TextureLoader.load` is
 cached, but the wrap/anisotropy setup runs only once either way).
 
+## P3D addendum — sky-dome gradient textures (FOREST-V2-A34, PR #138)
+
+Five 256×128 RGB sRGB vertical-gradient PNGs (`sky_midday.png`,
+`sky_golden.png`, `sky_dusk.png`, `sky_twilight.png`, `sky_bloodmoon.png`)
+consumed by `src/forestSkyDome.js`. Each file is ~0.5 KB (~2.5 KB total)
+thanks to identical-row PNG filtering on a pure vertical gradient.
+Generator: `tools/_gen_sky_textures.mjs`. Palette: atmospheric slot set
+(BONE/DARK/AMBER/GOLD + slot-7 0xffd86b + cohort 20 reaper 0xff2020) —
+no new hex constants. ShaderMaterial crossfades over 3s on day/night
+phase change. `ClampToEdgeWrapping`, `LinearFilter`, `anisotropy = 8`,
+`colorSpace = SRGBColorSpace`.
+
 ## License
 
 This project's LICENSE (MIT). No third-party content included; nothing
