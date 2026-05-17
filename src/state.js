@@ -319,6 +319,18 @@ export function resetState() {
   // truthy entry here keyed by `'c' + instanceIdx`. Persistence is per
   // run only — coffins refresh between runs (matches VS staple).
   state.run._coffinsOpened        = {};
+  // ── Forest Expansion v0.2 (FOREST-V2-A7 Reaper, 2026-05-17) ──
+  // Per-run gating flags for the 30:00 endgame Reaper. All three are
+  // one-shot: warning fires once at 29:30, spawn once at 30:00, outlast
+  // bonus once at 35:00. Reset every run so a fresh forest run replays the
+  // schedule from zero. `stats` is a free-form bag used by post-run UI
+  // (reaperKillTime / reaperOutlasted are written by forestReaper.js into
+  // state.run.stats). Initialized here so other systems can stamp into
+  // state.run.stats too without an "if (stats)" guard at every site.
+  state.run._reaperWarned         = false;
+  state.run._reaperSpawned        = false;
+  state.run._reaperOutlastedFired = false;
+  state.run.stats                 = {};
   state.run.relicDrop = null;
   state.run.equippedRelic = null;
   state.run.heartPotency = 1;
