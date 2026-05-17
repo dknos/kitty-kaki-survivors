@@ -35,6 +35,7 @@ import { loadForestReaper } from './forestReaper.js';
 import { loadForestPickups } from './forestPickups.js';
 import { loadForestWeaponDrops } from './forestWeaponDrops.js';
 import { loadForestDayNight } from './forestDayNight.js';
+import { loadForestSkyDome } from './forestSkyDome.js';
 import { loadForestHud } from './forestHud.js';
 import { loadForestSigilArc } from './forestSigilArc.js';
 import { loadForestEmitters } from './forestEmitters.js';
@@ -269,6 +270,20 @@ function _buildForestDecor(group, opts) {
     } catch (e) {
       console.warn('[arenaDecor] loadForestDayNight failed:', e);
       _gameState._dayNightLoaded = false;
+    }
+  }
+  // ── FOREST-V2-A34 Sky Dome (PHASE 3 P3D, 2026-05-17) ──
+  // Large inverted SphereGeometry (r=300, BackSide) wrapped around the scene;
+  // ShaderMaterial crossfades between 5 pre-baked vertical-gradient PNGs as
+  // the cohort 9 day/night phase advances. Once-per-scene gate mirrors
+  // daynight; dispose at the same 5 sites in main.js flips the flag back.
+  if (_gameState && _gameState.scene && !_gameState._skyDomeLoaded) {
+    _gameState._skyDomeLoaded = true;
+    try {
+      loadForestSkyDome(_gameState.scene, _gameState);
+    } catch (e) {
+      console.warn('[arenaDecor] loadForestSkyDome failed:', e);
+      _gameState._skyDomeLoaded = false;
     }
   }
   // ── FOREST-V2-A10 Stage HUD (2026-05-17) ──

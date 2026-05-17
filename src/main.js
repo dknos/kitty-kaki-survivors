@@ -107,6 +107,7 @@ import { tickForestReaper, disposeForestReaper } from './forestReaper.js';
 import { tickForestPickups, disposeForestPickups } from './forestPickups.js';
 import { tickForestWeaponDrops, disposeForestWeaponDrops } from './forestWeaponDrops.js';
 import { tickForestDayNight, disposeForestDayNight } from './forestDayNight.js';
+import { tickForestSkyDome, disposeForestSkyDome } from './forestSkyDome.js';
 import { tickForestHud, disposeForestHud } from './forestHud.js';
 import { tickForestSigilArc, disposeForestSigilArc } from './forestSigilArc.js';
 import { tickForestEmitters, disposeForestEmitters } from './forestEmitters.js';
@@ -765,6 +766,10 @@ function _teardownActiveRun() {
     disposeForestDayNight(state.scene);
     if (state) state._dayNightLoaded = false;
   }
+  if (state.scene) {
+    disposeForestSkyDome(state.scene);
+    if (state) state._skyDomeLoaded = false;
+  }
   // FOREST-V2-A10 Stage HUD teardown — removes #kk-forest-hud + style by id.
   // DOM-only; no scene param. Idempotent; safe across stage swaps.
   disposeForestHud();
@@ -1310,6 +1315,7 @@ function applyMetaUpgrades() {
       disposeForestPickups(state.scene);    state._pickupsLoaded    = false; // FOREST-V2-A8 Pickups
       disposeForestWeaponDrops(state.scene); state._weaponDropsLoaded = false; // FOREST-V2-A17 Weapon Drops
       disposeForestDayNight(state.scene);   state._dayNightLoaded   = false; // FOREST-V2-A9 Day/Night
+      disposeForestSkyDome(state.scene);    state._skyDomeLoaded    = false; // FOREST-V2-A34 Sky Dome
       disposeForestHud();                   state._hudLoaded        = false; // FOREST-V2-A10 Stage HUD
       disposeForestSigilArc();              state._sigilArcLoaded   = false; // PHASE 1 P1G Sigil Arc
       disposeForestEmitters();              state._emittersLoaded   = false; // PHASE 1 P1I Ambient Emitters
@@ -1354,6 +1360,7 @@ function applyMetaUpgrades() {
       disposeForestPickups(state.scene);    state._pickupsLoaded    = false; // FOREST-V2-A8 Pickups
       disposeForestWeaponDrops(state.scene); state._weaponDropsLoaded = false; // FOREST-V2-A17 Weapon Drops
       disposeForestDayNight(state.scene);   state._dayNightLoaded   = false; // FOREST-V2-A9 Day/Night
+      disposeForestSkyDome(state.scene);    state._skyDomeLoaded    = false; // FOREST-V2-A34 Sky Dome
       disposeForestHud();                   state._hudLoaded        = false; // FOREST-V2-A10 Stage HUD
       disposeForestSigilArc();              state._sigilArcLoaded   = false; // PHASE 1 P1G Sigil Arc
       disposeForestEmitters();              state._emittersLoaded   = false; // PHASE 1 P1I Ambient Emitters
@@ -1404,6 +1411,7 @@ function applyMetaUpgrades() {
       disposeForestPickups(state.scene);    state._pickupsLoaded    = false; // FOREST-V2-A8 Pickups
       disposeForestWeaponDrops(state.scene); state._weaponDropsLoaded = false; // FOREST-V2-A17 Weapon Drops
       disposeForestDayNight(state.scene);   state._dayNightLoaded   = false; // FOREST-V2-A9 Day/Night
+      disposeForestSkyDome(state.scene);    state._skyDomeLoaded    = false; // FOREST-V2-A34 Sky Dome
       disposeForestHud();                   state._hudLoaded        = false; // FOREST-V2-A10 Stage HUD
       disposeForestSigilArc();              state._sigilArcLoaded   = false; // PHASE 1 P1G Sigil Arc
       disposeForestEmitters();              state._emittersLoaded   = false; // PHASE 1 P1I Ambient Emitters
@@ -1436,6 +1444,7 @@ function applyMetaUpgrades() {
       disposeForestPickups(state.scene);    state._pickupsLoaded    = false; // FOREST-V2-A8 Pickups
       disposeForestWeaponDrops(state.scene); state._weaponDropsLoaded = false; // FOREST-V2-A17 Weapon Drops
       disposeForestDayNight(state.scene);   state._dayNightLoaded   = false; // FOREST-V2-A9 Day/Night
+      disposeForestSkyDome(state.scene);    state._skyDomeLoaded    = false; // FOREST-V2-A34 Sky Dome
       disposeForestHud();                   state._hudLoaded        = false; // FOREST-V2-A10 Stage HUD
       disposeForestSigilArc();              state._sigilArcLoaded   = false; // PHASE 1 P1G Sigil Arc
       disposeForestEmitters();              state._emittersLoaded   = false; // PHASE 1 P1I Ambient Emitters
@@ -1976,6 +1985,10 @@ function frame(now) {
     // over the 30:00 Reaper arc. Bails immediately when not loaded (forest-
     // only gate above already filters non-forest stages).
     _p=perfStart(); tickForestDayNight(state, logicDt); perfMark('forestDayNight', _p);
+    // FOREST-V2-A34 Sky Dome (PHASE 3 P3D) — crossfades the 5 per-phase
+    // sky-dome textures (midday→golden→dusk→twilight→bloodmoon). Bails
+    // immediately when not loaded (forest-only gate above already filters).
+    _p=perfStart(); tickForestSkyDome(state, logicDt); perfMark('forestSkyDome', _p);
     // FOREST-V2-A10 Stage HUD — top-bar clock + Reaper countdown + counters.
     // DOM-only; reads state.time.game + state.run.kills; mutates textContent
     // + clock color only. Bails when not loaded (forest-only gate above
