@@ -298,6 +298,10 @@ export function resetState() {
   state.run.lockdownWavesCleared  = 0;       // 0..3 wave-progression mirror for UI/badges
   state.run.lockdownEliteSeen     = false;   // any elite tagged into the live lockdown
   state.run._forestLockdownFired  = false;   // one-time per-run trigger guard (Forest)
+  // FOREST ITER C2 — Trap Corridor (stage-agnostic env-damage hazard lane,
+  // src/trapCorridor.js). True if ≥1 corridor is armed; cheap flag so
+  // readers don't have to iterate the corridor list.
+  state.run.trapCorridorActive    = false;
   state.run.relicDrop = null;
   state.run.equippedRelic = null;
   state.run.heartPotency = 1;

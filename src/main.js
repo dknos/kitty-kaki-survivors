@@ -59,6 +59,7 @@ import { applyStageRule, tickStageRule, clearStageRule } from './stageRules.js';
 import { loadArenaDecor, clearArenaDecor } from './arenaDecor.js';
 import { loadForestAmber, tickForestAmber, clearForestAmber } from './forestAmber.js';
 import { initLockdownArena, tickLockdownArena, armLockdown, triggerLockdown, disposeLockdownArenas } from './lockdownArena.js';
+import { initTrapCorridor, tickTrapCorridor, armCorridor, disposeTrapCorridors } from './trapCorridor.js';
 import { tickPuzzleSystem, startPuzzle as _puzzleStart } from './puzzleSystem.js';
 import { detectRoom, FOREST_ROOMS } from './forestRooms.js';
 import { loadForestPortals, tickForestPortals, clearForestPortals } from './forestPortals.js';
@@ -255,6 +256,10 @@ async function boot() {
   // here so any stage's load* path can call armLockdown(...) once the scene
   // is alive. Forest arms one arena in the south-cluster (~1, -28) below.
   initLockdownArena(scene);
+  // Trap Corridor (stage-agnostic env-damage hazard lane; FOREST ITER C2).
+  // Init here so any stage's load* path can call armCorridor(...) once the
+  // scene is alive. Forest arms one 3-shard corridor in the north cluster.
+  initTrapCorridor(scene);
   initPickups(scene);
   initBossTelegraphs(scene);
   initDestructibles(scene);
@@ -602,6 +607,11 @@ function _teardownActiveRun() {
   // arena's door meshes + clears state.run.lockdown* flags. Stage-agnostic;
   // safe to call regardless of which stage was active.
   if (state.scene) disposeLockdownArenas(state.scene);
+  // Tear down trap corridors (FOREST ITER C2). Disposes any registered
+  // corridor's pre-pooled shard + ring meshes + clears
+  // state.run.trapCorridorActive. Stage-agnostic; safe to call regardless of
+  // which stage was active.
+  if (state.scene) disposeTrapCorridors(state.scene);
   // Drop forest slow-zones too — paired with amber since both key off the
   // same hotspot JSON. No-op on non-forest stages.
   if (state.scene) clearForestHazards(state.scene);
@@ -1062,6 +1072,27 @@ function applyMetaUpgrades() {
           paletteSlots: { wall: 0x2d3a55, glow: 0x7df0c4, clear: 0xf5a300 },
         });
       } catch (e) { console.warn('[main] armLockdown(forest) failed:', e); }
+      // FOREST ITER C2: Trap Corridor — 3-shard env-damage lane in the north
+      // amber cluster (~x=-1, z=18-26). The cluster has 4+ dense amber
+      // hotspots (seeds 1005,1006,1012,1015 etc. — see
+      // assets/forest_amber_hotspots.json) creating a natural choke point;
+      // we line 3 shard traps along that lane forming a ~9u corridor.
+      // Coords are well clear of the south Lockdown Arena (1, -28) radius 8.
+      // Palette: slot 1 idle #1a1e22 (dormant), slot 4 telegraph #7df0c4
+      // (bio-glow mint pulse), slot 3 active #5f8fb5 (pale cyan-steel
+      // crystal). Per FOREST_VISUAL_STYLE.md locked palette.
+      try {
+        armCorridor({
+          id: 'forest-north-shard-lane',
+          variant: 'shard',
+          points: [
+            { x: -1.0, z: 19.0, radius: 1.6 },
+            { x: -1.0, z: 22.0, radius: 1.6 },
+            { x: -1.0, z: 25.0, radius: 1.6 },
+          ],
+          paletteSlots: { idle: 0x1a1e22, telegraph: 0x7df0c4, active: 0x5f8fb5 },
+        });
+      } catch (e) { console.warn('[main] armCorridor(forest) failed:', e); }
       // Defensive: re-entering forest should drop any leftover twilight FX.
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
@@ -1618,6 +1649,11 @@ function frame(now) {
   // director's lockdownActive guard at spawnDirector.js bails before any
   // top-up so we don't double-spawn). Cheap when no arena is live.
   _p=perfStart(); tickLockdownArena(logicDt);     perfMark('lockdown', _p);
+  // Trap Corridor (stage-agnostic env-damage hazard; FOREST ITER C2). Cheap
+  // when no corridors are armed. Pass canonical hero + enemies lists directly
+  // so the module stays state-agnostic. Damage uses static imports per the
+  // perf-fix 9509535 contract — no dynamic import().then() in the hot path.
+  _p=perfStart(); tickTrapCorridor(logicDt, state.hero, state.enemies.active); perfMark('trapCorridor', _p);
   // Tier-4 Overdrive capstone (Power branch) — must tick BEFORE tickWeapons
   // so the stashed statMul multipliers apply within the same frame's weapon
   // cooldown reads (autoAim / chain / orbitals all read h.statMul.cooldown).
