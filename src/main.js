@@ -58,6 +58,7 @@ import { initStageHazards, tickStageHazards, resetStageHazards, loadForestHazard
 import { applyStageRule, tickStageRule, clearStageRule } from './stageRules.js';
 import { loadArenaDecor, clearArenaDecor } from './arenaDecor.js';
 import { loadForestAmber, tickForestAmber, clearForestAmber } from './forestAmber.js';
+import { initLockdownArena, tickLockdownArena, armLockdown, triggerLockdown, disposeLockdownArenas } from './lockdownArena.js';
 import { tickPuzzleSystem, startPuzzle as _puzzleStart } from './puzzleSystem.js';
 import { detectRoom, FOREST_ROOMS } from './forestRooms.js';
 import { loadForestPortals, tickForestPortals, clearForestPortals } from './forestPortals.js';
@@ -250,6 +251,10 @@ async function boot() {
   initMiniEvents(scene);
   initArenaProps(scene);
   initChests(scene);
+  // Lockdown Arena (stage-agnostic dungeon mechanic; FOREST ITER C1). Init
+  // here so any stage's load* path can call armLockdown(...) once the scene
+  // is alive. Forest arms one arena in the south-cluster (~1, -28) below.
+  initLockdownArena(scene);
   initPickups(scene);
   initBossTelegraphs(scene);
   initDestructibles(scene);
@@ -593,6 +598,10 @@ function _teardownActiveRun() {
   playStageAmbient(null);
   // Tear down forest amber alongside decor (no-op on non-forest stages).
   if (state.scene) clearForestAmber(state.scene);
+  // Tear down lockdown arenas (FOREST ITER C1). Disposes any registered
+  // arena's door meshes + clears state.run.lockdown* flags. Stage-agnostic;
+  // safe to call regardless of which stage was active.
+  if (state.scene) disposeLockdownArenas(state.scene);
   // Drop forest slow-zones too — paired with amber since both key off the
   // same hotspot JSON. No-op on non-forest stages.
   if (state.scene) clearForestHazards(state.scene);
@@ -1039,6 +1048,20 @@ function applyMetaUpgrades() {
       try { loadFlowWeaver(state.scene); } catch (e) { console.warn('[main] loadFlowWeaver failed:', e); }
       try { loadHarmonicAlignment(state.scene); } catch (e) { console.warn('[main] loadHarmonicAlignment failed:', e); }
       try { loadPrismLock(state.scene); } catch (e) { console.warn('[main] loadPrismLock failed:', e); }
+      // FOREST ITER C1: Lockdown Arena, one arena per run for v1. Anchored on
+      // the south amber cluster (~1, -28) — 6 dense hotspots (seeds 1003,
+      // 1007, 1009, 1011, 1013, 1014) inside Glade bounds (glade maxZ=45 so
+      // an 8u-radius arena at z=-28 sits well inside the hub, not pushed
+      // past the right cluster which would clip Glade bounds at x=46+8).
+      // Palette: slot 2 wall #2d3a55, slot 4 glow #7df0c4, slot 6 clear
+      // amber #f5a300 — all from docs/FOREST_VISUAL_STYLE.md.
+      try {
+        state.run._forestLockdownArenaId = armLockdown({
+          center: { x: 1.0, z: -28.0 },
+          radius: 8,
+          paletteSlots: { wall: 0x2d3a55, glow: 0x7df0c4, clear: 0xf5a300 },
+        });
+      } catch (e) { console.warn('[main] armLockdown(forest) failed:', e); }
       // Defensive: re-entering forest should drop any leftover twilight FX.
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
@@ -1590,6 +1613,11 @@ function frame(now) {
   sampleInput();
   _p=perfStart(); updateHero(logicDt);            perfMark('hero', _p);
   _p=perfStart(); tickSpawnDirector(logicDt);     perfMark('spawnDir', _p);
+  // Lockdown Arena (stage-agnostic; FOREST ITER C1). Runs AFTER spawnDirector
+  // so any same-frame wave dispatch lands while the director is paused (the
+  // director's lockdownActive guard at spawnDirector.js bails before any
+  // top-up so we don't double-spawn). Cheap when no arena is live.
+  _p=perfStart(); tickLockdownArena(logicDt);     perfMark('lockdown', _p);
   // Tier-4 Overdrive capstone (Power branch) — must tick BEFORE tickWeapons
   // so the stashed statMul multipliers apply within the same frame's weapon
   // cooldown reads (autoAim / chain / orbitals all read h.statMul.cooldown).
@@ -1620,6 +1648,26 @@ function frame(now) {
     // FE-C3B — hub portals: drives interact-key teleport, cooldown ring, and
     // pollen breadcrumb bob. Bails when no portals registered.
     _p=perfStart(); tickForestPortals(logicDt); perfMark('forestPortals', _p);
+    // FOREST ITER C1 — Lockdown Arena zone trigger. One-shot per run via
+    // _forestLockdownFired guard (reset in state.resetState). Trigger fires
+    // when hero crosses inside the arena radius AND no lockdown is already
+    // active (state.run.lockdownActive is also the spawnDirector pause flag).
+    // Hero must be in the Glade hub (currentRoom='glade') so puzzle-room
+    // crossings don't trip the trigger.
+    if (!state.run._forestLockdownFired
+        && !state.run.lockdownActive
+        && state.run.currentRoom === 'glade'
+        && state.run._forestLockdownArenaId
+        && state.hero && state.hero.pos) {
+      const ARENA_CX = 1.0, ARENA_CZ = -28.0, ARENA_R = 8;
+      const _dx = state.hero.pos.x - ARENA_CX;
+      const _dz = state.hero.pos.z - ARENA_CZ;
+      if (_dx * _dx + _dz * _dz <= ARENA_R * ARENA_R) {
+        state.run._forestLockdownFired = true;
+        try { triggerLockdown(state.run._forestLockdownArenaId); }
+        catch (e) { console.warn('[main] triggerLockdown failed:', e); }
+      }
+    }
   }
   // Twilight-only: Blood/Light Fountains. No-op on other stages —
   // tickTwilightFountains bails when _fountains is empty.

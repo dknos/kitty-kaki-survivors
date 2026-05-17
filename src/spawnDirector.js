@@ -300,13 +300,17 @@ export function tickSpawnDirector(dt) {
   }
   _lastSeenTime = t;
 
-  // ── Puzzle pause/resume (FE-C3A) ──
-  // Detect the PUZZLE_ACTIVE edge. While paused: record pause time once and
-  // bail BEFORE any schedule advances or spawn work runs. Updating
-  // _lastSeenTime above (BEFORE this bail) is mandatory so the restart-rewind
-  // branch doesn't trip on every paused frame.
+  // ── Puzzle pause/resume (FE-C3A) + Lockdown pause (FOREST ITER C1) ──
+  // Detect the PUZZLE_ACTIVE edge OR an active lockdown. While paused: record
+  // pause time once and bail BEFORE any schedule advances or spawn work runs.
+  // Updating _lastSeenTime above (BEFORE this bail) is mandatory so the
+  // restart-rewind branch doesn't trip on every paused frame. Lockdown reuses
+  // the puzzle pause path so horde/chest/nemesis timers all shift forward on
+  // resume — the substitute wave dispatcher in src/lockdownArena.js owns
+  // spawns while paused.
   const _roomState = state.run && state.run.roomState;
-  if (_roomState === 'PUZZLE_ACTIVE') {
+  const _lockdownActive = !!(state.run && state.run.lockdownActive);
+  if (_roomState === 'PUZZLE_ACTIVE' || _lockdownActive) {
     if (_pausedAtGameTime == null) _pausedAtGameTime = t;
     return; // hard freeze: no horde/chest/miniboss/finalboss/nemesis logic, no top-up
   }
