@@ -33,6 +33,7 @@ import { loadForestEnvHazards } from './forestEnvHazards.js';
 import { loadForestChests } from './forestChests.js';
 import { loadForestReaper } from './forestReaper.js';
 import { loadForestPickups } from './forestPickups.js';
+import { loadForestWeaponDrops } from './forestWeaponDrops.js';
 import { loadForestDayNight } from './forestDayNight.js';
 import { loadForestHud } from './forestHud.js';
 import { loadForestBossBars } from './forestBossBars.js';
@@ -202,6 +203,20 @@ function _buildForestDecor(group, opts) {
     } catch (e) {
       console.warn('[arenaDecor] loadForestPickups failed:', e);
       _gameState._pickupsLoaded = false;
+    }
+  }
+  // ── FOREST-V2-A17 Ground Weapon Drops (2026-05-17) ──
+  // Scene-scoped pre-pool (4 active pickups max) for VS-style weapon-drop
+  // pickups off miniboss / elite / room-boss kills. Once-per-scene gate
+  // mirrors pickups/chests. Drop-side is wired via dropForestWeapon() in
+  // src/enemies.js; load just bootstraps the InstancedMesh pool.
+  if (_gameState && _gameState.scene && !_gameState._weaponDropsLoaded) {
+    _gameState._weaponDropsLoaded = true;
+    try {
+      loadForestWeaponDrops(_gameState.scene, _gameState);
+    } catch (e) {
+      console.warn('[arenaDecor] loadForestWeaponDrops failed:', e);
+      _gameState._weaponDropsLoaded = false;
     }
   }
   // ── FOREST-V2-A9 Day/Night Cycle (2026-05-17) ──

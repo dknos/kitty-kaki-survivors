@@ -31,6 +31,7 @@ import { onRoomBossKilled as _forestRoomBossKilled } from './forestSealedDoors.j
 // Static import to dodge dynamic-import stall on borgir-salvo deaths (matches
 // dropForestChest's rationale above). No-op when the module isn't loaded.
 import { dropForestPickup } from './forestPickups.js';
+import { dropForestWeapon } from './forestWeaponDrops.js';
 import { spawnHeart, spawnStar, spawnBomb, spawnFreeze, spawnChicken } from './pickups.js';
 import { sfx } from './audio.js';
 import { notifyStageEnemySpawn, notifyStageEnemyKill } from './stageRules.js';
@@ -861,6 +862,11 @@ export function killEnemy(enemy) {
   if (_forestChestStage && !enemy.isFinalBoss) {
     dropForestPickup(enemy.mesh.position, Math.random(),
       state.hero.hp / (state.hero.hpMax || 1));
+  }
+  // FOREST-V2-A17 — ground weapon drops off miniboss/elite/room-boss kills.
+  // Additive with cohort 8 pickups (separate roll inside the module).
+  if (_forestChestStage && !enemy.isFinalBoss && !enemy.isNemesis) {
+    dropForestWeapon(enemy.mesh.position, enemy);
   }
   // Final boss always drops a chest (player can still grab it after victory anim — fine)
   if (enemy.isFinalBoss) {
