@@ -1210,9 +1210,18 @@ function _maybeSpawnTreasureMapChest() {
 }
 
 function applyShake(realDt) {
-  if (state.fx.shake <= 0.001) return;
+  if (state.fx.shake <= 0.001) { state.fx._shakeT = 0; return; }
+  // Time accumulator since the current shake spike began. Resets when shake
+  // decays to zero (above guard). Used for the rampIn below — without it,
+  // a fresh shake spike applies its full sin/cos offset on the first frame
+  // (sin/cos are time-indexed off state.time.real, which has no zero-phase
+  // relationship to the shake spike). At shake=0.5 that's a ±0.6u camera
+  // teleport in a single frame — read as a "camera goes weird" hiccup
+  // on miniboss spawn rather than a shake. (Fix 2026-05-16.)
+  state.fx._shakeT = (state.fx._shakeT || 0) + realDt;
+  const rampIn = Math.min(1, state.fx._shakeT * 12); // full strength at ~83ms
   const opt = (state._optShakeMul !== undefined) ? state._optShakeMul : 1.0;
-  const s = state.fx.shake * opt;
+  const s = state.fx.shake * opt * rampIn;
   const t = state.time.real * 60;
   const k = 1.2 * s;
   camera.position.x += Math.sin(t * 1.7) * k;
