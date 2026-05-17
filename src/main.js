@@ -91,6 +91,12 @@ import { tickForestNeutrals, disposeForestNeutrals } from './forestNeutrals.js';
 // (VS-style kite mechanic). Hero also gets slow (mushrooms/tar pit) and
 // stun-via-zero-spd (branches). Loaded by arenaDecor alongside neutrals.
 import { tickForestEnvHazards, disposeForestEnvHazards } from './forestEnvHazards.js';
+// FOREST-V2-A6 Treasure Chest Drops — VS-style 3-option picker on miniboss/
+// elite kill. Loaded by arenaDecor sibling to envHazards; teardown mirrors
+// the same 5-site dispose pattern. Tick advances chest open animation +
+// pickup detect; modal dispatch fires once per pick (user-action, not hot
+// path).
+import { tickForestChests, disposeForestChests } from './forestChests.js';
 import { loadTwilightFountains, tickTwilightFountains, clearTwilightFountains } from './twilightFountains.js';
 import { loadCinderBallistas, tickCinderBallistas, clearCinderBallistas } from './cinderBallistas.js';
 import { loadVoidTeleportPads, tickVoidTeleportPads, clearVoidTeleportPads } from './voidTeleportPads.js';
@@ -673,6 +679,11 @@ function _teardownActiveRun() {
     disposeForestEnvHazards(state.scene);
     if (state) state._envHazardsLoaded = false;
   }
+  // FOREST-V2-A6 Treasure Chests teardown — pre-pool + modal dismiss.
+  if (state.scene) {
+    disposeForestChests(state.scene);
+    if (state) state._chestsLoaded = false;
+  }
   // Tear down twilight fountains (no-op on non-twilight stages). Mirrors
   // the forestAmber teardown shape; clear path also nulls
   // state.run.fountainSpeedBuff so the buff can't leak across runs.
@@ -1181,6 +1192,7 @@ function applyMetaUpgrades() {
       disposeForestCoffins(state.scene);   state._coffinsLoaded   = false; // FE-V2 Coffins
       disposeForestNeutrals(state.scene);  state._neutralsLoaded  = false; // FE-V2 Neutrals
       disposeForestEnvHazards(state.scene); state._envHazardsLoaded = false; // FE-V2 EnvHazards
+      disposeForestChests(state.scene);     state._chestsLoaded     = false; // FOREST-V2-A6 Chests
       clearCinderBallistas(state.scene);
       clearCinderHazards(state.scene);
       clearVoidTeleportPads(state.scene);
@@ -1212,6 +1224,7 @@ function applyMetaUpgrades() {
       disposeForestCoffins(state.scene);   state._coffinsLoaded   = false; // FE-V2 Coffins
       disposeForestNeutrals(state.scene);  state._neutralsLoaded  = false; // FE-V2 Neutrals
       disposeForestEnvHazards(state.scene); state._envHazardsLoaded = false; // FE-V2 EnvHazards
+      disposeForestChests(state.scene);     state._chestsLoaded     = false; // FOREST-V2-A6 Chests
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearVoidTeleportPads(state.scene);
@@ -1249,6 +1262,7 @@ function applyMetaUpgrades() {
       disposeForestCoffins(state.scene);   state._coffinsLoaded   = false; // FE-V2 Coffins
       disposeForestNeutrals(state.scene);  state._neutralsLoaded  = false; // FE-V2 Neutrals
       disposeForestEnvHazards(state.scene); state._envHazardsLoaded = false; // FE-V2 EnvHazards
+      disposeForestChests(state.scene);     state._chestsLoaded     = false; // FOREST-V2-A6 Chests
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearCinderBallistas(state.scene);
@@ -1268,6 +1282,7 @@ function applyMetaUpgrades() {
       disposeForestCoffins(state.scene);   state._coffinsLoaded   = false; // FE-V2 Coffins
       disposeForestNeutrals(state.scene);  state._neutralsLoaded  = false; // FE-V2 Neutrals
       disposeForestEnvHazards(state.scene); state._envHazardsLoaded = false; // FE-V2 EnvHazards
+      disposeForestChests(state.scene);     state._chestsLoaded     = false; // FOREST-V2-A6 Chests
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearCinderBallistas(state.scene);
@@ -1765,6 +1780,10 @@ function frame(now) {
     // pollen (tickStageHazards writes absolute at line 1734 above — our tick
     // ordering matters, must run AFTER). Bails immediately when not loaded.
     _p=perfStart(); tickForestEnvHazards(state, logicDt); perfMark('forestEnvHazards', _p);
+    // FOREST-V2-A6 Treasure Chests (2026-05-17) — pickup detect + lid open
+    // anim + burst fade. Bails immediately when no chests loaded. Reward
+    // dispatch fires from the modal pick (user-action), not here.
+    _p=perfStart(); tickForestChests(state, logicDt); perfMark('forestChests', _p);
     // FE-C3A — puzzle system tick + room transition detection. Puzzle tick
     // is a no-op when no puzzle is active. Room detection runs every frame
     // so a fast hero crossing portals doesn't strand a stale currentRoom.

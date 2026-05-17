@@ -21,6 +21,11 @@ import { spawnDissolveBurst } from './fx/dissolveBurst.js';
 import { spawnImpactBurst, burstExplosion } from './vfxBurst.js';
 import { spawnEnemyProjectile } from './enemyProjectiles.js';
 import { spawnChest } from './chest.js';
+// FOREST-V2-A6 — VS-style 3-option treasure chest drops, forest stage only.
+// Static import to avoid hot-path dynamic import promises (see commit 358dce1
+// re: borgir-salvo dynamic-import stall). dropForestChest is a no-op when the
+// forest chest module isn't loaded, so non-forest stages pay nothing.
+import { dropForestChest } from './forestChests.js';
 import { spawnHeart, spawnStar, spawnBomb, spawnFreeze, spawnChicken } from './pickups.js';
 import { sfx } from './audio.js';
 import { notifyStageEnemySpawn, notifyStageEnemyKill } from './stageRules.js';
@@ -808,14 +813,20 @@ export function killEnemy(enemy) {
       spawnStar(enemy.mesh.position.x + (enemy.elite ? 1 : 0), enemy.mesh.position.z);
     }
   }
+  // FOREST-V2-A6 — forest stage replaces the slot-machine chest with the
+  // 3-option treasure chest (Weapon/Gold/Heal+Passive). Stage-gate keeps
+  // non-forest stages on the existing slot-machine path untouched.
+  const _forestChestStage = !!(state.run && state.run.stage && state.run.stage.id === 'forest');
   // Elites have a chance to drop a chest at their death position
   if (enemy.elite && !enemy.isFinalBoss && !enemy.isMiniBoss && Math.random() < SPAWN.chestEliteDropChance) {
-    spawnChest(enemy.mesh.position.x, enemy.mesh.position.z);
+    if (_forestChestStage) dropForestChest(enemy.mesh.position);
+    else                   spawnChest(enemy.mesh.position.x, enemy.mesh.position.z);
   }
   // Mini-boss: guaranteed chest + 2 hearts + 1 star + 1 bomb (proper reward).
   if (enemy.isMiniBoss) {
     const ex = enemy.mesh.position.x, ez = enemy.mesh.position.z;
-    spawnChest(ex, ez);
+    if (_forestChestStage) dropForestChest(enemy.mesh.position);
+    else                   spawnChest(ex, ez);
     spawnHeart(ex - 1.2, ez);
     spawnHeart(ex + 1.2, ez);
     spawnStar(ex, ez + 1.2);
