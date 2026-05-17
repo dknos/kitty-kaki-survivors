@@ -419,6 +419,22 @@ export function buildEnv(scene, renderer) {
     twilight: loadPack('assets/sprites/brown_mud/'),
   };
 
+  // FOREST-V2-A35 (PR #139, PHASE 3 P3E): swap the forest pack's normal
+  // map for a procedural, palette-neutral tangent-space map (mulberry32 +
+  // 4-octave fBm + rejection-sampled pebble stamps). Replaces the 1.4 MB
+  // Poly Haven `nor_gl.jpg`. NoColorSpace prevents sRGB decode (normal data
+  // must stay linear). Matches diff/rough wrap+repeat so all three packs
+  // tile identically. See tools/_gen_ground_normal.mjs.
+  const groundNormalTex = loader.load(
+    'assets/textures/forest_ground_normal_512.png',
+    t => t.needsUpdate = true,
+  );
+  groundNormalTex.wrapS = groundNormalTex.wrapT = THREE.RepeatWrapping;
+  groundNormalTex.repeat.set(repeat, repeat);
+  groundNormalTex.anisotropy = Math.min(maxAniso, 8);
+  groundNormalTex.colorSpace = THREE.NoColorSpace;
+  groundPacks.forest.normal = groundNormalTex;
+
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(WORLD.groundSize, WORLD.groundSize, 1, 1),
     new THREE.MeshStandardMaterial({
