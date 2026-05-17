@@ -108,6 +108,14 @@ import { tickForestWeaponDrops, disposeForestWeaponDrops } from './forestWeaponD
 import { tickForestDayNight, disposeForestDayNight } from './forestDayNight.js';
 import { tickForestHud, disposeForestHud } from './forestHud.js';
 import { tickForestBossBars, disposeForestBossBars } from './forestBossBars.js';
+// PHASE 1 P1B (swarm/forest-achievements) — Achievement chain. Stage-agnostic
+// per-tick check loop (kills / time / weapon / hp). loadAchievements binds
+// state + WEAPON_REGISTRY for the visible-kit count probe. The module also
+// exports disposeAchievements for session teardown — not imported here
+// because toasts self-clean (4s setTimeout) and the title panel is owned by
+// menuV2 (which calls mountTitlePanel on show, never needs explicit dispose
+// on hide because the parent DOM removal cascades the indicator).
+import { loadAchievements, tickAchievements } from './forestAchievements.js';
 import { loadTwilightFountains, tickTwilightFountains, clearTwilightFountains } from './twilightFountains.js';
 import { loadCinderBallistas, tickCinderBallistas, clearCinderBallistas } from './cinderBallistas.js';
 import { loadVoidTeleportPads, tickVoidTeleportPads, clearVoidTeleportPads } from './voidTeleportPads.js';
@@ -273,6 +281,11 @@ async function boot() {
 
   initInput();
   initUI();
+  // PHASE 1 P1B — Achievement chain. Binds state + WEAPON_REGISTRY (already
+  // imported above) so the per-tick visible-kit count + per-run Set lookup
+  // work without a circular import. No DOM is touched here; mountTitlePanel
+  // is wired separately by menuV2.
+  loadAchievements(state, WEAPON_REGISTRY);
   initDamageNumbers();
   initFX(scene);
   // Ascension Evolution FX (Punch List #1) needs a state handle so the
@@ -1959,6 +1972,9 @@ function frame(now) {
   _p=perfStart(); tickSpriteSystem(logicDt);      perfMark('spriteSystem', _p);
   _p=perfStart(); tickStageRule(state, logicDt);  perfMark('stageRule', _p);
   _p=perfStart(); tickMiniEvents(logicDt);        perfMark('miniEvents', _p);
+  // PHASE 1 P1B — Achievement chain tick (stage-agnostic). Most checks bail
+  // immediately on a per-run Set lookup once unlocked; cheap on the hot path.
+  _p=perfStart(); tickAchievements(state, logicDt); perfMark('achievements', _p);
   _p=perfStart(); tickArenaProps(logicDt);        perfMark('arenaProps', _p);
   _p=perfStart(); tickPickups(logicDt);           perfMark('pickups', _p);
   _p=perfStart(); tickCatacombEntrance(logicDt);  perfMark('catacEntry', _p);

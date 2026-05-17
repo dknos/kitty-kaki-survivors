@@ -1507,6 +1507,14 @@ export function commitRunResults({ timeSurvived, kills, dmgDealt, level, victory
 
 export function resetMeta() {
   _data = { ...DEFAULT };
+  // PHASE 1 P1B — Achievement chain. DEFAULT already seeds `achievements: {}`,
+  // but stamp it defensively in case a future DEFAULT mutation drops it. The
+  // shape is shared with the older numeric-timestamp entries from
+  // unlockAchievement(); P1B writes `{ unlockedAt, count }` objects. Both
+  // shapes are truthy so unlock checks (`!!meta.achievements[id]`) work uniformly.
+  if (!_data.achievements || typeof _data.achievements !== 'object') {
+    _data.achievements = {};
+  }
   saveMeta();
 }
 
