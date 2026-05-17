@@ -454,6 +454,7 @@ export function triggerLockdown(arenaId) {
   arena.wavesCleared = 0;
   arena.mobsThisWave = 0;
   arena.eliteSpawned = false;
+  arena.triggeredAt = state.time.game; // watchdog timestamp for force-clear safety net
 
   // Reveal door group + reset opacity (in case a prior run left them hidden
   // mid-fade). The pulse loop in _tickDoorAnim will rewrite per frame.
@@ -522,10 +523,28 @@ export function tickLockdownArena(dt) {
   // Wave + clear logic only runs while doors are up (active state).
   if (arena.state !== 'active') return;
 
-  // Dispatch next wave if due
+  // Watchdog: if lockdown has been active for >90s without resolving, force-
+  // clear. Protects against edge cases (death-respawn, lost enemy tags,
+  // spawnEnemy returning null, etc.) where the player would otherwise be
+  // trapped indefinitely.
+  if (arena.triggeredAt && (state.time.game - arena.triggeredAt) > 90) {
+    arena.state = 'retracting';
+    arena.retractT = 0;
+    arena.activeArena = false;
+    _activeArenaId = null;
+    if (state.run) state.run.lockdownActive = false;
+    try { showBanner('LOCKDOWN TIMED OUT', 2.2, '#ff7a52'); } catch (_) {}
+    _dropRewardBundle(arena);
+    return;
+  }
+
+  // Dispatch next wave if due. Gate via nextWaveAt = +Infinity so we only
+  // dispatch ONCE per wave (else this fires every tick at 60/s, spawning
+  // hundreds of mobs/sec and freezing the game — first-playtest bug 2026-05-16).
   const t = state.time.game;
-  if (arena.waveIdx < 3 && t >= arena.nextWaveAt) {
+  if (arena.waveIdx < 3 && t >= arena.nextWaveAt && Number.isFinite(arena.nextWaveAt)) {
     _spawnWave(arena, arena.waveIdx);
+    arena.nextWaveAt = Number.POSITIVE_INFINITY; // re-armed by wave-advance below
   }
 
   // Check clear / wave-advance
@@ -548,6 +567,7 @@ export function tickLockdownArena(dt) {
   if (res.advance) {
     arena.waveIdx++;
     arena.wavesCleared++;
+    arena.mobsThisWave = 0; // reset so next wave's _checkClear "advance" condition needs a fresh non-empty wave
     if (state.run) state.run.lockdownWavesCleared = arena.wavesCleared;
     if (arena.waveIdx < 3) {
       arena.nextWaveAt = t + WAVE_INTERVAL_SEC;
