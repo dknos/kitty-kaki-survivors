@@ -55,6 +55,25 @@ import { loadBossIntroCinematic } from './bossIntroCinematic.js';
 import { loadEvolveCinematic } from './evolveCinematic.js';
 import { state as _gameState } from './state.js';
 
+// ── PHASE 3 P3A — forest tree textures (lazy; assets/textures/README.md) ─
+let _treeBark = null, _treeLeaf = null;
+const _treeTexLoader = new THREE.TextureLoader();
+function _prepTreeTex(tex, repX, repY) {
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(repX, repY);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  return tex;
+}
+function _treeBarkTex() {
+  if (!_treeBark) _treeBark = _prepTreeTex(_treeTexLoader.load('assets/textures/forest_bark_512.png'), 1, 4);
+  return _treeBark;
+}
+function _treeLeafTex() {
+  if (!_treeLeaf) _treeLeaf = _prepTreeTex(_treeTexLoader.load('assets/textures/forest_leaves_512.png'), 2, 2);
+  return _treeLeaf;
+}
+
 // Active decor group + cleanup hooks, tracked module-side so clearArenaDecor
 // can be called without a handle. One group per scene is enough in this game.
 let _decorGroup = null;
@@ -446,6 +465,7 @@ function _buildGladeDecor(group) {
     color: 0x2d3a55,           // slot 2 — cold blue-gray
     roughness: 0.85, metalness: 0.05,
     flatShading: true,         // faceted silhouette under bloom
+    map: _treeBarkTex(),       // P3A — bark luminance, palette-neutral
   });
   const tipsMat = new THREE.MeshStandardMaterial({
     color: 0x5f8fb5,           // slot 3 — pale cyan-steel facet
@@ -454,6 +474,7 @@ function _buildGladeDecor(group) {
     roughness: 0.25, metalness: 0.10,
     flatShading: true,
     transparent: true, opacity: 0.94,
+    map: _treeLeafTex(),       // P3A — leaf/facet luminance, palette-neutral
   });
   const bodyInst = new THREE.InstancedMesh(bodyGeo, bodyMat, totalCrystals);
   const tipsInst = new THREE.InstancedMesh(tipsGeo, tipsMat, totalCrystals);
@@ -744,6 +765,7 @@ function _buildSapHollowDecor(group) {
     color: 0x2d3a55,             // slot 2 — cold blue-gray
     roughness: 0.9, metalness: 0.05,
     flatShading: true,
+    map: _treeBarkTex(),         // P3A — bark luminance, palette-neutral
   });
   const stubInst = new THREE.InstancedMesh(stubGeo, stubMat, STUBS);
   for (let i = 0; i < STUBS; i++) {
@@ -790,6 +812,7 @@ function _buildCrystalChoirDecor(group) {
     color: 0x2d3a55,             // slot 2
     roughness: 0.85, metalness: 0.05,
     flatShading: true,
+    map: _treeBarkTex(),         // P3A — bark luminance, palette-neutral
   });
   const tipsMat = new THREE.MeshStandardMaterial({
     color: 0x5f8fb5,             // slot 3 — pale cyan-steel
@@ -798,6 +821,7 @@ function _buildCrystalChoirDecor(group) {
     roughness: 0.22, metalness: 0.12,
     flatShading: true,
     transparent: true, opacity: 0.95,
+    map: _treeLeafTex(),         // P3A — leaf/facet luminance, palette-neutral
   });
   const bodyInst = new THREE.InstancedMesh(bodyGeo, bodyMat, SPIRES);
   const tipsInst = new THREE.InstancedMesh(tipsGeo, tipsMat, SPIRES);
@@ -888,6 +912,7 @@ function _buildAmberLabyrinthDecor(group) {
   tipsGeo.translate(0, 0.95, 0);   // body half 0.7 + cone half 0.25
 
   const bodyMat = new THREE.MeshStandardMaterial({
+    map: _treeBarkTex(),         // P3A — bark luminance, palette-neutral
     color: 0x1a1e22,             // slot 1 — stone-trunk charcoal (denser than glade)
     roughness: 0.9, metalness: 0.04,
     flatShading: true,
@@ -899,6 +924,7 @@ function _buildAmberLabyrinthDecor(group) {
     roughness: 0.25, metalness: 0.12,
     flatShading: true,
     transparent: true, opacity: 0.94,
+    map: _treeLeafTex(),         // P3A — leaf/facet luminance, palette-neutral
   });
   const bodyInst = new THREE.InstancedMesh(bodyGeo, bodyMat, TOTAL);
   const tipsInst = new THREE.InstancedMesh(tipsGeo, tipsMat, TOTAL);
