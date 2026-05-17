@@ -166,7 +166,46 @@ export const PASSIVES = [
       state.run.passive_soulLinkXpMul = newMul;
     },
   },
+  // Druid's Charm (P1H, 2026-05-17) — forest-only XP gain boost. Hidden in
+  // the level-up pool until the player has cleared at least one sealed
+  // room (state.run._sealedRooms gate; see passiveChoices below). Per-
+  // level boost: 10% / 18% / 25% / 33% / 42%. Absolute write to
+  // state.run.passive_druidXpMul (idempotent, mirrors Crown). Consumed by
+  // src/xp.js — gated on state.run.stage.id === 'forest' so outside the
+  // forest the multiplier is 1.0 (no bonus, no penalty). Picked into the
+  // XP-mul chain as a multiplicative factor (NOT replacing Crown).
+  {
+    id: 'druid_charm', name: "Druid's Charm", icon: '🌿', maxLevel: 5,
+    hidden: true,
+    desc: lv => `+${[10, 18, 25, 33, 42][Math.max(0, Math.min(4, lv - 1))]}% XP gain in forest stage`,
+    apply(level/*, prev*/) {
+      const bonus = [0.10, 0.18, 0.25, 0.33, 0.42][Math.max(0, Math.min(4, level - 1))];
+      // Absolute replacement keeps it idempotent across re-picks (matches
+      // Crown's pattern). xp.js multiplies this in only when on forest.
+      state.run.passive_druidXpMul = 1 + bonus;
+    },
+  },
 ];
+
+/**
+ * Druid's Charm unlock gate (Item P1H). Returns true when the player has
+ * cleared at least one sealed room this run (any state.run._sealedRooms
+ * entry with alive === false). Mirrors forestSealedDoors._clearedCount
+ * (not exported, so we inline the scan here — cheap, 1-3 keys max).
+ * Falls back to false on any shape mismatch so a partial save reload can't
+ * silently unlock the passive.
+ */
+function _druidUnlocked() {
+  try {
+    const sealed = state && state.run && state.run._sealedRooms;
+    if (!sealed || typeof sealed !== 'object') return false;
+    for (const id in sealed) {
+      const rec = sealed[id];
+      if (rec && rec.alive === false) return true;
+    }
+  } catch (_) { /* ignore */ }
+  return false;
+}
 
 /** Roll-time helper: returns picks the player can still benefit from. */
 export function passiveChoices(n) {
@@ -174,6 +213,15 @@ export function passiveChoices(n) {
   const slotsLeft = MAX_PASSIVES - owned.size;
   const pool = [];
   for (const p of PASSIVES) {
+    // Hidden passives stay out of the offer pool until their unlock fires.
+    // Druid's Charm: wait for first sealed-room clear (P1H gate). Owned
+    // hidden entries (i.e. already picked once via another path) still show
+    // level-up upgrades because the hidden gate only filters NEW picks.
+    if (p.hidden && !owned.has(p.id)) {
+      if (p.id === 'druid_charm' && !_druidUnlocked()) continue;
+      // Unknown hidden ids stay locked by default (defensive).
+      if (p.id !== 'druid_charm') continue;
+    }
     const have = owned.get(p.id);
     if (have) {
       if (have.level < p.maxLevel) {

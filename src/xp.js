@@ -273,12 +273,18 @@ export function updateGems(dt) {
         // Shop growth + Crown passive + Soul Link XP-mul, all multiply on top.
         // Weekly XP_FAMINE mutator stacks here as a flat 0.7× scalar (iter 9).
         // Iter 33e — Catnip Rush run buff adds 50% XP for first 5 minutes.
+        // P1H (2026-05-17) — Druid's Charm: forest-only XP boost. Absolute
+        // (1 + bonus) write by passives.js; gated to forest so other arenas
+        // read identity 1.0 (no bonus, no penalty).
         const catnipActive = state.run.casinoCatnipUntil && state.time.game < state.run.casinoCatnipUntil;
+        const inForest = state.run.stage && state.run.stage.id === 'forest';
+        const druidMul = inForest ? (state.run.passive_druidXpMul || 1) : 1;
         const xpMul = (1 + 0.08 * shopLevel('growth')) *
                       (1 + (state.run.passive_xpMul || 0)) *
                       (1 + (state.run.passive_soulLinkXpMul || 0)) *
                       (state.run.stageRuleXpMul || 1) *
                       (state.run.weeklyXpMul || 1) *
+                      druidMul *
                       (catnipActive ? 1.5 : 1);
         hero.xp += g.value * xpMul;
         state.run.pickedGems++;

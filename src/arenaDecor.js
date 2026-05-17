@@ -36,6 +36,7 @@ import { loadForestPickups } from './forestPickups.js';
 import { loadForestWeaponDrops } from './forestWeaponDrops.js';
 import { loadForestDayNight } from './forestDayNight.js';
 import { loadForestHud } from './forestHud.js';
+import { loadForestSigilArc } from './forestSigilArc.js';
 import { loadForestBossBars } from './forestBossBars.js';
 // PHASE 1 P1E (2026-05-17) — Boss intro cinematic. Stage-agnostic (mounts in
 // loadArenaDecor for every stage, not inside _buildForestDecor). Once-per-
@@ -251,6 +252,20 @@ function _buildForestDecor(group, opts) {
     } catch (e) {
       console.warn('[arenaDecor] loadForestHud failed:', e);
       _gameState._hudLoaded = false;
+    }
+  }
+  // ── PHASE 1 P1G Sigil Reward Arc (2026-05-17) ──
+  // Floating gold-star arc on every sigil grant (miniboss/finalboss/roomboss
+  // kill). Mounts both a scene group (InstancedMesh pool) and a small DOM
+  // counter widget ("Sigils: N" at top-right, offset below kills). Once-
+  // per-scene gate mirrors HUD/daynight; flag flips back on dispose.
+  if (_gameState && _gameState.scene && !_gameState._sigilArcLoaded) {
+    _gameState._sigilArcLoaded = true;
+    try {
+      loadForestSigilArc(_gameState.scene, _gameState);
+    } catch (e) {
+      console.warn('[arenaDecor] loadForestSigilArc failed:', e);
+      _gameState._sigilArcLoaded = false;
     }
   }
   // ── FOREST-V2-A11 Boss HP Bars (2026-05-17) ──

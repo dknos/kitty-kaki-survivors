@@ -107,6 +107,7 @@ import { tickForestPickups, disposeForestPickups } from './forestPickups.js';
 import { tickForestWeaponDrops, disposeForestWeaponDrops } from './forestWeaponDrops.js';
 import { tickForestDayNight, disposeForestDayNight } from './forestDayNight.js';
 import { tickForestHud, disposeForestHud } from './forestHud.js';
+import { tickForestSigilArc, disposeForestSigilArc } from './forestSigilArc.js';
 import { tickForestBossBars, disposeForestBossBars } from './forestBossBars.js';
 // PHASE 1 P1E (2026-05-17) — Boss intro cinematic. Stage-agnostic: ticked
 // every frame regardless of stage so miniboss/elite/room-boss/Reaper spawns
@@ -758,6 +759,10 @@ function _teardownActiveRun() {
   // DOM-only; no scene param. Idempotent; safe across stage swaps.
   disposeForestHud();
   if (state) state._hudLoaded = false;
+  // PHASE 1 P1G Sigil Arc teardown — removes scene group + DOM widget.
+  // Idempotent; safe across stage swaps.
+  disposeForestSigilArc();
+  if (state) state._sigilArcLoaded = false;
   // FOREST-V2-A11 Boss HP Bars teardown — removes #kk-forest-bossbars + style.
   // DOM-only; no scene param. Idempotent; safe across stage swaps.
   disposeForestBossBars();
@@ -1287,6 +1292,7 @@ function applyMetaUpgrades() {
       disposeForestWeaponDrops(state.scene); state._weaponDropsLoaded = false; // FOREST-V2-A17 Weapon Drops
       disposeForestDayNight(state.scene);   state._dayNightLoaded   = false; // FOREST-V2-A9 Day/Night
       disposeForestHud();                   state._hudLoaded        = false; // FOREST-V2-A10 Stage HUD
+      disposeForestSigilArc();              state._sigilArcLoaded   = false; // PHASE 1 P1G Sigil Arc
       disposeForestBossBars();              state._bossBarsLoaded   = false; // FOREST-V2-A11 Boss HP Bars
       disposeBossIntroCinematic();          state._bossIntroLoaded  = false; // PHASE 1 P1E Boss Intro Cinematic
       disposeEndRunSummary();               state._endRunSummaryLoaded = false; // PHASE 1 P1F End-of-run Summary
@@ -1328,6 +1334,7 @@ function applyMetaUpgrades() {
       disposeForestWeaponDrops(state.scene); state._weaponDropsLoaded = false; // FOREST-V2-A17 Weapon Drops
       disposeForestDayNight(state.scene);   state._dayNightLoaded   = false; // FOREST-V2-A9 Day/Night
       disposeForestHud();                   state._hudLoaded        = false; // FOREST-V2-A10 Stage HUD
+      disposeForestSigilArc();              state._sigilArcLoaded   = false; // PHASE 1 P1G Sigil Arc
       disposeForestBossBars();              state._bossBarsLoaded   = false; // FOREST-V2-A11 Boss HP Bars
       disposeBossIntroCinematic();          state._bossIntroLoaded  = false; // PHASE 1 P1E Boss Intro Cinematic
       disposeEndRunSummary();               state._endRunSummaryLoaded = false; // PHASE 1 P1F End-of-run Summary
@@ -1375,6 +1382,7 @@ function applyMetaUpgrades() {
       disposeForestWeaponDrops(state.scene); state._weaponDropsLoaded = false; // FOREST-V2-A17 Weapon Drops
       disposeForestDayNight(state.scene);   state._dayNightLoaded   = false; // FOREST-V2-A9 Day/Night
       disposeForestHud();                   state._hudLoaded        = false; // FOREST-V2-A10 Stage HUD
+      disposeForestSigilArc();              state._sigilArcLoaded   = false; // PHASE 1 P1G Sigil Arc
       disposeForestBossBars();              state._bossBarsLoaded   = false; // FOREST-V2-A11 Boss HP Bars
       disposeBossIntroCinematic();          state._bossIntroLoaded  = false; // PHASE 1 P1E Boss Intro Cinematic
       disposeEndRunSummary();               state._endRunSummaryLoaded = false; // PHASE 1 P1F End-of-run Summary
@@ -1404,6 +1412,7 @@ function applyMetaUpgrades() {
       disposeForestWeaponDrops(state.scene); state._weaponDropsLoaded = false; // FOREST-V2-A17 Weapon Drops
       disposeForestDayNight(state.scene);   state._dayNightLoaded   = false; // FOREST-V2-A9 Day/Night
       disposeForestHud();                   state._hudLoaded        = false; // FOREST-V2-A10 Stage HUD
+      disposeForestSigilArc();              state._sigilArcLoaded   = false; // PHASE 1 P1G Sigil Arc
       disposeForestBossBars();              state._bossBarsLoaded   = false; // FOREST-V2-A11 Boss HP Bars
       disposeBossIntroCinematic();          state._bossIntroLoaded  = false; // PHASE 1 P1E Boss Intro Cinematic
       disposeEndRunSummary();               state._endRunSummaryLoaded = false; // PHASE 1 P1F End-of-run Summary
@@ -1944,6 +1953,10 @@ function frame(now) {
     // + clock color only. Bails when not loaded (forest-only gate above
     // already filters non-forest stages). Show/hide via style.visibility.
     _p=perfStart(); tickForestHud(state, logicDt); perfMark('forestHud', _p);
+    // PHASE 1 P1G Sigil Reward Arc (2026-05-17) — polls meta.lifetime.sigilsEarned
+    // diff and spawns gold-star arcs from kill pos to HUD-anchor (top-right
+    // "Sigils: N" widget). Bails when not loaded (forest-only gate above).
+    _p=perfStart(); tickForestSigilArc(state, logicDt); perfMark('forestSigilArc', _p);
     // FOREST-V2-A11 Boss HP Bars — top-center DOM overlay for active boss/elite
     // HP + Reaper INVINCIBLE label. Reads state.enemies.active + Reaper run
     // flags; mutates textContent + style.width/opacity only on change. Bails
