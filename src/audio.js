@@ -216,11 +216,27 @@ const SFX_MANIFEST = {
                      'audio/forest/crystal_shatter_c.ogg'],
   amberDetonation:  ['audio/forest/amber_detonation.ogg'],
   // Ascension Evolution chime (Punch List #1, 2026-05-16). Stage-agnostic
-  // SFX layered with crystalShatter on weapon evolution. Manifest path is
-  // intentionally absent (no `audio/fx/` directory in-tree) — `_play()`
-  // drops on empty bank (line 304) so `sfx.evolutionChime()` is a graceful
-  // no-op until the Kenney CC0 sample lands here.
+  // SFX layered with crystalShatter on weapon evolution. FOREST-V2-A13 (#117)
+  // shipped the Kenney CC0 sample (jingles_NES05, rising NES arpeggio) so the
+  // bucket is now non-empty and puzzle solve + ascension paths produce audio.
   evolutionChime:   ['audio/fx/evolution_chime.ogg'],
+
+  // ── FOREST-V2-A13 (#117) — Forest-event SFX layer (Kenney CC0) ──────────────
+  // Distinct cues for level-up QoL economy buttons (reroll/banish/skip+heal),
+  // Reaper warning + spawn moments, forest pickup chimes (bomb/magnet/chicken),
+  // coffin lid slide, and landmark activation shimmer. Per-event picks
+  // documented in scripts/audio_manifest.txt. All routed through the standard
+  // SFX submaster + 30ms throttle in sfx.* below.
+  reroll:           ['audio/ui/reroll.ogg'],
+  banish:           ['audio/ui/banish.ogg'],
+  skipHeal:         ['audio/ui/skip_heal.ogg'],
+  reaperWarn:       ['audio/forest/reaper_warn.ogg'],
+  reaperSpawn:      ['audio/forest/reaper_spawn.ogg'],
+  coffinOpen:       ['audio/forest/coffin_open.ogg'],
+  landmarkActivate: ['audio/forest/landmark_activate.ogg'],
+  bombPickup:       ['audio/pickup/bomb_pickup.ogg'],
+  magnetPickup:     ['audio/pickup/magnet_pickup.ogg'],
+  chickenPickup:    ['audio/pickup/chicken_pickup.ogg'],
   // Twilight stage SFX (Phase-2 Fountains Agent hooks). CC0 Kenney bell/glass/
   // forceField layers + synthesized gulp/water/crow elements (the Kenney packs
   // don't ship water/gulp samples). All -16 LUFS to match the SFX bus. See
@@ -480,6 +496,26 @@ export const sfx = {
   // if multiple pads come off cooldown on a single tick the sample's
   // short tonal profile keeps the layered mix clean.
   voidPadReady: _throttled('voidPadReady', () => _play('voidPadReady', { gain: 0.28 })),
+
+  // ── FOREST-V2-A13 (#117) — Forest-event SFX layer ────────────────────────────
+  // Volume design follows the existing bucket scheme:
+  //   - UI events (reroll/banish)        : 0.40-0.45  (sits under combat)
+  //   - heal/whoosh (skipHeal)           : 0.50       (slightly louder reward)
+  //   - pickups (bomb/magnet/chicken)    : 0.30       (~-10 dB below loud actions)
+  //   - landmark shimmer                 : 0.42       (medium magical event)
+  //   - coffin lid slide                 : 0.50       (one-shot reveal cue)
+  //   - reaperWarn (1.2s drone)          : 0.62       (high to grab attention)
+  //   - reaperSpawn (1.6s boss reveal)   : 0.72       (loudest — the moment)
+  reroll:           _throttled('reroll',           () => _play('reroll',           { gain: 0.45 })),
+  banish:           _throttled('banish',           () => _play('banish',           { gain: 0.45 })),
+  skipHeal:         _throttled('skipHeal',         () => _play('skipHeal',         { gain: 0.50 })),
+  reaperWarn:       _throttled('reaperWarn',       () => _play('reaperWarn',       { gain: 0.62 })),
+  reaperSpawn:      _throttled('reaperSpawn',      () => _play('reaperSpawn',      { gain: 0.72 })),
+  coffinOpen:       _throttled('coffinOpen',       () => _play('coffinOpen',       { gain: 0.50 })),
+  landmarkActivate: _throttled('landmarkActivate', () => _play('landmarkActivate', { gain: 0.42 })),
+  bombPickup:       _throttled('bombPickup',       () => _play('bombPickup',       { gain: 0.32 })),
+  magnetPickup:     _throttled('magnetPickup',     () => _play('magnetPickup',     { gain: 0.30 })),
+  chickenPickup:    _throttled('chickenPickup',    () => _play('chickenPickup',    { gain: 0.34 })),
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

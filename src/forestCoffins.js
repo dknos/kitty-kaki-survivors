@@ -88,6 +88,7 @@ import { FOREST_ROOMS, FOREST_PORTAL_POSITIONS } from './forestRooms.js';
 import { getLandmarkPositions } from './forestLandmarks.js';
 import { state as _gameState } from './state.js';
 import { acquireWeapon } from './weapons/index.js';
+import { sfx } from './audio.js';
 
 // ── pool caps ────────────────────────────────────────────────────────────────
 const CAP_COFFINS = 8; // pre-pool cap; actual placement is 1-2
@@ -607,6 +608,11 @@ export function tickForestCoffins(state, dt) {
           if (!state.run._coffinsOpened) state.run._coffinsOpened = {};
           state.run._coffinsOpened['c' + i] = true;
         }
+        // SFX: stone-slide cue at coffin-open moment. The evolution chime is
+        // layered separately via the existing _dispatchEvolution path which
+        // calls into the same audio bus indirectly through fx hooks; this
+        // adds the percussive lid-slide reveal under it.
+        try { sfx.coffinOpen && sfx.coffinOpen(); } catch (_) {}
         // Dispatch the evolution. acquireWeapon + FX burst + banner.
         const pairIdx = _coffinPair[i];
         _dispatchEvolution(state, pairIdx);

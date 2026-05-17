@@ -1,8 +1,10 @@
 # Audio Asset Manifest
 
-All 38 audio files under `assets/audio/` are derived from **Kenney audio packs**, every one of which ships under **Creative Commons Zero (CC0, public domain)** per the bundled `License.txt` inside each pack. No attribution is required by the license. We credit Kenney here voluntarily.
+All audio files under `assets/audio/` are derived from **Kenney audio packs**, every one of which ships under **Creative Commons Zero (CC0, public domain)** per the bundled `License.txt` inside each pack. No attribution is required by the license. We credit Kenney here voluntarily.
 
 Iter 16 (2026-05-14) replaces the procedural AudioContext-tone synthesis in `src/audio.js` with these sample-based playbacks. Per-call ±3% pitch jitter + 2-3 variants per high-frequency bucket keep repeats from feeling robotic.
+
+FOREST-V2-A13 (#117, 2026-05-17) adds an 11-bucket Forest event SFX layer (~72 KB) covering level-up QoL economy (reroll/banish/skip+heal), Reaper warning + spawn, coffin lid slide, landmark activation shimmer, and the three forest pickup chimes (bomb/magnet/chicken). Plus the previously-empty `evolutionChime` bucket now ships a Kenney NES jingle so puzzle-solve + ascension finally produce audio.
 
 ## Source packs (all CC0)
 

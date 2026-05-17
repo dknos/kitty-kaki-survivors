@@ -42,6 +42,15 @@ declare -A BUCKET_DIR=(
   # Iter 18 — UI SFX bouquet (Kenney Interface pack, CC0).
   [uiClick]=ui [uiCancel]=ui [uiHover]=ui [uiError]=ui
   [modalOpen]=ui [modalClose]=ui
+  # FOREST-V2-A13 (#117) — Forest-event SFX layer (Kenney CC0).
+  # Economy / level-up QoL distinct cues — route to ui/.
+  [reroll]=ui [banish]=ui [skipHeal]=ui
+  # Forest-specific cues — route to forest/.
+  [reaperWarn]=forest [reaperSpawn]=forest [coffinOpen]=forest [landmarkActivate]=forest
+  # Forest pickup chimes — route to pickup/.
+  [bombPickup]=pickup [magnetPickup]=pickup [chickenPickup]=pickup
+  # Stage-agnostic evolution chime — route to fx/ (matches existing manifest path).
+  [evolutionChime]=fx
 )
 
 # Common loudness/trim chain prepended to every row to guarantee tight

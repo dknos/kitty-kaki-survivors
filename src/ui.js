@@ -1272,7 +1272,7 @@ export function showLevelUpModal(choices) {
       if (_gold() < rerollCost) return;
       state.run.gold -= rerollCost;
       state.run._rerollsThisRun = ((state.run._rerollsThisRun) || 0) + 1;
-      try { sfx.uiClick && sfx.uiClick(); } catch (_) {}
+      try { sfx.reroll && sfx.reroll(); } catch (_) {}
       _rollNonBanished(3 + ((state && state.run && state.run.casinoExtraChoices) || 0)).then(fresh => {
         state.levelUpChoices = fresh;
         paintCards(row, fresh, _registry || {});
@@ -1288,13 +1288,13 @@ export function showLevelUpModal(choices) {
       _banishMode = !_banishMode;
       banishPrompt.style.display = _banishMode ? 'block' : 'none';
       _modal.classList.toggle('kk-banish-mode', _banishMode);
-      try { sfx.uiClick && sfx.uiClick(); } catch (_) {}
+      try { sfx.banish && sfx.banish(); } catch (_) {}
       rebuildEcon();
     });
     econRow.appendChild(bb);
 
     const sb = econBtn('SKIP', '(free)', C.green, skipDisabled, () => {
-      try { sfx.uiClick && sfx.uiClick(); } catch (_) {}
+      try { sfx.skipHeal && sfx.skipHeal(); } catch (_) {}
       // Heal-to-full + 2s invuln, then burn one queued level (mirrors the
       // legacy doSkip cascade decrement above so the cascade counter stays
       // honest when SKIP bypasses the pick).
@@ -1338,7 +1338,7 @@ export function showLevelUpModal(choices) {
     state.run.gold -= BANISH_COST;
     if (!state.run._banishedThisRun) state.run._banishedThisRun = new Set();
     state.run._banishedThisRun.add(target.id);
-    try { sfx.uiClick && sfx.uiClick(); } catch (_) {}
+    try { sfx.banish && sfx.banish(); } catch (_) {}
     // Re-roll just that slot. Retry up to 6 times to get a non-banished
     // id different from the others currently shown; if pool exhausted,
     // splice the slot out so the row shrinks rather than show a dup.
