@@ -88,3 +88,13 @@ window.kkPerfProfilerDisable();
 | `src/main.js` (edited) | Calls `initPerfProfiler()` once + `renderPerfProfilerOverlay()` per frame. |
 | `tools/_perf_report.md` | Latest audit output (template included). |
 | `docs/PERF_AUDIT.md` | This file. |
+
+## PRE-WARM IMPACT (PHASE 2 P2C, 2026-05-17)
+
+`src/forestPrewarmFx.js` fires dummy `createRuneRing(...).dispose()` calls at end of `_buildForestDecor` (gated by `state._forestPrewarmFxLoaded` so it runs once across the 7-room fan-out). Each unique radius warms a `PlaneGeometry` cache entry in `fx/runeRing.js`; the FIRST call warms the lazy `makeRuneRingTexture()` 512² 8-layer canvas bake. Without this, whichever real spawn fires first (typically a chest sparkle, hazard puff, or shrine pulse) pays the bake cost on a gameplay frame. No `renderer.render()` push — spec watch-out flagged it as invasive; canvas bake IS the primary CPU cost.
+
+Pre-warmed radii (collected by grep across all `createRuneRing` call sites): overhead `{0.32, 0.45, 0.50, 0.55, 0.65}` + ground-decal `{1.5, 1.6}`. See module header for per-radius consumer list.
+
+Deferred (not reachable from public API): `forestAmber._spawnShockwave`, `forestReaper._ensureTintEl`, `forestPickups._ensureFlashEl` — future cohorts should export `_prewarmFx()` helpers. Chest/coffin/branch InstancedMeshes are already built at load (no first-call hitch). Boss intro banner is already warmed by `loadBossIntroCinematic` at stage load. Day/night ambient capture deferred — touches `scene.fog` + sun + hemi, wants its own cohort.
+
+Budget: < 50 ms total. Per-step timing logged as `[prewarm] forestFx: XX.Xms label:…ms …`. Headless smoke (swiftshader) timing is not representative; hardware capture TODO — run dev server with `kkPerf` gate set, grep console for `[prewarm] forestFx`, expect texture bake dominating step 1 and total under 20 ms.

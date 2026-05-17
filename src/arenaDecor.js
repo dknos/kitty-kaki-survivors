@@ -39,6 +39,12 @@ import { loadForestHud } from './forestHud.js';
 import { loadForestSigilArc } from './forestSigilArc.js';
 import { loadForestEmitters } from './forestEmitters.js';
 import { loadForestBossBars } from './forestBossBars.js';
+// PHASE 2 P2C (2026-05-17) — Forest FX texture/material pre-warm. Fires
+// dummy createRuneRing()s once per scene so the 512² canvas-glyph bake +
+// per-radius PlaneGeometry cache entries populate during stage load, not
+// during the first chest pickup / hazard puff / pulse beat. See
+// src/forestPrewarmFx.js for the deferred-step rationale.
+import { prewarmForestFx } from './forestPrewarmFx.js';
 // PHASE 1 P1E (2026-05-17) — Boss intro cinematic. Stage-agnostic (mounts in
 // loadArenaDecor for every stage, not inside _buildForestDecor). Once-per-
 // scene gate mirrors the forest-system pattern; flag flips back on dispose.
@@ -299,6 +305,21 @@ function _buildForestDecor(group, opts) {
     } catch (e) {
       console.warn('[arenaDecor] loadForestBossBars failed:', e);
       _gameState._bossBarsLoaded = false;
+    }
+  }
+  // ── PHASE 2 P2C Forest FX Pre-warm (2026-05-17) ──
+  // Runs ONCE per scene after every other forest loader has built its
+  // meshes. Warms the lazy 512² canvas bake + per-radius PlaneGeometry
+  // caches in fx/runeRing.js so the first chest pickup / hazard puff /
+  // pulse beat doesn't pay the bake cost on a gameplay frame. Per-step
+  // try/catch is inside the helper; total budget < 50 ms.
+  if (_gameState && _gameState.scene && !_gameState._forestPrewarmFxLoaded) {
+    _gameState._forestPrewarmFxLoaded = true;
+    try {
+      prewarmForestFx(_gameState.scene, _gameState, _gameState.camera);
+    } catch (e) {
+      console.warn('[arenaDecor] prewarmForestFx failed:', e);
+      _gameState._forestPrewarmFxLoaded = false;
     }
   }
   return result;
