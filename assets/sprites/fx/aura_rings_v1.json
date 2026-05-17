@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "image": "aura_rings_v1.png",
+  "frameWidth": 64,
+  "frameHeight": 64,
+  "cols": 4,
+  "rows": 2,
+  "frameCount": 8,
+  "pixelsPerWorldUnit": 24,
+  "anchor": [
+    0.5,
+    1
+  ],
+  "blendMode": "additive",
+  "bloom": true,
+  "billboard": "cylinder",
+  "anims": {
+    "idle": {
+      "from": 0,
+      "to": 7,
+      "fps": 12,
+      "loop": true
+    }
+  },
+  "palette": "neutral",
+  "license": "internal",
+  "source": "procgen v1"
+}

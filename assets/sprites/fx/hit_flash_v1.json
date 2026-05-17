@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "image": "hit_flash_v1.png",
+  "frameWidth": 32,
+  "frameHeight": 32,
+  "cols": 6,
+  "rows": 1,
+  "frameCount": 6,
+  "pixelsPerWorldUnit": 24,
+  "anchor": [
+    0.5,
+    0.5
+  ],
+  "blendMode": "additive",
+  "bloom": true,
+  "billboard": "screen",
+  "anims": {
+    "default": {
+      "from": 0,
+      "to": 5,
+      "fps": 30,
+      "loop": false
+    }
+  },
+  "palette": "neutral",
+  "license": "internal",
+  "source": "procgen v1"
+}
