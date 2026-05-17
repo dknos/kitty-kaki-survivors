@@ -39,6 +39,17 @@ export const FOREST_ROOMS = {
   saphollow:      { id: 'saphollow',      name: 'Sap Hollow',          center: { x: -70, z: -90 }, bounds: { minX:  -90, maxX: -50, minZ: -120, maxZ: -60 }, isHub: false, puzzle: 'flow_weaver',         weapon: 'sap_weaver' },
   crystalchoir:   { id: 'crystalchoir',   name: 'Crystal Choir Grove', center: { x:   0, z:  80 }, bounds: { minX:  -25, maxX:  25, minZ:   55, maxZ: 105 }, isHub: false, puzzle: 'harmonic_alignment',  weapon: 'choir_lance' },
   amberlabyrinth: { id: 'amberlabyrinth', name: 'Amber Labyrinth',     center: { x: 130, z:   0 }, bounds: { minX:  103, maxX: 158, minZ:  -20, maxZ:  20 }, isHub: false, puzzle: 'prism_lock',          weapon: 'prism_warden' },
+  // ── Forest Expansion v0.2 (FE-V2, 2026-05-17) — 3 new rooms ──
+  // bramblemaze: SE relic-chest room. No puzzle, no hidden weapon (relic chest
+  //   pattern — future hazards agent wires scratch DoT via _brambleMazeHazard.
+  // mossroot: far-S puzzle room. Simon-says puzzle 'mossroot_pulse' unlocks
+  //   weapon 'root_grasp' via puzzleSystem._win (weaponReward field).
+  // glowfen: far-W lore/relic room. No puzzle for v1; weapon 'wisp_lantern'
+  //   ships as scaffolding — REGISTRY-ready, FOREST_SPECIAL_IDS-equipped, but
+  //   no in-game unlock path (no puzzle). Future ticket wires unlock.
+  bramblemaze:    { id: 'bramblemaze',    name: 'Bramble Maze',        center: { x:  95, z:  80 }, bounds: { minX:   70, maxX: 120, minZ:   55, maxZ: 105 }, isHub: false, puzzle: null,                  weapon: null },
+  mossroot:       { id: 'mossroot',       name: 'Mossroot Hollow',     center: { x:   0, z: -140 }, bounds: { minX:  -35, maxX:  35, minZ: -170, maxZ: -110 }, isHub: false, puzzle: 'mossroot_pulse',     weapon: 'root_grasp' },
+  glowfen:        { id: 'glowfen',        name: 'Glowfen Marshes',     center: { x: -160, z:   0 }, bounds: { minX: -200, maxX: -130, minZ:  -30, maxZ:  30 }, isHub: false, puzzle: null,                  weapon: 'wisp_lantern' },
 };
 
 /**
@@ -52,6 +63,13 @@ export const FOREST_PORTAL_POSITIONS = {
   toSaphollow:      { from: 'glade', to: 'saphollow',      x: -35, z: -45 },
   toCrystalchoir:   { from: 'glade', to: 'crystalchoir',   x:   0, z:  55 },
   toAmberlabyrinth: { from: 'glade', to: 'amberlabyrinth', x:  55, z:  10 },
+  // ── FE-V2 (2026-05-17): 3 new outbound portals at glade boundaries ──
+  // Bramble: NE-ish glade edge → bramblemaze SW corner (closest entry side).
+  // Mossroot: S glade edge → mossroot N entry inset (12u south of room edge).
+  // Glowfen: W glade edge → glowfen E entry inset (1u inside room).
+  toBramblemaze:    { from: 'glade', to: 'bramblemaze',    x:  40, z:  40 },
+  toMossroot:       { from: 'glade', to: 'mossroot',       x:   0, z: -44 },
+  toGlowfen:        { from: 'glade', to: 'glowfen',        x: -44, z:   0 },
 };
 
 /**

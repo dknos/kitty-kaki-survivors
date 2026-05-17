@@ -67,6 +67,10 @@ function _buildForestDecor(group, opts) {
     case 'saphollow':      return _buildSapHollowDecor(group);
     case 'crystalchoir':   return _buildCrystalChoirDecor(group);
     case 'amberlabyrinth': return _buildAmberLabyrinthDecor(group);
+    // ── FE-V2 (2026-05-17): 3 new room builders ──
+    case 'bramblemaze':    return _buildBrambleMazeDecor(group);
+    case 'mossroot':       return _buildMossrootDecor(group);
+    case 'glowfen':        return _buildGlowfenDecor(group);
     default:               return _buildGladeDecor(group);
   }
 }
@@ -733,6 +737,412 @@ function _buildAmberLabyrinthDecor(group) {
   _track(pollenGeo); _track(pollenMat);
 
   return { room: 'amberlabyrinth', walls: TOTAL, pollen: POLLEN };
+}
+
+/**
+ * Bramble Maze (FE-V2) — thorny crystal brambles forming chokepoints.
+ * Center (95, 80), bounds 50×50u. Theme: dense slot-2/slot-3 brambles
+ * (short cylinders + tilted box clusters) with slot-4 mint glow at trail
+ * intersections. No puzzle; intended as a relic-chest room. Hazard hook
+ * flag `_brambleMazeHazard: true` stamped on the group's roomId-tagged
+ * meshes so a future hazards agent can wire scratch DoT inside brambles.
+ *
+ * Palette discipline (locked):
+ *   slot 1 #1a1e22 — charcoal stub bases
+ *   slot 2 #2d3a55 — bramble mid blue-gray
+ *   slot 3 #5f8fb5 — facet hi (bramble tips)
+ *   slot 4 #7df0c4 — bio-glow mint (intersection accents, BLOOM_LAYER)
+ *
+ * Chest/key relic mechanic noted in the task brief is OUT OF SCOPE for
+ * this agent (would need chest.js + a new key system, neither in our
+ * file boundary). Decor + hazard hook + relic flag only — chest wiring
+ * is a future ticket.
+ */
+function _buildBrambleMazeDecor(group) {
+  const room = FOREST_ROOMS.bramblemaze;
+  const cx = room.center.x, cz = room.center.z;
+  const rand = _mulberry32(0xC0FFE5);
+  const dummy = new THREE.Object3D();
+
+  // Bramble cylinders — short thorny stubs forming chokepoints. Dense
+  // along internal "walls" (3 internal partitions) + perimeter accent.
+  const BRAMBLES = 64;
+  const bramGeo = new THREE.CylinderGeometry(0.16, 0.28, 1.05, 6, 1, false);
+  const bramMat = new THREE.MeshStandardMaterial({
+    color: 0x2d3a55,            // slot 2 — bramble mid
+    roughness: 0.92, metalness: 0.04,
+    flatShading: true,
+  });
+  const bramInst = new THREE.InstancedMesh(bramGeo, bramMat, BRAMBLES);
+  // Carve 3 internal partitions perpendicular to X axis at lz = ±14, 0,
+  // each with a 4u doorway near a non-center offset (forces threading).
+  const partitionRows = [-14, 0, 14];
+  const halfX = 22;
+  const halfZ = 22;
+  let bi = 0;
+  for (let r = 0; r < partitionRows.length && bi < BRAMBLES * 0.55; r++) {
+    const rowZ = partitionRows[r];
+    const doorCenter = (r === 1) ? 6 : (r === 0 ? -6 : 8); // staggered doorways
+    const doorHalfWidth = 2.5;
+    const COUNT_PER_ROW = 12;
+    for (let i = 0; i < COUNT_PER_ROW && bi < BRAMBLES; i++) {
+      const t = (i + 0.5) / COUNT_PER_ROW;
+      let lx = -halfX + t * halfX * 2;
+      // Skip the doorway gap
+      if (Math.abs(lx - doorCenter) < doorHalfWidth) {
+        lx = (lx < doorCenter) ? doorCenter - doorHalfWidth - 0.3 : doorCenter + doorHalfWidth + 0.3;
+      }
+      const jitter = (rand() - 0.5) * 0.6;
+      const sy = 0.9 + rand() * 0.7;
+      dummy.position.set(cx + lx, 0.525 * sy, cz + rowZ + jitter);
+      dummy.scale.set(0.85 + rand() * 0.3, sy, 0.85 + rand() * 0.3);
+      // Aggressive tilt for thorny silhouette
+      dummy.rotation.set((rand() - 0.5) * 0.5, rand() * Math.PI * 2, (rand() - 0.5) * 0.5);
+      dummy.updateMatrix();
+      bramInst.setMatrixAt(bi, dummy.matrix);
+      bi++;
+    }
+  }
+  // Fill remaining slots with scattered perimeter brambles
+  while (bi < BRAMBLES) {
+    const angle = rand() * Math.PI * 2;
+    const r = 18 + rand() * 4;
+    const lx = Math.cos(angle) * r;
+    const lz = Math.sin(angle) * r;
+    const sy = 0.85 + rand() * 0.6;
+    dummy.position.set(cx + lx, 0.525 * sy, cz + lz);
+    dummy.scale.set(0.85 + rand() * 0.3, sy, 0.85 + rand() * 0.3);
+    dummy.rotation.set((rand() - 0.5) * 0.5, rand() * Math.PI * 2, (rand() - 0.5) * 0.5);
+    dummy.updateMatrix();
+    bramInst.setMatrixAt(bi, dummy.matrix);
+    bi++;
+  }
+  bramInst.instanceMatrix.needsUpdate = true;
+  bramInst.userData.roomId = 'bramblemaze';
+  bramInst.userData._brambleMazeHazard = true;   // hazard hook (future DoT)
+  bramInst.userData._brambleRelicChest = true;   // relic-chest room flag (future)
+  group.add(bramInst);
+  _track(bramGeo); _track(bramMat);
+
+  // Tilted box clusters — sharp thorn-shape accents at chokepoint corners.
+  // Reuses the bramble mid color (slot 2) so the silhouette reads consistent.
+  const BOXES = 18;
+  const boxGeo = new THREE.BoxGeometry(0.22, 0.55, 0.22);
+  const boxMat = new THREE.MeshStandardMaterial({
+    color: 0x2d3a55,            // slot 2 — same as brambles
+    roughness: 0.95, metalness: 0.05,
+    flatShading: true,
+  });
+  const boxInst = new THREE.InstancedMesh(boxGeo, boxMat, BOXES);
+  for (let i = 0; i < BOXES; i++) {
+    // Cluster near doorway choke points (staggered along x near rowZ partitions)
+    const rowIdx = i % 3;
+    const lz = partitionRows[rowIdx] + (rand() - 0.5) * 1.8;
+    const lx = (rand() * 2 - 1) * (halfX - 2);
+    const sy = 1.0 + rand() * 0.8;
+    dummy.position.set(cx + lx, 0.275 * sy, cz + lz);
+    dummy.scale.set(0.9 + rand() * 0.5, sy, 0.9 + rand() * 0.5);
+    dummy.rotation.set((rand() - 0.5) * 0.7, rand() * Math.PI * 2, (rand() - 0.5) * 0.7);
+    dummy.updateMatrix();
+    boxInst.setMatrixAt(i, dummy.matrix);
+  }
+  boxInst.instanceMatrix.needsUpdate = true;
+  boxInst.userData.roomId = 'bramblemaze';
+  boxInst.userData._brambleMazeHazard = true;
+  group.add(boxInst);
+  _track(boxGeo); _track(boxMat);
+
+  // Mint glow accents at trail intersections — slot 4 bio-glow primary,
+  // additive billboards. 8 dots at the doorway gaps + center.
+  const ACCENTS = 8;
+  const accentGeo = new THREE.PlaneGeometry(0.6, 0.6);
+  const accentMat = new THREE.MeshBasicMaterial({
+    map: fxTex('ring_arcane') || makeRuneRingTexture(),
+    color: 0x7df0c4,             // slot 4 — mint
+    transparent: true, opacity: 0.65, side: THREE.DoubleSide,
+    depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+  const accentInst = new THREE.InstancedMesh(accentGeo, accentMat, ACCENTS);
+  accentInst.layers.enable(BLOOM_LAYER);
+  // Place 6 at doorway gaps (2 per partition row, paired around the gap)
+  // and 2 at the room center.
+  const accentSpots = [
+    { x: -6 - 2.5,  z: -14 }, { x: -6 + 2.5,  z: -14 },
+    { x:  6 - 2.5,  z:   0 }, { x:  6 + 2.5,  z:   0 },
+    { x:  8 - 2.5,  z:  14 }, { x:  8 + 2.5,  z:  14 },
+    { x:  0,        z:   0 }, { x:  0,        z:   8 },
+  ];
+  for (let i = 0; i < ACCENTS; i++) {
+    const sp = accentSpots[i];
+    const s = 0.8 + rand() * 0.5;
+    dummy.position.set(cx + sp.x, 0.15, cz + sp.z);
+    dummy.scale.set(s, s, 1);
+    dummy.rotation.set(-Math.PI / 2, 0, rand() * Math.PI * 2);
+    dummy.updateMatrix();
+    accentInst.setMatrixAt(i, dummy.matrix);
+  }
+  accentInst.instanceMatrix.needsUpdate = true;
+  accentInst.userData.roomId = 'bramblemaze';
+  group.add(accentInst);
+  _track(accentGeo); _track(accentMat);
+
+  return { room: 'bramblemaze', brambles: BRAMBLES, boxes: BOXES, accents: ACCENTS };
+}
+
+/**
+ * Mossroot Hollow (FE-V2) — ancient root system, low ceiling feel.
+ * Center (0, -140), bounds 70×60u. Theme: slot-1 charcoal floor accents +
+ * slot-4/slot-5 bio-glow root veins along ground. Mossy root arches
+ * (TorusKnot) form a low canopy feel. Hosts the mossroot_pulse puzzle.
+ *
+ * Palette (locked):
+ *   slot 1 #1a1e22 — charcoal floor splats
+ *   slot 4 #7df0c4 — bio-glow primary mint (root vein lines)
+ *   slot 5 #3ecf9a — bio-glow secondary (pulsing arch crowns)
+ */
+function _buildMossrootDecor(group) {
+  const room = FOREST_ROOMS.mossroot;
+  const cx = room.center.x, cz = room.center.z;
+  const rand = _mulberry32(0xC0FFE6);
+  const dummy = new THREE.Object3D();
+
+  // Slot-1 charcoal floor splats — low albedo discs sprinkled across the
+  // floor for the "ancient stone with moss" feel. Bloom OFF.
+  const SPLATS = 22;
+  const splatGeo = new THREE.PlaneGeometry(1.0, 1.0);
+  const splatMat = new THREE.MeshStandardMaterial({
+    color: 0x1a1e22,            // slot 1 — charcoal
+    roughness: 0.98, metalness: 0.02,
+    transparent: true, opacity: 0.65,
+    flatShading: true,
+  });
+  const splatInst = new THREE.InstancedMesh(splatGeo, splatMat, SPLATS);
+  for (let i = 0; i < SPLATS; i++) {
+    const lx = (rand() * 2 - 1) * 30;  // ±30 inside 70u-wide bounds
+    const lz = (rand() * 2 - 1) * 25;
+    const s = 1.4 + rand() * 2.6;
+    dummy.position.set(cx + lx, -0.04, cz + lz);
+    dummy.scale.set(s, s, 1);
+    dummy.rotation.set(-Math.PI / 2, 0, rand() * Math.PI * 2);
+    dummy.updateMatrix();
+    splatInst.setMatrixAt(i, dummy.matrix);
+  }
+  splatInst.instanceMatrix.needsUpdate = true;
+  splatInst.userData.roomId = 'mossroot';
+  group.add(splatInst);
+  _track(splatGeo); _track(splatMat);
+
+  // Root arches — TorusKnot for the "thick gnarled root spine" silhouette.
+  // 6 arches arranged around the room, varying scale + tilt. Slot-2 base
+  // body color, slot-5 emissive on a tighter accent torus for the
+  // "pulsing bio-glow along root spine" read. (Single-pulse via emissive
+  // intensity — no per-frame animation here; the bloom flicker handles motion.)
+  const ARCHES = 6;
+  const archBodyGeo = new THREE.TorusKnotGeometry(1.4, 0.22, 48, 8, 2, 3);
+  const archBodyMat = new THREE.MeshStandardMaterial({
+    color: 0x2d3a55,            // slot 2 — bramble mid (base)
+    roughness: 0.88, metalness: 0.06,
+    flatShading: true,
+  });
+  const archBodyInst = new THREE.InstancedMesh(archBodyGeo, archBodyMat, ARCHES);
+  const archGlowGeo = new THREE.TorusKnotGeometry(1.42, 0.07, 48, 8, 2, 3);
+  const archGlowMat = new THREE.MeshStandardMaterial({
+    color: 0x3ecf9a,            // slot 5 — bio-glow secondary
+    emissive: 0x3ecf9a,
+    emissiveIntensity: 1.6,     // top end of bio-glow band
+    roughness: 0.32, metalness: 0.08,
+    flatShading: true,
+    transparent: true, opacity: 0.9,
+  });
+  const archGlowInst = new THREE.InstancedMesh(archGlowGeo, archGlowMat, ARCHES);
+  archGlowInst.layers.enable(BLOOM_LAYER);
+  for (let i = 0; i < ARCHES; i++) {
+    const angle = (i / ARCHES) * Math.PI * 2 + rand() * 0.2;
+    const r = 18 + rand() * 6;
+    const lx = Math.cos(angle) * r;
+    const lz = Math.sin(angle) * r;
+    const sy = 0.9 + rand() * 0.5;
+    dummy.position.set(cx + lx, 1.2 * sy, cz + lz);
+    dummy.scale.setScalar(0.9 + rand() * 0.4);
+    // Tilt arches outward + random spin so each knot reads unique.
+    dummy.rotation.set(rand() * Math.PI, rand() * Math.PI * 2, (rand() - 0.5) * 0.4);
+    dummy.updateMatrix();
+    archBodyInst.setMatrixAt(i, dummy.matrix);
+    archGlowInst.setMatrixAt(i, dummy.matrix);
+  }
+  archBodyInst.instanceMatrix.needsUpdate = true;
+  archGlowInst.instanceMatrix.needsUpdate = true;
+  archBodyInst.userData.roomId = 'mossroot';
+  archGlowInst.userData.roomId = 'mossroot';
+  group.add(archBodyInst); group.add(archGlowInst);
+  _track(archBodyGeo); _track(archBodyMat); _track(archGlowGeo); _track(archGlowMat);
+
+  // Root vein lines along ground — thin slot-4 emissive box "ribbons" running
+  // radially from center to perimeter. 14 lines, each tilted to feel organic.
+  // Bloom-tagged so the mint reads under the bloom pass.
+  const VEINS = 14;
+  const veinGeo = new THREE.BoxGeometry(0.12, 0.03, 5.0);   // long thin slab
+  const veinMat = new THREE.MeshStandardMaterial({
+    color: 0x7df0c4,            // slot 4 — bio-glow primary
+    emissive: 0x7df0c4,
+    emissiveIntensity: 1.4,
+    roughness: 0.5, metalness: 0.1,
+    flatShading: true,
+    transparent: true, opacity: 0.85,
+  });
+  const veinInst = new THREE.InstancedMesh(veinGeo, veinMat, VEINS);
+  veinInst.layers.enable(BLOOM_LAYER);
+  for (let i = 0; i < VEINS; i++) {
+    const angle = (i / VEINS) * Math.PI * 2;
+    const r = 4 + rand() * 16;        // start radius from center
+    const lx = Math.cos(angle) * r;
+    const lz = Math.sin(angle) * r;
+    const len = 3.0 + rand() * 4.0;
+    dummy.position.set(cx + lx, 0.04, cz + lz);
+    dummy.scale.set(1, 1, len / 5.0);
+    dummy.rotation.set(0, angle + Math.PI / 2 + (rand() - 0.5) * 0.4, 0);
+    dummy.updateMatrix();
+    veinInst.setMatrixAt(i, dummy.matrix);
+  }
+  veinInst.instanceMatrix.needsUpdate = true;
+  veinInst.userData.roomId = 'mossroot';
+  group.add(veinInst);
+  _track(veinGeo); _track(veinMat);
+
+  return { room: 'mossroot', splats: SPLATS, arches: ARCHES, veins: VEINS };
+}
+
+/**
+ * Glowfen Marshes (FE-V2) — glowing fen/bog with floating wisp lights.
+ * Center (-160, 0), bounds 70×60u. Theme: damp atmospheric feel, slot-4
+ * bio-glow dominant. Stepping-stone pads (slot-2), floating wisps
+ * (slot-4 InstancedMesh), reed clusters (slot-5).
+ *
+ * NO puzzle (relic/lore room for v1). Hazard hook flag
+ * `_glowfenHazard: true` stamped on roomId-tagged meshes for a future
+ * water-DoT system to consume. Wisp lantern weapon is REGISTRY-ready
+ * but has no in-game unlock path in this version (no puzzle to award it).
+ *
+ * Palette (locked):
+ *   slot 2 #2d3a55 — stone stepping pads
+ *   slot 4 #7df0c4 — bio-glow wisp lights (BLOOM_LAYER) + reed glow tips
+ *   slot 5 #3ecf9a — reed cluster bodies
+ */
+function _buildGlowfenDecor(group) {
+  const room = FOREST_ROOMS.glowfen;
+  const cx = room.center.x, cz = room.center.z;
+  const rand = _mulberry32(0xC0FFE7);
+  const dummy = new THREE.Object3D();
+
+  // Stepping-stone pads — flat slot-2 discs sprinkled across the marsh.
+  // Bloom OFF (these are dim wet stones, not glow).
+  const PADS = 14;
+  const padGeo = new THREE.CylinderGeometry(1.0, 1.1, 0.18, 8, 1, false);
+  const padMat = new THREE.MeshStandardMaterial({
+    color: 0x2d3a55,            // slot 2 — wet stone
+    roughness: 0.92, metalness: 0.05,
+    flatShading: true,
+  });
+  const padInst = new THREE.InstancedMesh(padGeo, padMat, PADS);
+  for (let i = 0; i < PADS; i++) {
+    const lx = (rand() * 2 - 1) * 32;   // ±32 inside 70u-wide bounds
+    const lz = (rand() * 2 - 1) * 25;
+    const s = 1.0 + rand() * 1.4;
+    dummy.position.set(cx + lx, 0.08, cz + lz);
+    dummy.scale.set(s, 1, s);
+    dummy.rotation.set((rand() - 0.5) * 0.2, rand() * Math.PI * 2, (rand() - 0.5) * 0.2);
+    dummy.updateMatrix();
+    padInst.setMatrixAt(i, dummy.matrix);
+  }
+  padInst.instanceMatrix.needsUpdate = true;
+  padInst.userData.roomId = 'glowfen';
+  padInst.userData._glowfenHazard = true;     // future water-DoT consumer
+  group.add(padInst);
+  _track(padGeo); _track(padMat);
+
+  // Floating wisp lights — InstancedMesh of slot-4 mint orbs, 10 dots.
+  // Registered on the shared _bobbers slot so the ambient animation loop
+  // applies per-instance Y bob (matches task brief "slow bobbing"). Forest
+  // stage doesn't currently register other _bobbers, so single-slot reuse
+  // is safe; if a future room wants its own bob, lift to an array later.
+  const WISPS = 10;                          // within spec 8-12
+  const wispGeo = new THREE.IcosahedronGeometry(0.18, 0);
+  const wispMat = new THREE.MeshBasicMaterial({
+    color: 0x7df0c4,            // slot 4 — bio-glow primary
+    transparent: true, opacity: 0.85,
+    depthWrite: false, blending: THREE.AdditiveBlending,
+  });
+  const wispInst = new THREE.InstancedMesh(wispGeo, wispMat, WISPS);
+  wispInst.layers.enable(BLOOM_LAYER);
+  const wispBaseY = new Array(WISPS);
+  const wispPhase = new Array(WISPS);
+  const wispAmp   = new Array(WISPS);
+  const wispFreq  = new Array(WISPS);
+  for (let i = 0; i < WISPS; i++) {
+    const lx = (rand() * 2 - 1) * 28;
+    const lz = (rand() * 2 - 1) * 22;
+    const y = 0.9 + rand() * 1.4;             // bob band center
+    const s = 0.8 + rand() * 0.9;
+    dummy.position.set(cx + lx, y, cz + lz);
+    dummy.scale.setScalar(s);
+    dummy.rotation.set(rand() * Math.PI, rand() * Math.PI * 2, rand() * Math.PI);
+    dummy.updateMatrix();
+    wispInst.setMatrixAt(i, dummy.matrix);
+    wispBaseY[i] = y;
+    wispPhase[i] = rand() * Math.PI * 2;
+    wispAmp[i]   = 0.22 + rand() * 0.18;       // ±0.22-0.40u bob
+    wispFreq[i]  = 1.2 + rand() * 0.8;         // 1.2-2.0 rad/s
+  }
+  wispInst.instanceMatrix.needsUpdate = true;
+  wispInst.userData.roomId = 'glowfen';
+  wispInst.userData._glowfenHazard = true;
+  group.add(wispInst);
+  _track(wispGeo); _track(wispMat);
+  // Register on the shared bob slot. _animLoop reads {mesh, baseY, phase, amp, freq}.
+  _bobbers = { mesh: wispInst, baseY: wispBaseY, phase: wispPhase, amp: wispAmp, freq: wispFreq };
+
+  // Reed clusters — slot-5 thin tall cylinders gathered in 6 clumps.
+  // 4-6 reeds per cluster = 24 instances total. Bloom-tagged.
+  const REED_TOTAL = 28;
+  const reedGeo = new THREE.CylinderGeometry(0.06, 0.10, 1.6, 5, 1, false);
+  const reedMat = new THREE.MeshStandardMaterial({
+    color: 0x3ecf9a,            // slot 5 — bio-glow secondary
+    emissive: 0x7df0c4,         // slot 4 emissive — tips glow
+    emissiveIntensity: 1.2,     // bottom of bio-glow band (subtle)
+    roughness: 0.6, metalness: 0.1,
+    flatShading: true,
+    transparent: true, opacity: 0.92,
+  });
+  const reedInst = new THREE.InstancedMesh(reedGeo, reedMat, REED_TOTAL);
+  reedInst.layers.enable(BLOOM_LAYER);
+  // 6 clumps × ~5 reeds each
+  const CLUMPS = 6;
+  let ri = 0;
+  for (let c = 0; c < CLUMPS && ri < REED_TOTAL; c++) {
+    const angle = (c / CLUMPS) * Math.PI * 2 + rand() * 0.4;
+    const r = 14 + rand() * 14;
+    const ccx = Math.cos(angle) * r;
+    const ccz = Math.sin(angle) * r;
+    const reedsHere = 4 + ((rand() * 3) | 0); // 4..6
+    for (let k = 0; k < reedsHere && ri < REED_TOTAL; k++) {
+      const jx = (rand() - 0.5) * 1.2;
+      const jz = (rand() - 0.5) * 1.2;
+      const sy = 0.85 + rand() * 0.5;
+      dummy.position.set(cx + ccx + jx, 0.8 * sy, cz + ccz + jz);
+      dummy.scale.set(0.9 + rand() * 0.4, sy, 0.9 + rand() * 0.4);
+      dummy.rotation.set((rand() - 0.5) * 0.25, rand() * Math.PI * 2, (rand() - 0.5) * 0.25);
+      dummy.updateMatrix();
+      reedInst.setMatrixAt(ri, dummy.matrix);
+      ri++;
+    }
+  }
+  reedInst.instanceMatrix.needsUpdate = true;
+  reedInst.userData.roomId = 'glowfen';
+  reedInst.userData._glowfenHazard = true;
+  group.add(reedInst);
+  _track(reedGeo); _track(reedMat);
+
+  return { room: 'glowfen', pads: PADS, wisps: WISPS, reeds: REED_TOTAL };
 }
 
 // ── Iter 14: real CC0 GLB scatter helper ────────────────────────────────────
@@ -1900,6 +2310,10 @@ export function loadArenaDecor(stageId, scene) {
         saphollow:      _buildForestDecor(group, { roomId: 'saphollow' }),
         crystalchoir:   _buildForestDecor(group, { roomId: 'crystalchoir' }),
         amberlabyrinth: _buildForestDecor(group, { roomId: 'amberlabyrinth' }),
+        // FE-V2: 3 new rooms — bramble (relic), mossroot (puzzle), glowfen (lore).
+        bramblemaze:    _buildForestDecor(group, { roomId: 'bramblemaze' }),
+        mossroot:       _buildForestDecor(group, { roomId: 'mossroot' }),
+        glowfen:        _buildForestDecor(group, { roomId: 'glowfen' }),
       };
       break;
     }

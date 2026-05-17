@@ -42,6 +42,14 @@ import sigBorgirbossRocketrack from './sig/borgirboss_rocketrack.js';
 import sapWeaver    from './sapWeaver.js';
 import choirLance   from './choirLance.js';
 import prismWarden  from './prismWarden.js';
+// Forest Expansion v0.2 (FE-V2, 2026-05-17) — 2 new hidden specials.
+// root_grasp: Mossroot Hollow puzzle reward (mossroot_pulse → unlock).
+// wisp_lantern: Glowfen Marshes — REGISTRY-ready scaffolding; v0.2 ships
+//   WITHOUT a Glowfen puzzle, so nothing currently calls unlockForestWeapon
+//   for it. Future ticket wires the unlock; once meta.forestWeapons carries
+//   the id, _equipForestSpecialsForRun() picks it up with no further change.
+import rootGrasp    from './rootGrasp.js';
+import wispLantern  from './wispLantern.js';
 import { getMeta } from '../meta.js';
 import { passiveChoices, applyPassive, PASSIVES } from './passives.js';
 export { applyPassive, PASSIVES };
@@ -71,13 +79,20 @@ export const REGISTRY = {
   [sapWeaver.id]:    sapWeaver,
   [choirLance.id]:   choirLance,
   [prismWarden.id]:  prismWarden,
+  // FE-V2
+  [rootGrasp.id]:    rootGrasp,
+  [wispLantern.id]:  wispLantern,
 };
 
 // FE-C1B — list of weapon ids that count as Forest "special" (5th-slot)
 // weapons. These are auto-equipped at run start per `meta.forestWeapons`
 // (the puzzle-reward unlock list owned by Agent 1 — backward-compat: read
 // defensively with `|| []`). Order is stable so equip is deterministic.
-const FOREST_SPECIAL_IDS = ['sap_weaver', 'choir_lance', 'prism_warden'];
+const FOREST_SPECIAL_IDS = ['sap_weaver', 'choir_lance', 'prism_warden',
+  // FE-V2 — Forest v0.2 additions. wisp_lantern has no in-game unlock path
+  // yet (Glowfen has no puzzle in v0.2); root_grasp unlocks via the
+  // mossroot_pulse puzzle reward.
+  'root_grasp', 'wisp_lantern'];
 
 // Auto-equip Forest special weapons (FE-C1B) into the hidden 5th slot at run
 // start. Idempotent: we early-return on any weapon id that's already in
