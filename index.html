@@ -19,6 +19,13 @@
   <meta name="twitter:title" content="Kitty Kaki Survivors">
   <meta name="twitter:description" content="A Vampire-Survivors-style horde game. Survive the night.">
 
+  <!-- Menu V2 typefaces — Cinzel (display) / Cormorant Garamond (italic eyebrow) /
+       Geist + Geist Mono (UI body + kbd chips). Loaded eagerly so the first paint of
+       the new main menu has the correct ascenders/spacing. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600;700;800;900&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+
   <style>
     /* Iter 10a — font-scale CSS var consumed by .kk-fs-* buckets in ui.js */
     /* Iter 21c — narrow-viewport defaults so modals don't overflow on phones.
