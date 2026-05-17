@@ -25,6 +25,8 @@ import { cloneCached } from './assets.js';
 import { makeRuneRingTexture } from './enemyTells.js';
 import { fxTex } from './fxTextures.js';
 import { FOREST_ROOMS } from './forestRooms.js';
+import { loadForestLandmarks } from './forestLandmarks.js';
+import { state as _gameState } from './state.js';
 
 // Active decor group + cleanup hooks, tracked module-side so clearArenaDecor
 // can be called without a handle. One group per scene is enough in this game.
@@ -62,17 +64,36 @@ function _track(obj) { _disposables.push(obj); }
  */
 function _buildForestDecor(group, opts) {
   const roomId = (opts && opts.roomId) || 'glade';
+  let result;
   switch (roomId) {
-    case 'glade':          return _buildGladeDecor(group);
-    case 'saphollow':      return _buildSapHollowDecor(group);
-    case 'crystalchoir':   return _buildCrystalChoirDecor(group);
-    case 'amberlabyrinth': return _buildAmberLabyrinthDecor(group);
+    case 'glade':          result = _buildGladeDecor(group); break;
+    case 'saphollow':      result = _buildSapHollowDecor(group); break;
+    case 'crystalchoir':   result = _buildCrystalChoirDecor(group); break;
+    case 'amberlabyrinth': result = _buildAmberLabyrinthDecor(group); break;
     // ── FE-V2 (2026-05-17): 3 new room builders ──
-    case 'bramblemaze':    return _buildBrambleMazeDecor(group);
-    case 'mossroot':       return _buildMossrootDecor(group);
-    case 'glowfen':        return _buildGlowfenDecor(group);
-    default:               return _buildGladeDecor(group);
+    case 'bramblemaze':    result = _buildBrambleMazeDecor(group); break;
+    case 'mossroot':       result = _buildMossrootDecor(group); break;
+    case 'glowfen':        result = _buildGlowfenDecor(group); break;
+    default:               result = _buildGladeDecor(group); break;
   }
+  // ── FE-V2 Landmarks (2026-05-17) ──
+  // Landmarks are scene-scoped (span all 7 rooms), not room-scoped. The
+  // per-room loader fan-out in loadArenaDecor calls _buildForestDecor 7
+  // times; we gate the landmark loader on `_landmarksLoaded` so it fires
+  // exactly once per scene load. disposeForestLandmarks (main.js teardown)
+  // flips the flag back to false on stage swap. Group is attached to
+  // state.scene, not the per-room decor group, so it doesn't get torn down
+  // when an individual room's visibility toggles.
+  if (_gameState && _gameState.scene && !_gameState._landmarksLoaded) {
+    _gameState._landmarksLoaded = true;
+    try {
+      loadForestLandmarks(_gameState.scene, _gameState, opts && opts.rng);
+    } catch (e) {
+      console.warn('[arenaDecor] loadForestLandmarks failed:', e);
+      _gameState._landmarksLoaded = false;
+    }
+  }
+  return result;
 }
 
 function _buildGladeDecor(group) {

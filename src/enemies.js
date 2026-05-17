@@ -1014,7 +1014,10 @@ export function damageEnemy(enemy, dmg, source) {
   // shield design is "consume N hits", not "absorb N damage"). Skip phoenix
   // (self-burst flat baseline) and volatile (chain explosion, fixed 35 dmg).
   if (source !== 'phoenix' && source !== 'volatile') {
-    dmg *= (state.run.passive_dmg || 1);
+    // FE-V2 Landmarks (2026-05-17): Moss Shrine grants +5% per shrine, banked
+    // into state.run._dmgGlobalBonus. Composes on top of passive_dmg (SHOP_TREE
+    // Sharpened Edge) — same skip rules apply (phoenix/volatile bypass).
+    dmg *= (state.run.passive_dmg || 1) * (1 + (state.run._dmgGlobalBonus || 0));
   }
   // ── Iter 8 Shielded affix: clamp incoming dmg to 1 until shield depleted ──
   // Sits BETWEEN iter-7 multipliers (which scale the raw weapon dmg upward) and

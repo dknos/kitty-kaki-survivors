@@ -70,6 +70,12 @@ import { loadPrismLock, disposePrismLock } from './puzzlePrismLock.js';
 // is driven internally by puzzleSystem.onTick (registered at module load);
 // main.js only handles load + dispose lifecycle.
 import { loadMossrootPulse, disposeMossrootPulse } from './puzzleMossrootPulse.js';
+// FE-V2 Landmarks (2026-05-17) — scene-scoped VS-style interactable density
+// (shrines / altars / cosmetic logs). tickForestLandmarks runs the AABB
+// trigger pass + telegraph pulse fade. dispose mirrors the disposeFlowWeaver
+// teardown shape — also clears `state._landmarksLoaded` so the next forest
+// scene load re-populates landmarks fresh.
+import { tickForestLandmarks, disposeForestLandmarks } from './forestLandmarks.js';
 import { loadTwilightFountains, tickTwilightFountains, clearTwilightFountains } from './twilightFountains.js';
 import { loadCinderBallistas, tickCinderBallistas, clearCinderBallistas } from './cinderBallistas.js';
 import { loadVoidTeleportPads, tickVoidTeleportPads, clearVoidTeleportPads } from './voidTeleportPads.js';
@@ -626,6 +632,14 @@ function _teardownActiveRun() {
   if (state.scene) disposeHarmonicAlignment(state.scene);
   if (state.scene) disposePrismLock(state.scene);
   if (state.scene) disposeMossrootPulse(state.scene);   // FE-V2
+  // FE-V2 Landmarks teardown — flips state._landmarksLoaded back to false so
+  // the next forest scene load triggers a fresh pre-pool. No-op on first
+  // disposal (idempotent), no-op on non-forest stages (early-out when
+  // _loaded is false).
+  if (state.scene) {
+    disposeForestLandmarks(state.scene);
+    if (state) state._landmarksLoaded = false;
+  }
   // Tear down twilight fountains (no-op on non-twilight stages). Mirrors
   // the forestAmber teardown shape; clear path also nulls
   // state.run.fountainSpeedBuff so the buff can't leak across runs.
@@ -1130,6 +1144,7 @@ function applyMetaUpgrades() {
       disposeHarmonicAlignment(state.scene);
       disposePrismLock(state.scene);
       disposeMossrootPulse(state.scene);   // FE-V2
+      disposeForestLandmarks(state.scene); state._landmarksLoaded = false; // FE-V2 Landmarks
       clearCinderBallistas(state.scene);
       clearCinderHazards(state.scene);
       clearVoidTeleportPads(state.scene);
@@ -1157,6 +1172,7 @@ function applyMetaUpgrades() {
       disposeHarmonicAlignment(state.scene);
       disposePrismLock(state.scene);
       disposeMossrootPulse(state.scene);   // FE-V2
+      disposeForestLandmarks(state.scene); state._landmarksLoaded = false; // FE-V2 Landmarks
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearVoidTeleportPads(state.scene);
@@ -1190,6 +1206,7 @@ function applyMetaUpgrades() {
       disposeHarmonicAlignment(state.scene);
       disposePrismLock(state.scene);
       disposeMossrootPulse(state.scene);   // FE-V2
+      disposeForestLandmarks(state.scene); state._landmarksLoaded = false; // FE-V2 Landmarks
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearCinderBallistas(state.scene);
@@ -1205,6 +1222,7 @@ function applyMetaUpgrades() {
       disposeHarmonicAlignment(state.scene);
       disposePrismLock(state.scene);
       disposeMossrootPulse(state.scene);   // FE-V2
+      disposeForestLandmarks(state.scene); state._landmarksLoaded = false; // FE-V2 Landmarks
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearCinderBallistas(state.scene);
@@ -1688,6 +1706,9 @@ function frame(now) {
   // other stages — tickForestAmber bails when _entities is empty.
   if (state.run && state.run.stage && state.run.stage.id === 'forest') {
     _p=perfStart(); tickForestAmber(logicDt, state); perfMark('forestAmber', _p);
+    // FE-V2 Landmarks (2026-05-17) — AABB trigger pass for shrines/altars +
+    // telegraph pulse fade. Bails immediately when no landmarks loaded.
+    _p=perfStart(); tickForestLandmarks(logicDt, state); perfMark('forestLandmarks', _p);
     // FE-C3A — puzzle system tick + room transition detection. Puzzle tick
     // is a no-op when no puzzle is active. Room detection runs every frame
     // so a fast hero crossing portals doesn't strand a stale currentRoom.
