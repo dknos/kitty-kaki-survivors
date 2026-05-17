@@ -37,6 +37,7 @@ import { loadForestWeaponDrops } from './forestWeaponDrops.js';
 import { loadForestDayNight } from './forestDayNight.js';
 import { loadForestHud } from './forestHud.js';
 import { loadForestSigilArc } from './forestSigilArc.js';
+import { loadForestEmitters } from './forestEmitters.js';
 import { loadForestBossBars } from './forestBossBars.js';
 // PHASE 1 P1E (2026-05-17) — Boss intro cinematic. Stage-agnostic (mounts in
 // loadArenaDecor for every stage, not inside _buildForestDecor). Once-per-
@@ -266,6 +267,21 @@ function _buildForestDecor(group, opts) {
     } catch (e) {
       console.warn('[arenaDecor] loadForestSigilArc failed:', e);
       _gameState._sigilArcLoaded = false;
+    }
+  }
+  // ── PHASE 1 P1I Ambient Particle Emitters (2026-05-17) ──
+  // Per-room atmospheric variety: pollen drift (glade), lantern flicker
+  // (saphollow), mist (glowfen). Scene-scoped pre-pool (3 InstancedMeshes,
+  // caps 64/12/16). Once-per-scene gate mirrors sigilArc/HUD; tick gates
+  // each emitter's visibility on state.run.currentRoom. Pass opts.rng so
+  // tests get a deterministic scatter (mirrors landmarks/neutrals/envHazards).
+  if (_gameState && _gameState.scene && !_gameState._emittersLoaded) {
+    _gameState._emittersLoaded = true;
+    try {
+      loadForestEmitters(_gameState.scene, _gameState, opts && opts.rng);
+    } catch (e) {
+      console.warn('[arenaDecor] loadForestEmitters failed:', e);
+      _gameState._emittersLoaded = false;
     }
   }
   // ── FOREST-V2-A11 Boss HP Bars (2026-05-17) ──
