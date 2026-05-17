@@ -361,6 +361,15 @@ export function resetState() {
   // flips to numeric "Chests: N" once this field exists). Bumped in
   // forestChests._onPicked after _applyReward succeeds (single dispatch site).
   state.run._chestsOpened         = 0;
+  // PHASE 1 P1B — Achievement chain. Per-run Set of unlocked achievement ids
+  // (gates toast re-fire across runs; the persistent record lives on
+  // meta.achievements). Cleared on resetState so a fresh run can re-feel the
+  // unlock chime for player feedback. The lifetime record on meta.achievements
+  // is untouched here.
+  state.run._achievementsThisRun  = new Set();
+  // PHASE 1 P1B — `all_rooms_visited` per-run room tracker (object map, JSON-
+  // safe). Forest stage only; harmlessly stays empty on other stages.
+  state.run._roomsVisited         = {};
   state.run.stats                 = {};
   state.run.relicDrop = null;
   state.run.equippedRelic = null;

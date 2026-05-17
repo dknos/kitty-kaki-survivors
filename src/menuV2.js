@@ -23,6 +23,8 @@ import { getMeta, selectedStage, setOption, selectedAvatar } from './meta.js';
 import { STAGES, CHARACTERS, AVATARS } from './config.js';
 import { createCharCarousel } from './charCarousel.js';
 import { state } from './state.js';
+// PHASE 1 P1B — Achievement chain title-screen indicator (Achievements: N/Total).
+import { mountTitlePanel as _mountAchievementsTitlePanel } from './forestAchievements.js';
 
 // ─────────────────────────────────────────────────────────
 // Tone palette — locked to "dawn" for v1.
@@ -894,6 +896,8 @@ function _buildFooter(parent) {
   left.appendChild(ver);
   left.appendChild(sep);
   left.appendChild(online);
+  // PHASE 1 P1B — Achievements indicator. Click → modal listing all defs.
+  try { _mountAchievementsTitlePanel(left); } catch (e) { console.warn('[menuV2.ach]', e); }
 
   const right = document.createElement('div');
   right.className = 'kkv2-foot-right';
