@@ -97,6 +97,11 @@ import { tickForestEnvHazards, disposeForestEnvHazards } from './forestEnvHazard
 // pickup detect; modal dispatch fires once per pick (user-action, not hot
 // path).
 import { tickForestChests, disposeForestChests } from './forestChests.js';
+// FOREST-V2-A7 Reaper Endgame — VS 30-minute hunter. Spawns invincible
+// Reaper at 30:00 stage time; outlast 5 minutes for +500 coins. Forest-only.
+// Self-contained mesh + tick (NOT in state.enemies), so weapon hit loops
+// can't touch it. Teardown mirrors the 5-site chests dispose pattern.
+import { tickForestReaper, disposeForestReaper } from './forestReaper.js';
 import { loadTwilightFountains, tickTwilightFountains, clearTwilightFountains } from './twilightFountains.js';
 import { loadCinderBallistas, tickCinderBallistas, clearCinderBallistas } from './cinderBallistas.js';
 import { loadVoidTeleportPads, tickVoidTeleportPads, clearVoidTeleportPads } from './voidTeleportPads.js';
@@ -684,6 +689,12 @@ function _teardownActiveRun() {
     disposeForestChests(state.scene);
     if (state) state._chestsLoaded = false;
   }
+  // FOREST-V2-A7 Reaper teardown — mesh group + DOM red-tint overlay +
+  // outlast pillar burst. Idempotent; safe on non-forest runs (no-op).
+  if (state.scene) {
+    disposeForestReaper(state.scene);
+    if (state) state._reaperLoaded = false;
+  }
   // Tear down twilight fountains (no-op on non-twilight stages). Mirrors
   // the forestAmber teardown shape; clear path also nulls
   // state.run.fountainSpeedBuff so the buff can't leak across runs.
@@ -1193,6 +1204,7 @@ function applyMetaUpgrades() {
       disposeForestNeutrals(state.scene);  state._neutralsLoaded  = false; // FE-V2 Neutrals
       disposeForestEnvHazards(state.scene); state._envHazardsLoaded = false; // FE-V2 EnvHazards
       disposeForestChests(state.scene);     state._chestsLoaded     = false; // FOREST-V2-A6 Chests
+      disposeForestReaper(state.scene);     state._reaperLoaded     = false; // FOREST-V2-A7 Reaper
       clearCinderBallistas(state.scene);
       clearCinderHazards(state.scene);
       clearVoidTeleportPads(state.scene);
@@ -1225,6 +1237,7 @@ function applyMetaUpgrades() {
       disposeForestNeutrals(state.scene);  state._neutralsLoaded  = false; // FE-V2 Neutrals
       disposeForestEnvHazards(state.scene); state._envHazardsLoaded = false; // FE-V2 EnvHazards
       disposeForestChests(state.scene);     state._chestsLoaded     = false; // FOREST-V2-A6 Chests
+      disposeForestReaper(state.scene);     state._reaperLoaded     = false; // FOREST-V2-A7 Reaper
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearVoidTeleportPads(state.scene);
@@ -1263,6 +1276,7 @@ function applyMetaUpgrades() {
       disposeForestNeutrals(state.scene);  state._neutralsLoaded  = false; // FE-V2 Neutrals
       disposeForestEnvHazards(state.scene); state._envHazardsLoaded = false; // FE-V2 EnvHazards
       disposeForestChests(state.scene);     state._chestsLoaded     = false; // FOREST-V2-A6 Chests
+      disposeForestReaper(state.scene);     state._reaperLoaded     = false; // FOREST-V2-A7 Reaper
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearCinderBallistas(state.scene);
@@ -1283,6 +1297,7 @@ function applyMetaUpgrades() {
       disposeForestNeutrals(state.scene);  state._neutralsLoaded  = false; // FE-V2 Neutrals
       disposeForestEnvHazards(state.scene); state._envHazardsLoaded = false; // FE-V2 EnvHazards
       disposeForestChests(state.scene);     state._chestsLoaded     = false; // FOREST-V2-A6 Chests
+      disposeForestReaper(state.scene);     state._reaperLoaded     = false; // FOREST-V2-A7 Reaper
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearCinderBallistas(state.scene);
@@ -1784,6 +1799,10 @@ function frame(now) {
     // anim + burst fade. Bails immediately when no chests loaded. Reward
     // dispatch fires from the modal pick (user-action), not here.
     _p=perfStart(); tickForestChests(state, logicDt); perfMark('forestChests', _p);
+    // FOREST-V2-A7 Reaper (2026-05-17) — 30:00 spawn schedule + chase + 35:00
+    // outlast bonus. No-op until state.time.game crosses WARN_T (1770s); cheap
+    // on early-game frames (one early-return on the warned flag).
+    _p=perfStart(); tickForestReaper(state, logicDt); perfMark('forestReaper', _p);
     // FE-C3A — puzzle system tick + room transition detection. Puzzle tick
     // is a no-op when no puzzle is active. Room detection runs every frame
     // so a fast hero crossing portals doesn't strand a stale currentRoom.

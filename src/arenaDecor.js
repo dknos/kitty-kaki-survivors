@@ -30,6 +30,7 @@ import { loadForestCoffins } from './forestCoffins.js';
 import { loadForestNeutrals } from './forestNeutrals.js';
 import { loadForestEnvHazards } from './forestEnvHazards.js';
 import { loadForestChests } from './forestChests.js';
+import { loadForestReaper } from './forestReaper.js';
 import { state as _gameState } from './state.js';
 
 // Active decor group + cleanup hooks, tracked module-side so clearArenaDecor
@@ -153,6 +154,20 @@ function _buildForestDecor(group, opts) {
     } catch (e) {
       console.warn('[arenaDecor] loadForestChests failed:', e);
       _gameState._chestsLoaded = false;
+    }
+  }
+  // ── FOREST-V2-A7 Reaper Endgame (2026-05-17) ──
+  // Scene-scoped single-instance hunter that spawns at 30:00 stage time.
+  // Once-per-scene gate mirrors chests/envHazards/etc. Independent of room
+  // routing (the entity reads state.run.currentRoom at spawn-time to pick an
+  // edge, and the tick lives in the forest-only block in main.js).
+  if (_gameState && _gameState.scene && !_gameState._reaperLoaded) {
+    _gameState._reaperLoaded = true;
+    try {
+      loadForestReaper(_gameState.scene, _gameState);
+    } catch (e) {
+      console.warn('[arenaDecor] loadForestReaper failed:', e);
+      _gameState._reaperLoaded = false;
     }
   }
   return result;
