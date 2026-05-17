@@ -713,13 +713,31 @@ function _stopStageAmbient() {
  *
  * Safe to call before unlockAudio() — defers until the ctx is alive. Routes
  * through _musicBus so Music Volume slider controls it.
+ *
+ * Special case (FOREST-V2-A18, 2026-05-17): stageId === 'forest' delegates
+ * to the layered day/night music system (music.setForestPhase). The old flat
+ * forest_ambient.ogg is bypassed in favour of 5 phase-specific tracks that
+ * crossfade as the day/night cycle advances. Existing forest_ambient.ogg
+ * file is retained on disk for legacy/reference but no longer loaded.
  */
 export function playStageAmbient(stageId) {
-  // Stop if no/unsupported stage requested.
+  // Stop if no/unsupported stage requested. Also tear down the music layer
+  // (idempotent when forest wasn't active).
   if (!stageId || !STAGE_AMBIENT_URLS[stageId]) {
     _stopStageAmbient();
+    music._teardownForestMusic();
     return;
   }
+  // Forest: hand off to the day/night music system. Start at MIDDAY; the
+  // forestDayNight tick will call music.setForestPhase on phase transitions.
+  if (stageId === 'forest') {
+    _stopStageAmbient();                       // ensure no other stage bed is playing
+    music.setForestPhase('midday');
+    return;
+  }
+  // Other stages: bypass the music layer (if it was active from a prior
+  // forest run) and play the flat ambient.
+  music._teardownForestMusic();
   // Already on this stage? leave it alone.
   if (_stageAmbient && _stageAmbient.stageId === stageId) return;
 
@@ -790,6 +808,9 @@ export function suspendAudio() {
   if (_stageAmbient && _stageAmbient.el) {
     try { _stageAmbient.el.pause(); } catch (_) {}
   }
+  // Forest music layer (FOREST-V2-A18): pause active phase tracks for the
+  // same reason — they're HTMLAudioElements too.
+  music._pauseForestMusic();
 }
 
 /** Resume the audio context + restart menuBed if mode warrants it. */
@@ -804,4 +825,271 @@ export function resumeAudio() {
     const p = _stageAmbient.el.play();
     if (p && typeof p.catch === 'function') p.catch(() => {});
   }
+  // Forest music layer (FOREST-V2-A18): resume the active phase track if it
+  // was running before the blur.
+  music._resumeForestMusic();
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FOREST-V2-A18 — Day/night phase music layer.
+//
+// Five looping ambient tracks under assets/music/forest_<phase>.ogg crossfade
+// as forestDayNight.js advances through its phases. Each phase has a distinct
+// mood (peaceful midday → ominous bloodmoon) built from CC0 Kenney sci-fi
+// drones via scripts/process-music.sh.
+//
+// Architecture:
+//   - Two HTMLAudioElement slots (A + B) with MediaElementSource → GainNode →
+//     _musicBus. On phase change, fade-out the currently-active slot over 3s
+//     and fade-in the inactive slot loaded with the new track. Web Audio
+//     GainNode.linearRampToValueAtTime drives the ramps.
+//   - Lazy load: track URLs are not fetched until setForestPhase first
+//     references them. HTMLAudioElement preload='auto' lets Chrome stream the
+//     ogg before play time.
+//   - Volume: per-slot gain ramps 0 → MUSIC_MAX_GAIN (0.7) so the
+//     two-track overlap during the 3s xfade doesn't exceed ~1.0 unity at the
+//     bus. Master Music Volume already lives in _musicBus.gain.
+//   - Pause: state.time.paused is polled every 250ms. When true → pause the
+//     active slot's HTMLAudioElement (preserves currentTime). When false →
+//     play() resumes from where it left off.
+//   - Tab blur / focus: suspendAudio / resumeAudio dispatch to
+//     _pauseForestMusic / _resumeForestMusic.
+//   - Stage swap: _teardownForestMusic() fully releases both slots when
+//     leaving the forest stage (called by playStageAmbient).
+// ─────────────────────────────────────────────────────────────────────────────
+
+const _FOREST_PHASE_URLS = {
+  midday:    'music/forest_midday.ogg',
+  golden:    'music/forest_golden.ogg',
+  dusk:      'music/forest_dusk.ogg',
+  twilight:  'music/forest_twilight.ogg',
+  bloodmoon: 'music/forest_bloodmoon.ogg',
+};
+
+// Per-slot peak gain. Each track is loudnorm'd to -20 LUFS so 0.7 here keeps
+// the bus headroom safe (xfade overlap → 1.4 peak in worst case, but the
+// loudnorm TP=-2dBFS ceiling means actual sample peaks land around -2.4 dBFS
+// even doubled — comfortably below clip).
+const _FOREST_MUSIC_PEAK_GAIN = 0.7;
+const _FOREST_MUSIC_XFADE_S   = 3.0;   // crossfade duration on phase change
+const _FOREST_MUSIC_PAUSE_POLL_MS = 250;
+
+// Slot state: { el, srcNode, gainNode, url, phase, playing }
+const _forestSlots = [null, null];
+let   _forestActiveIdx = -1;           // which slot is currently audible (-1 = none)
+let   _forestCurrentPhase = null;      // last phase passed to setForestPhase
+let   _forestPausePollTimer = null;    // state.time.paused poller handle
+let   _forestPauseWanted   = false;    // last observed paused state (drives play/pause toggle)
+
+function _forestSlotInit(idx, url) {
+  const ctx = ensureCtx();
+  if (!ctx) return null;
+  let resolved;
+  try {
+    resolved = new URL('../assets/' + url, import.meta.url).href;
+  } catch (_) {
+    resolved = '../assets/' + url;
+  }
+  const el = new Audio(resolved);
+  el.loop = true;
+  el.preload = 'auto';
+  el.volume = 1.0;     // gainNode handles the level — keep element at unity
+  let srcNode;
+  try {
+    srcNode = ctx.createMediaElementSource(el);
+  } catch (err) {
+    console.warn('[audio.music] slot ' + idx + ' source create fail', err && err.message);
+    return null;
+  }
+  const gainNode = ctx.createGain();
+  gainNode.gain.value = 0;
+  srcNode.connect(gainNode).connect(_musicBus);
+  return { el, srcNode, gainNode, url, phase: null, playing: false };
+}
+
+function _forestSlotDispose(slot) {
+  if (!slot) return;
+  try { slot.el.pause(); } catch (_) {}
+  try { slot.srcNode.disconnect(); } catch (_) {}
+  try { slot.gainNode.disconnect(); } catch (_) {}
+  slot.playing = false;
+}
+
+function _forestStartPausePoll() {
+  if (_forestPausePollTimer) return;
+  _forestPausePollTimer = setInterval(() => {
+    // No active forest music? nothing to gate.
+    if (_forestActiveIdx < 0) return;
+    let paused = false;
+    try {
+      if (state && state.time && state.time.paused) paused = true;
+    } catch (_) {}
+    if (paused === _forestPauseWanted) return;
+    _forestPauseWanted = paused;
+    const activeSlot = _forestSlots[_forestActiveIdx];
+    if (!activeSlot) return;
+    if (paused) {
+      try { activeSlot.el.pause(); } catch (_) {}
+    } else {
+      // Resume only if the audio ctx is alive and the slot was meant to play.
+      if (_ctx && _ctx.state === 'running' && activeSlot.playing) {
+        const p = activeSlot.el.play();
+        if (p && typeof p.catch === 'function') p.catch(() => {});
+      }
+    }
+  }, _FOREST_MUSIC_PAUSE_POLL_MS);
+}
+
+function _forestStopPausePoll() {
+  if (_forestPausePollTimer) { clearInterval(_forestPausePollTimer); _forestPausePollTimer = null; }
+  _forestPauseWanted = false;
+}
+
+/**
+ * Public music dispatcher. Mirrors the `sfx.*` export pattern.
+ *
+ * Currently only `setForestPhase` is wired (FOREST-V2-A18). Future stages
+ * can add their own phase systems behind the same export to keep one
+ * canonical "music" surface for callers.
+ */
+export const music = {
+  /**
+   * Set the active forest day/night phase. Accepts one of:
+   *   'midday' | 'golden' | 'dusk' | 'twilight' | 'bloodmoon'
+   *
+   * First call boots both slot pools lazily. Subsequent calls with a new
+   * phase crossfade over 3s; calls with the same phase are no-ops.
+   *
+   * Safe to call before unlockAudio() — the ensureCtx() inside the slot
+   * init creates a suspended ctx; the actual play() will fail-silent until
+   * the ctx is resumed. forestDayNight calls this every phase transition,
+   * so the first resumable call after unlock will restart playback.
+   */
+  setForestPhase(phase) {
+    if (!_FOREST_PHASE_URLS[phase]) {
+      console.warn('[audio.music] unknown forest phase', phase);
+      return;
+    }
+    if (_forestCurrentPhase === phase && _forestActiveIdx >= 0) return; // no change
+
+    const ctx = ensureCtx();
+    if (!ctx || ctx.state === 'closed') return;
+    if (!_enabled) return;
+
+    _forestCurrentPhase = phase;
+    _forestStartPausePoll();
+
+    const targetUrl = _FOREST_PHASE_URLS[phase];
+
+    // Pick the slot to fade-in. If both slots are unused, init slot 0; if
+    // one slot is active, the other slot is the target.
+    const newIdx = _forestActiveIdx === 0 ? 1 : 0;
+    const oldIdx = _forestActiveIdx;
+
+    // Dispose any stale slot in the target index (e.g. last phase's old
+    // track from a prior swap) before re-init so we don't leak MediaElement
+    // sources.
+    if (_forestSlots[newIdx]) {
+      _forestSlotDispose(_forestSlots[newIdx]);
+      _forestSlots[newIdx] = null;
+    }
+    const newSlot = _forestSlotInit(newIdx, targetUrl);
+    if (!newSlot) return;
+    newSlot.phase = phase;
+    newSlot.playing = true;
+    _forestSlots[newIdx] = newSlot;
+
+    const now = ctx.currentTime;
+    // Start the new slot at 0 gain, ramp to peak over xfade duration.
+    try {
+      newSlot.gainNode.gain.cancelScheduledValues(now);
+      newSlot.gainNode.gain.setValueAtTime(0, now);
+      newSlot.gainNode.gain.linearRampToValueAtTime(_FOREST_MUSIC_PEAK_GAIN, now + _FOREST_MUSIC_XFADE_S);
+    } catch (_) {}
+    // Begin playback. If ctx is suspended, play() will throw — catch + leave
+    // it for the next user-gesture resume to retry (forestDayNight will call
+    // setForestPhase again on the next phase tick anyway, so eventual
+    // playback is guaranteed).
+    const pp = newSlot.el.play();
+    if (pp && typeof pp.catch === 'function') {
+      pp.catch((err) => {
+        // Suspended ctx + autoplay-policy is the common case here; only
+        // log on unfamiliar errors to keep the console quiet.
+        if (err && err.name !== 'NotAllowedError' && err.name !== 'AbortError') {
+          console.warn('[audio.music] forest play deferred', err && err.message);
+        }
+      });
+    }
+
+    // Fade-out the old slot over the same window. Dispose at the end of the
+    // ramp so the MediaElementSource releases properly.
+    if (oldIdx >= 0 && _forestSlots[oldIdx]) {
+      const oldSlot = _forestSlots[oldIdx];
+      try {
+        oldSlot.gainNode.gain.cancelScheduledValues(now);
+        // Anchor the current gain so the ramp originates from the live value
+        // (avoids a click if the slot was mid-fade).
+        const liveGain = oldSlot.gainNode.gain.value;
+        oldSlot.gainNode.gain.setValueAtTime(liveGain, now);
+        oldSlot.gainNode.gain.linearRampToValueAtTime(0, now + _FOREST_MUSIC_XFADE_S);
+      } catch (_) {}
+      oldSlot.playing = false;
+      // Schedule a dispose ~50ms after the ramp completes. setTimeout in ms.
+      const disposeAtMs = (_FOREST_MUSIC_XFADE_S * 1000) + 50;
+      setTimeout(() => {
+        // Only dispose if THIS slot is still the same one we ramped down —
+        // if the user toggled phases rapidly, the slot may have already been
+        // reused.
+        if (_forestSlots[oldIdx] === oldSlot) {
+          _forestSlotDispose(oldSlot);
+          _forestSlots[oldIdx] = null;
+        }
+      }, disposeAtMs);
+    }
+
+    _forestActiveIdx = newIdx;
+  },
+
+  /**
+   * Tear down both forest music slots. Called by playStageAmbient when the
+   * stage leaves 'forest' (or stops entirely). Idempotent.
+   */
+  _teardownForestMusic() {
+    for (let i = 0; i < _forestSlots.length; i++) {
+      if (_forestSlots[i]) {
+        _forestSlotDispose(_forestSlots[i]);
+        _forestSlots[i] = null;
+      }
+    }
+    _forestActiveIdx = -1;
+    _forestCurrentPhase = null;
+    _forestStopPausePoll();
+  },
+
+  /** Pause the active forest music HTMLAudioElement (tab blur, etc). */
+  _pauseForestMusic() {
+    if (_forestActiveIdx < 0) return;
+    const slot = _forestSlots[_forestActiveIdx];
+    if (slot && slot.el) {
+      try { slot.el.pause(); } catch (_) {}
+    }
+  },
+
+  /** Resume the active forest music HTMLAudioElement post-tab-focus. */
+  _resumeForestMusic() {
+    if (_forestActiveIdx < 0) return;
+    const slot = _forestSlots[_forestActiveIdx];
+    if (!slot || !slot.el) return;
+    if (!_ctx || _ctx.state !== 'running') return;
+    // Don't resume if the gameplay pause is asserted — the pause poller
+    // will gate it. Only resume in the natural-running case.
+    let paused = false;
+    try { if (state && state.time && state.time.paused) paused = true; } catch (_) {}
+    if (paused) return;
+    if (!slot.playing) return;
+    if (slot.el.paused) {
+      const p = slot.el.play();
+      if (p && typeof p.catch === 'function') p.catch(() => {});
+    }
+  },
+};
