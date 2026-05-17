@@ -155,11 +155,18 @@ function _spawnShockwave(scene, x, z) {
     side: THREE.DoubleSide,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
+    // Ground-decal Z-order fix (2026-05-17 user report): amber detonation
+    // shockwave is a flat ring on the floor; bias it BELOW the hero+enemy
+    // meshes so they occlude it.
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
   });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.position.set(x, 0.04, z);
   mesh.frustumCulled = false;
   mesh.layers.enable(BLOOM_LAYER);
+  mesh.renderOrder = -1;
   scene.add(mesh);
   return { mesh, mat, geo, t: 0 };
 }

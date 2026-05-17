@@ -351,11 +351,18 @@ function _buildMushroomMeshes() {
     blending: THREE.AdditiveBlending,
     depthWrite: false,
     side: THREE.DoubleSide,
+    // Ground-decal Z-order fix (2026-05-17 user report: AoE rendering above
+    // hero). polygonOffset pushes the ring further BELOW in the depth buffer
+    // so the opaque hero/enemy meshes occlude it correctly.
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
   });
   _puffMesh = new THREE.InstancedMesh(puffGeo, puffMat, CAP_RINGS);
   _puffMesh.layers.enable(BLOOM_LAYER);
   _puffMesh.userData.envHazardKind = 'mushroom_puff';
   _puffMesh.frustumCulled = false;
+  _puffMesh.renderOrder = -1;
   _track(puffGeo); _track(puffMat);
 }
 
@@ -371,9 +378,14 @@ function _buildTarPitMesh() {
     opacity: 0.55,
     depthWrite: false,
     side: THREE.DoubleSide,
+    // Ground-decal Z-order fix (2026-05-17 user report).
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
   });
   _tarMesh = new THREE.InstancedMesh(geo, mat, CAP_TARPITS);
   _tarMesh.userData.envHazardKind = 'tar_pit';
+  _tarMesh.renderOrder = -1;
   _track(geo); _track(mat);
 }
 
@@ -404,10 +416,15 @@ function _buildBranchMeshes() {
     blending: THREE.AdditiveBlending,
     depthWrite: false,
     side: THREE.DoubleSide,
+    // Ground-decal Z-order fix (2026-05-17 user report).
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
   });
   _branchRingMesh = new THREE.InstancedMesh(rGeo, rMat, CAP_ACTIVE_BRANCHES);
   _branchRingMesh.layers.enable(BLOOM_LAYER);
   _branchRingMesh.userData.envHazardKind = 'branch_ring';
+  _branchRingMesh.renderOrder = -1;
   _track(rGeo); _track(rMat);
 }
 

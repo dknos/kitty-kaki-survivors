@@ -264,10 +264,17 @@ function _buildAltarMeshes() {
     color: SLOT5_AMBER,
     transparent: true, opacity: 0.35,
     blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+    // Ground-decal Z-order fix (2026-05-17 user report): flat glow at y=0.01
+    // must render below hero/enemies. polygonOffset biases it further BELOW
+    // in the depth buffer.
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
   });
   _altarGlowMesh = new THREE.InstancedMesh(glowGeo, glowMat, CAP_ALTARS);
   _altarGlowMesh.layers.enable(BLOOM_LAYER);
   _altarGlowMesh.userData.landmarkKind = 'altar_glow';
+  _altarGlowMesh.renderOrder = -1;
   _track(glowGeo); _track(glowMat);
 }
 
