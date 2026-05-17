@@ -111,7 +111,30 @@ no new hex constants. ShaderMaterial crossfades over 3s on day/night
 phase change. `ClampToEdgeWrapping`, `LinearFilter`, `anisotropy = 8`,
 `colorSpace = SRGBColorSpace`.
 
-## License
+## P3E addendum — ground plane detail normals (FOREST-V2-A35, PR #139)
 
-This project's LICENSE (MIT). No third-party content included; nothing
-extra to attribute.
+One additional procedural normal map for the main forest ground plane
+(`src/env.js` `loadPack('assets/sprites/forrest_ground_01/')`). Overrides
+the 1.4 MB Poly Haven `nor_gl.jpg` with a repo-tracked, palette-neutral,
+deterministic tangent-space normal at 256×256 (~100 KB).
+
+| File | Size | Use |
+|------|------|-----|
+| `forest_ground_normal_512.png` | 256×256 RGB PNG, NoColorSpace (~100 KB) | `MeshStandardMaterial.normalMap` on the forest stage ground plane |
+
+Generator: `tools/_gen_ground_normal.mjs` — mulberry32-seeded 4-octave
+value-noise fBm heightmap + 32 Gaussian-profile pebble stamps (random
+sign, radius 4-9 px), converted to tangent-space normals via central
+differences. STRENGTH=2.5 keeps the source map subtle so `env.js`'s
+existing `normalScale = (0.6, 0.6)` reads as believable forest-floor
+micro-detail under all four day/night phases (MIDDAY → BLOOD_MOON).
+
+The Poly Haven diff + rough JPGs are retained — they carry albedo +
+roughness variation that procedural generation can't replicate cheaply.
+Only the normal map is swapped. Twilight pack (`brown_mud/`) is untouched
+(out of scope for P3E).
+
+`colorSpace = THREE.NoColorSpace` is mandatory: tangent-space normal data
+must NOT be sRGB-decoded by the GPU, or the gradient direction inverts.
+
+## License
