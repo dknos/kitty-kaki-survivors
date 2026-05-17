@@ -26,6 +26,10 @@ import { spawnChest } from './chest.js';
 // re: borgir-salvo dynamic-import stall). dropForestChest is a no-op when the
 // forest chest module isn't loaded, so non-forest stages pay nothing.
 import { dropForestChest } from './forestChests.js';
+// FOREST-V2-A8 — VS floor pickups (bomb/magnet/chicken), forest stage only.
+// Static import to dodge dynamic-import stall on borgir-salvo deaths (matches
+// dropForestChest's rationale above). No-op when the module isn't loaded.
+import { dropForestPickup } from './forestPickups.js';
 import { spawnHeart, spawnStar, spawnBomb, spawnFreeze, spawnChicken } from './pickups.js';
 import { sfx } from './audio.js';
 import { notifyStageEnemySpawn, notifyStageEnemyKill } from './stageRules.js';
@@ -843,6 +847,12 @@ export function killEnemy(enemy) {
   if (enemy.elite && !enemy.isFinalBoss && !enemy.isMiniBoss) {
     if (Math.random() < 0.08) spawnFreeze(enemy.mesh.position.x, enemy.mesh.position.z);
     if (Math.random() < 0.05) spawnChicken(enemy.mesh.position.x, enemy.mesh.position.z);
+  }
+  // FOREST-V2-A8 — VS floor pickups (bomb 1% / magnet 2% / chicken 4% gated).
+  // One Math.random() roll; chicken HP gate read AT DROP TIME (VS-accurate).
+  if (_forestChestStage && !enemy.isFinalBoss) {
+    dropForestPickup(enemy.mesh.position, Math.random(),
+      state.hero.hp / (state.hero.hpMax || 1));
   }
   // Final boss always drops a chest (player can still grab it after victory anim — fine)
   if (enemy.isFinalBoss) {
