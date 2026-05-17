@@ -577,3 +577,30 @@ export function clearForestAmber(scene) {
 // ─── debug exports ───────────────────────────────────────────────────────────
 export function _debugEntities() { return _entities.slice(); }
 export function _debugHotspots() { return _hotspotsLoaded; }
+
+// ─── smoke-test hook (guarded) ───────────────────────────────────────────────
+// Forces the nearest idle amber to the given (x,z) to detonate next tick.
+// Only exposed on window when window.__kkSmokeEnabled === true — set by the
+// headless smoke harness before triggering. NEVER runs in production builds.
+export function _debugDetonateNearest(x = 0, z = 0) {
+  let best = null;
+  let bestD2 = Infinity;
+  for (const e of _entities) {
+    if (e.state !== 'idle') continue;
+    const dx = e.x - x;
+    const dz = e.z - z;
+    const d2 = dx * dx + dz * dz;
+    if (d2 < bestD2) { bestD2 = d2; best = e; }
+  }
+  if (!best) return null;
+  best.pendingDetonate = true;
+  return { x: best.x, z: best.z, dist: Math.sqrt(bestD2) };
+}
+if (typeof window !== 'undefined') {
+  Object.defineProperty(window, 'kkDetonateNearestAmber', {
+    configurable: true,
+    get() {
+      return window.__kkSmokeEnabled ? _debugDetonateNearest : undefined;
+    },
+  });
+}
