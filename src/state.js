@@ -373,6 +373,12 @@ export function resetState() {
   // freeze). See src/bossIntroCinematic.js.
   state.run._cinematicSeen        = { miniboss: false, elite: false, roomboss: false, reaper: false };
   state.run._bossIntroActive      = false;
+  // PHASE 1 P1J (2026-05-17) — Weapon evolve cinematic in-flight flag.
+  // Set true by triggerEvolveCinematic() during the 1.0s sequence and
+  // cleared by tickEvolveCinematic on completion. Mirrors _bossIntroActive
+  // so future subsystems can read either flag to short-circuit interactions
+  // while a cinematic is playing. See src/evolveCinematic.js.
+  state.run._evolveCinematicActive = false;
   // PHASE 1 P1F (2026-05-17) — End-of-run summary screen one-shot flag.
   // Set true by src/endRunSummary.js the first frame it detects either
   // state.gameOver === true OR state.run.stats.reaperOutlasted === true.

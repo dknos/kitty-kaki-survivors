@@ -116,6 +116,12 @@ import { tickForestBossBars, disposeForestBossBars } from './forestBossBars.js';
 // Dispose mirrors the 5-site forestBossBars teardown so DOM doesn't leak
 // across stage swaps.
 import { tickBossIntroCinematic, disposeBossIntroCinematic } from './bossIntroCinematic.js';
+// PHASE 1 P1J (2026-05-17) — Weapon evolve cinematic. Stage-agnostic 1.0s
+// camera punch-in + gold burst + slot-7 banner when a Forest Evolution
+// Coffin dispatches an evolution. Tick runs AFTER tickBossIntroCinematic so
+// it takes camera priority when both fire (with a deny gate as belt-and-
+// suspenders in triggerEvolveCinematic). Dispose mirrors the 5-site teardown.
+import { tickEvolveCinematic, disposeEvolveCinematic } from './evolveCinematic.js';
 // PHASE 1 P1F (2026-05-17) — End-of-run summary screen. Stage-agnostic VS-
 // style results panel. Tick polls state.gameOver + state.run.stats
 // .reaperOutlasted (NO direct hooks into enemies/death paths). Mounted
@@ -776,6 +782,11 @@ function _teardownActiveRun() {
   // + style. DOM-only; no scene param. Idempotent; safe across stage swaps.
   disposeBossIntroCinematic();
   if (state) state._bossIntroLoaded = false;
+  // PHASE 1 P1J Weapon Evolve Cinematic teardown — removes #kk-evolve-cin-banner
+  // + style + burst mesh. Idempotent; safe across stage swaps. Mirrors the
+  // bossIntro teardown shape.
+  disposeEvolveCinematic();
+  if (state) state._evolveCinematicLoaded = false;
   // PHASE 1 P1F End-of-run summary teardown — removes #kk-endrun-summary
   // + style + keydown handler. DOM-only; no scene param. Idempotent; safe
   // across stage swaps. Does NOT clear state.run._summaryShown — that's
@@ -1301,6 +1312,7 @@ function applyMetaUpgrades() {
       disposeForestEmitters();              state._emittersLoaded   = false; // PHASE 1 P1I Ambient Emitters
       disposeForestBossBars();              state._bossBarsLoaded   = false; // FOREST-V2-A11 Boss HP Bars
       disposeBossIntroCinematic();          state._bossIntroLoaded  = false; // PHASE 1 P1E Boss Intro Cinematic
+      disposeEvolveCinematic();             state._evolveCinematicLoaded = false; // PHASE 1 P1J Weapon Evolve Cinematic
       disposeEndRunSummary();               state._endRunSummaryLoaded = false; // PHASE 1 P1F End-of-run Summary
       clearCinderBallistas(state.scene);
       clearCinderHazards(state.scene);
@@ -1344,6 +1356,7 @@ function applyMetaUpgrades() {
       disposeForestEmitters();              state._emittersLoaded   = false; // PHASE 1 P1I Ambient Emitters
       disposeForestBossBars();              state._bossBarsLoaded   = false; // FOREST-V2-A11 Boss HP Bars
       disposeBossIntroCinematic();          state._bossIntroLoaded  = false; // PHASE 1 P1E Boss Intro Cinematic
+      disposeEvolveCinematic();             state._evolveCinematicLoaded = false; // PHASE 1 P1J Weapon Evolve Cinematic
       disposeEndRunSummary();               state._endRunSummaryLoaded = false; // PHASE 1 P1F End-of-run Summary
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
@@ -1393,6 +1406,7 @@ function applyMetaUpgrades() {
       disposeForestEmitters();              state._emittersLoaded   = false; // PHASE 1 P1I Ambient Emitters
       disposeForestBossBars();              state._bossBarsLoaded   = false; // FOREST-V2-A11 Boss HP Bars
       disposeBossIntroCinematic();          state._bossIntroLoaded  = false; // PHASE 1 P1E Boss Intro Cinematic
+      disposeEvolveCinematic();             state._evolveCinematicLoaded = false; // PHASE 1 P1J Weapon Evolve Cinematic
       disposeEndRunSummary();               state._endRunSummaryLoaded = false; // PHASE 1 P1F End-of-run Summary
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
@@ -1424,6 +1438,7 @@ function applyMetaUpgrades() {
       disposeForestEmitters();              state._emittersLoaded   = false; // PHASE 1 P1I Ambient Emitters
       disposeForestBossBars();              state._bossBarsLoaded   = false; // FOREST-V2-A11 Boss HP Bars
       disposeBossIntroCinematic();          state._bossIntroLoaded  = false; // PHASE 1 P1E Boss Intro Cinematic
+      disposeEvolveCinematic();             state._evolveCinematicLoaded = false; // PHASE 1 P1J Weapon Evolve Cinematic
       disposeEndRunSummary();               state._endRunSummaryLoaded = false; // PHASE 1 P1F End-of-run Summary
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
@@ -2113,6 +2128,13 @@ function frame(now) {
   // hero-follow each frame during the 1.5s sequence. Stage-agnostic; bails
   // fast when no sequence is active and no untriggered roomboss is present.
   _p=perfStart(); tickBossIntroCinematic(state, realDt, camera); perfMark('bossIntroCinematic', _p);
+
+  // PHASE 1 P1J — Weapon evolve cinematic. Ticked AFTER bossIntroCinematic
+  // so writes to camera.position / camera.zoom override BOTH the hero-follow
+  // AND the boss-intro override during the 1.0s sequence (evolve takes
+  // priority by being the LAST writer per frame). Stage-agnostic; bails
+  // fast when no sequence is active.
+  _p=perfStart(); tickEvolveCinematic(state, realDt, camera); perfMark('evolveCinematic', _p);
 
   // Update post-FX uniforms
   if (state.postFXPass) {

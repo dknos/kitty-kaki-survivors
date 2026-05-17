@@ -89,6 +89,9 @@ import { getLandmarkPositions } from './forestLandmarks.js';
 import { state as _gameState } from './state.js';
 import { acquireWeapon } from './weapons/index.js';
 import { sfx } from './audio.js';
+// PHASE 1 P1J (2026-05-17) — Weapon evolve cinematic trigger. Fired once
+// per coffin dispatch right after acquireWeapon. See src/evolveCinematic.js.
+import { triggerEvolveCinematic } from './evolveCinematic.js';
 
 // ── pool caps ────────────────────────────────────────────────────────────────
 const CAP_COFFINS = 8; // pre-pool cap; actual placement is 1-2
@@ -616,6 +619,8 @@ export function tickForestCoffins(state, dt) {
         // Dispatch the evolution. acquireWeapon + FX burst + banner.
         const pairIdx = _coffinPair[i];
         _dispatchEvolution(state, pairIdx);
+        // PHASE 1 P1J — 1.0s evolve cinematic (camera + burst + banner).
+        try { triggerEvolveCinematic(FOREST_EVOLUTIONS[pairIdx].id, { x: cx, y: 0.7, z: cz }); } catch (_) {}
       }
     } else if (st === ST_OPENING) {
       _coffinOpenT[i] += dt;
