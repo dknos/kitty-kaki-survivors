@@ -14,6 +14,10 @@ import { spawnMagnetSpark } from './fx.js';
 import { tex } from './particleTextures.js';
 import { BLOOM_LAYER } from './postfx.js';
 import { GLTF_CACHE } from './assets.js';
+// Sprite FX — STATIC import (level-up isn't per-frame, but keep the contract
+// uniform with enemies.js so future per-frame XP hooks can't accidentally
+// regress to dynamic import on the hot path).
+import { spawnSprite } from './sprites/index.js';
 
 const GEM_CAPACITY = 500;
 const PICKUP_DIST = 0.8;
@@ -361,6 +365,26 @@ export function updateGems(dt) {
 }
 
 export function applyLevelUpChoice(choice) {
+  // Sprite FX: ground-anchored aura burst on every level-up choice. Uses
+  // the non-looping 'burst' anim (atlas extended this round — see
+  // assets/sprites/fx/aura_rings_v1.json; 'idle' is loop:true and would
+  // never expire). Pool cap 16, never bypassed on low-fx (it's a milestone
+  // moment, not per-frame combat noise). Returns -1 if atlas not loaded
+  // yet — safe no-op. try/catch so a sprite fault doesn't break the
+  // level-up cascade.
+  try {
+    const hero = state.hero;
+    if (hero && hero.pos) {
+      spawnSprite('fx/aura_rings_v1', {
+        x: hero.pos.x,
+        y: 0.05,
+        z: hero.pos.z,
+        scale: 2.5,
+        anim: 'burst',
+      });
+    }
+  } catch (_) {}
+
   if (choice && choice.kind === 'weapon') {
     acquireWeapon(choice.id);
     try { import('./codex.js').then(({ notifyWeaponPicked }) => notifyWeaponPicked(choice.id)); } catch (_) {}

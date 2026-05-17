@@ -20,6 +20,12 @@
       "to": 7,
       "fps": 12,
       "loop": true
+    },
+    "burst": {
+      "from": 0,
+      "to": 7,
+      "fps": 5,
+      "loop": false
     }
   },
   "palette": "neutral",
