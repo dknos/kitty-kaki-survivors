@@ -288,6 +288,16 @@ export function resetState() {
   state.run.currentRoom         = 'glade';   // current room id from FOREST_ROOMS
   state.run.activePuzzle        = null;      // id of active puzzle, or null
   state.run.forestPuzzlesSolved = {};        // { flow_weaver: true, ... } — THIS RUN ONLY
+  // ── Lockdown Arena (FOREST ITER C1, 2026-05-16) ──
+  // Stage-agnostic "doors slam, clear 3 waves or 1 elite" mechanic
+  // (src/lockdownArena.js). Defaults wipe per run so a fresh run can't
+  // inherit a paused or fired flag from a prior run. `_forestLockdownFired`
+  // is a one-time per-run trigger guard — first hero-into-zone fires it;
+  // subsequent re-entries are ignored until run-reset clears it.
+  state.run.lockdownActive        = false;   // spawnDirector reads this to pause normal cadence
+  state.run.lockdownWavesCleared  = 0;       // 0..3 wave-progression mirror for UI/badges
+  state.run.lockdownEliteSeen     = false;   // any elite tagged into the live lockdown
+  state.run._forestLockdownFired  = false;   // one-time per-run trigger guard (Forest)
   state.run.relicDrop = null;
   state.run.equippedRelic = null;
   state.run.heartPotency = 1;
