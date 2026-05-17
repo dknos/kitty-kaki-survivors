@@ -22,6 +22,7 @@ import { tickChainArcs } from './chainFx.js';
 import { tickEvolveBursts, disposeAllEvolveBursts, setEvolveBurstStateRef } from './fx/evolveBurst.js';
 import { initDissolveBurst, tickDissolveBursts, disposeAllDissolveBursts, setDissolveBurstStateRef } from './fx/dissolveBurst.js';
 import { tickVelocityVeils, disposeAllVelocityVeils } from './fx/ribbonTrail.js';
+import { tickSpriteSystem, setLowFxProbe as setSpriteLowFxProbe, disposeSpritePools } from './sprites/index.js';
 import { initProjectileVisuals, releaseProjectileVisuals } from './weapons/autoAim.js';
 import { initXP, updateGems, applyLevelUpChoice } from './xp.js';
 import { initSpawnDirector, tickSpawnDirector, secondsUntilNextMiniBoss } from './spawnDirector.js';
@@ -256,6 +257,10 @@ async function boot() {
   initProjectileVisuals(scene);
   initXP(scene);
   initSpawnDirector();
+  // Sprite system low-fx kill-switch — when state.run.lowFx is true, atlases
+  // flagged bypassWhenLowFx skip spawn calls. Foundation only — no atlases
+  // are loaded yet at this point; pools are created lazily by FX wiring.
+  setSpriteLowFxProbe(() => !!(state.run && state.run.lowFx));
 
   prewarmPools();   // create pooled meshes off-screen (hides first-horde stall)
 
@@ -1595,6 +1600,11 @@ function frame(now) {
   // descriptors only spawn on Twilight fountain drinks). Cap MAX_VEILS=4,
   // POOL_CAP=128 InstancedMesh slots, ZERO per-tick allocation.
   _p=perfStart(); tickVelocityVeils(logicDt);     perfMark('velocityVeils', _p);
+  // Sprite system (atlas-driven, InstancedMesh, billboard shader). Stage-
+  // agnostic. Only does work if ensurePool() has been called for ≥1 atlas;
+  // until then the loop is empty. Pools are created by FX wiring (#98) and
+  // mob spawn (#99) — foundation file doesn't bootstrap any sheets.
+  _p=perfStart(); tickSpriteSystem(logicDt);      perfMark('spriteSystem', _p);
   _p=perfStart(); tickStageRule(state, logicDt);  perfMark('stageRule', _p);
   _p=perfStart(); tickMiniEvents(logicDt);        perfMark('miniEvents', _p);
   _p=perfStart(); tickArenaProps(logicDt);        perfMark('arenaProps', _p);
