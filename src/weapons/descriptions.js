@@ -130,6 +130,19 @@ const WEAPON_BLURBS = {
     body: (lv) => `${lv.wisps} orbiting wisp${lv.wisps > 1 ? 's' : ''} auto-strike the closest enemy every ${lv.cadence.toFixed(2)}s for ${lv.dmg} damage each.`,
     tags: ['Orbit', 'Auto-Lock', 'Constant'],
   },
+  // ── FE-V2 Coffins (2026-05-17) — evolution-coffin superweapons ──
+  // chain_storm: doubled chain damage + 50% range + 3-bolt fork per pulse.
+  // frost_eternal: permanent slow aura + chance-on-tick freeze proc.
+  chain_storm: {
+    flavor: 'Chain Storm — The bolt no longer waits for a target; three at once, every pulse.',
+    body: (lv) => `Forks ${3} parallel chain bolts every ${lv.cooldown.toFixed(2)}s, each ${lv.dmg} damage. Each bolt chains to ${lv.chains} more target${lv.chains > 1 ? 's' : ''} within ${lv.chainRadius.toFixed(1)}m at ${Math.round(lv.falloff * 100)}% falloff per jump.`,
+    tags: ['Lightning', 'Chain', 'Evolution'],
+  },
+  frost_eternal: {
+    flavor: 'Frost Eternal — The bloom never thaws; what lives nearby slows; what touches you freezes.',
+    body: (lv) => `A permanent ${lv.radius.toFixed(1)}m frost aura around the hero. Inflicts ${lv.aura_dps} dmg/s and a 50% slow. ${Math.round(lv.freezeChance * 100)}% chance per tick to freeze for ${lv.freezeDur.toFixed(2)}s (frozen enemies take +25% damage).`,
+    tags: ['Frost', 'Aura', 'Evolution'],
+  },
 };
 
 // Passive copy. Each line tells the player what the number actually does to
@@ -299,6 +312,22 @@ const STAT_FIELDS = {
     { key: 'cadence',   label: 'Cadence', fmt: v => v.toFixed(2) + 's' },
     { key: 'dmg',       label: 'DMG' },
     { key: 'radiusMul', label: 'Orbit×',  fmt: v => v.toFixed(2) },
+  ],
+  // FE-V2 Coffins — evolved superweapon stat rows for codex / Hall view
+  // (hidden from level-up cards via mod.hidden, same as the FE-V2 hidden
+  // weapons above).
+  chain_storm: [
+    { key: 'cooldown',    label: 'CD',     fmt: v => v.toFixed(2) + 's' },
+    { key: 'dmg',         label: 'DMG' },
+    { key: 'chains',      label: 'Chains' },
+    { key: 'chainRadius', label: 'Range',  fmt: v => v.toFixed(1) + 'm' },
+    { key: 'falloff',     label: 'Falloff', fmt: v => Math.round(v * 100) + '%' },
+  ],
+  frost_eternal: [
+    { key: 'aura_dps',    label: 'Aura DPS' },
+    { key: 'radius',      label: 'Radius', fmt: v => v.toFixed(1) + 'm' },
+    { key: 'freezeDur',   label: 'Freeze', fmt: v => v.toFixed(2) + 's' },
+    { key: 'freezeChance',label: 'Freeze%',fmt: v => Math.round(v * 100) + '%' },
   ],
 };
 

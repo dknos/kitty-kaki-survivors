@@ -44,6 +44,10 @@
  *   loadForestLandmarks(scene, state, rng)
  *   tickForestLandmarks(dt, state)
  *   disposeForestLandmarks(scene)
+ *   getLandmarkPositions() — read-only snapshot of placed landmark XZ centers
+ *     (shrines + altars + logs flattened). Used by sibling modules
+ *     (e.g. forestCoffins.js) that need to keep-out around placed landmarks.
+ *     Returns [] before loadForestLandmarks runs, or after dispose.
  *
  * Constraints honored:
  *   - Static imports only (no dynamic import in hot path).
@@ -122,6 +126,7 @@ let _logCount = 0;
 let _logBodyMesh = null;        // CylinderGeometry r=0.4 h=2.2 (rotated)
 let _logCapAMesh = null;        // CircleGeometry (cap end A)
 let _logCapBMesh = null;        // CircleGeometry (cap end B)
+let _logPos = null;             // Float32Array [x,z,x,z,...] — for keep-out queries
 
 // Pulse pool — pre-allocated ring meshes for telegraph FX
 let _pulseMeshes = [];
@@ -443,6 +448,7 @@ function _placeAltars(rand) {
 }
 
 function _placeLogs(rand) {
+  _logPos = new Float32Array(CAP_LOGS * 2);
   const placedX = [];
   const placedZ = [];
   // Track shrines + altars to avoid stacking logs on triggers.
@@ -467,6 +473,8 @@ function _placeLogs(rand) {
     for (let i = 0; i < target && idx < CAP_LOGS; i++) {
       const spot = _tryPlace(room, rand, placedX, placedZ, 24);
       if (!spot) continue;
+      _logPos[idx * 2 + 0] = spot.x;
+      _logPos[idx * 2 + 1] = spot.z;
       placedX.push(spot.x); placedZ.push(spot.z);
 
       // Yaw rotation so logs aren't all axis-aligned.
@@ -687,6 +695,39 @@ export function disposeForestLandmarks(scene) {
   _logBodyMesh = _logCapAMesh = _logCapBMesh = null;
   _shrinePos = _shrineTriggered = null;
   _altarPos = _altarTriggered = null;
+  _logPos = null;
   _shrineCount = _altarCount = _logCount = 0;
   _loaded = false;
+}
+
+/**
+ * Read-only snapshot of placed landmark XZ centers. Returns a flat
+ * array of {x, z} objects covering shrines, altars, and cosmetic logs
+ * in placement order. Empty array if landmarks haven't been loaded or
+ * have been disposed. Intended for sibling modules (forestCoffins.js)
+ * that need a quick keep-out test against already-placed landmarks.
+ *
+ * Allocation: O(n) — called once at coffin placement time (not in a
+ * hot path). Safe to call before/after dispose without throwing.
+ *
+ * @returns {Array<{x:number, z:number}>}
+ */
+export function getLandmarkPositions() {
+  const out = [];
+  if (_shrinePos && _shrineCount > 0) {
+    for (let i = 0; i < _shrineCount; i++) {
+      out.push({ x: _shrinePos[i * 2], z: _shrinePos[i * 2 + 1] });
+    }
+  }
+  if (_altarPos && _altarCount > 0) {
+    for (let i = 0; i < _altarCount; i++) {
+      out.push({ x: _altarPos[i * 2], z: _altarPos[i * 2 + 1] });
+    }
+  }
+  if (_logPos && _logCount > 0) {
+    for (let i = 0; i < _logCount; i++) {
+      out.push({ x: _logPos[i * 2], z: _logPos[i * 2 + 1] });
+    }
+  }
+  return out;
 }
