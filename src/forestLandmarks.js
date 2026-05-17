@@ -66,6 +66,18 @@ import { spawnHealNumber } from './damageNumbers.js';
 import { sfx } from './audio.js';
 import { createRuneRing } from './fx/runeRing.js';
 
+// ── PHASE 3 P3B — forest stone texture (lazy luminance map; assets/textures/README.md) ──
+let _stoneTex = null;
+function _stoneTexture() {
+  if (_stoneTex) return _stoneTex;
+  _stoneTex = new THREE.TextureLoader().load('assets/textures/forest_stone_512.png');
+  _stoneTex.wrapS = _stoneTex.wrapT = THREE.RepeatWrapping;
+  _stoneTex.repeat.set(1, 1);
+  _stoneTex.colorSpace = THREE.SRGBColorSpace;
+  _stoneTex.anisotropy = 8;
+  return _stoneTex;
+}
+
 // ── caps ─────────────────────────────────────────────────────────────────────
 const CAP_SHRINES = 64;
 const CAP_ALTARS  = 32;
@@ -212,6 +224,7 @@ function _buildShrineMeshes() {
   const baseGeo = new THREE.CylinderGeometry(0.5, 0.5, 0.15, 16);
   const baseMat = new THREE.MeshStandardMaterial({
     color: SLOT3_BROWN, roughness: 0.95, metalness: 0.02, flatShading: true,
+    map: _stoneTexture(),
   });
   _shrineBaseMesh = new THREE.InstancedMesh(baseGeo, baseMat, CAP_SHRINES);
   _shrineBaseMesh.userData.landmarkKind = 'shrine_base';
@@ -221,6 +234,7 @@ function _buildShrineMeshes() {
   const obeGeo = new THREE.BoxGeometry(0.4, 1.2, 0.4);
   const obeMat = new THREE.MeshStandardMaterial({
     color: SLOT2_GREEN, roughness: 0.85, metalness: 0.03, flatShading: true,
+    map: _stoneTexture(),
   });
   _shrineObeliskMesh = new THREE.InstancedMesh(obeGeo, obeMat, CAP_SHRINES);
   _shrineObeliskMesh.userData.landmarkKind = 'shrine_obelisk';
@@ -244,6 +258,7 @@ function _buildAltarMeshes() {
   const pedGeo = new THREE.CylinderGeometry(0.7, 0.7, 0.2, 16);
   const pedMat = new THREE.MeshStandardMaterial({
     color: SLOT3_BROWN, roughness: 0.95, metalness: 0.02, flatShading: true,
+    map: _stoneTexture(),
   });
   _altarPedestalMesh = new THREE.InstancedMesh(pedGeo, pedMat, CAP_ALTARS);
   _altarPedestalMesh.userData.landmarkKind = 'altar_pedestal';
@@ -253,6 +268,7 @@ function _buildAltarMeshes() {
   const pillarGeo = new THREE.BoxGeometry(0.5, 1.0, 0.5);
   const pillarMat = new THREE.MeshStandardMaterial({
     color: SLOT1_BONE, roughness: 0.7, metalness: 0.05, flatShading: true,
+    map: _stoneTexture(),
   });
   _altarPillarMesh = new THREE.InstancedMesh(pillarGeo, pillarMat, CAP_ALTARS);
   _altarPillarMesh.userData.landmarkKind = 'altar_pillar';

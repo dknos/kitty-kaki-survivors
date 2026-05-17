@@ -94,6 +94,18 @@ import { sfx } from './audio.js';
 import { triggerEvolveCinematic } from './evolveCinematic.js';
 import { createRuneRing } from './fx/runeRing.js';
 
+// ── PHASE 3 P3B — forest stone texture (lazy luminance map; assets/textures/README.md) ──
+let _stoneTex = null;
+function _stoneTexture() {
+  if (_stoneTex) return _stoneTex;
+  _stoneTex = new THREE.TextureLoader().load('assets/textures/forest_stone_512.png');
+  _stoneTex.wrapS = _stoneTex.wrapT = THREE.RepeatWrapping;
+  _stoneTex.repeat.set(1, 1);
+  _stoneTex.colorSpace = THREE.SRGBColorSpace;
+  _stoneTex.anisotropy = 8;
+  return _stoneTex;
+}
+
 // ── pool caps ────────────────────────────────────────────────────────────────
 const CAP_COFFINS = 8; // pre-pool cap; actual placement is 1-2
 
@@ -263,6 +275,7 @@ function _buildCoffinMeshes() {
   const lidGeo = new THREE.BoxGeometry(1.2, 0.6, 0.6);
   const lidMat = new THREE.MeshStandardMaterial({
     color: SLOT1_BONE, roughness: 0.85, metalness: 0.04, flatShading: true,
+    map: _stoneTexture(),
   });
   _coffinLidMesh = new THREE.InstancedMesh(lidGeo, lidMat, CAP_COFFINS);
   _coffinLidMesh.userData.coffinKind = 'lid';
@@ -272,6 +285,7 @@ function _buildCoffinMeshes() {
   const baseGeo = new THREE.BoxGeometry(1.2, 0.4, 0.6);
   const baseMat = new THREE.MeshStandardMaterial({
     color: SLOT3_BROWN, roughness: 0.95, metalness: 0.02, flatShading: true,
+    map: _stoneTexture(),
   });
   _coffinBaseMesh = new THREE.InstancedMesh(baseGeo, baseMat, CAP_COFFINS);
   _coffinBaseMesh.userData.coffinKind = 'base';
