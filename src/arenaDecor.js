@@ -43,6 +43,10 @@ import { loadForestBossBars } from './forestBossBars.js';
 // loadArenaDecor for every stage, not inside _buildForestDecor). Once-per-
 // scene gate mirrors the forest-system pattern; flag flips back on dispose.
 import { loadBossIntroCinematic } from './bossIntroCinematic.js';
+// PHASE 1 P1J (2026-05-17) — Weapon evolve cinematic. Stage-agnostic mount
+// next to bossIntro; once-per-scene gate via state._evolveCinematicLoaded;
+// fired from src/forestCoffins.js _dispatchEvolution. See src/evolveCinematic.js.
+import { loadEvolveCinematic } from './evolveCinematic.js';
 import { state as _gameState } from './state.js';
 
 // Active decor group + cleanup hooks, tracked module-side so clearArenaDecor
@@ -2566,6 +2570,21 @@ export function loadArenaDecor(stageId, scene) {
     } catch (e) {
       console.warn('[arenaDecor] loadBossIntroCinematic failed:', e);
       _gameState._bossIntroLoaded = false;
+    }
+  }
+
+  // ── PHASE 1 P1J Weapon Evolve Cinematic (2026-05-17) ──
+  // Stage-agnostic mount mirroring the boss-intro pattern above. Fires from
+  // forestCoffins._dispatchEvolution; only meaningful on forest (where the
+  // coffins live) but mounting universally keeps the load/dispose seam
+  // symmetric. Flag flips back on dispose so a re-enter rebuilds cleanly.
+  if (_gameState && _gameState.scene && !_gameState._evolveCinematicLoaded) {
+    _gameState._evolveCinematicLoaded = true;
+    try {
+      loadEvolveCinematic(_gameState.scene, _gameState, _gameState.camera);
+    } catch (e) {
+      console.warn('[arenaDecor] loadEvolveCinematic failed:', e);
+      _gameState._evolveCinematicLoaded = false;
     }
   }
 
