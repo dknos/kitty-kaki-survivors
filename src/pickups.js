@@ -185,14 +185,17 @@ export function spawnStar(x, z) {
 }
 
 export function spawnBomb(x, z) {
+  if (state.run?.stage?.id === 'forest') return; // forestPickups owns this stage
   if (_bombs.length >= CAP_BOMBS) _bombs.shift();
   _bombs.push({ x, z, t: 0, vx: 0, vz: 0 });
 }
 export function spawnFreeze(x, z) {
+  if (state.run?.stage?.id === 'forest') return; // forestPickups owns this stage
   if (_freezes.length >= CAP_FREEZE) _freezes.shift();
   _freezes.push({ x, z, t: 0, vx: 0, vz: 0 });
 }
 export function spawnChicken(x, z) {
+  if (state.run?.stage?.id === 'forest') return; // forestPickups owns this stage
   if (_chickens.length >= CAP_CHICKENS) _chickens.shift();
   _chickens.push({ x, z, t: 0, vx: 0, vz: 0 });
 }
