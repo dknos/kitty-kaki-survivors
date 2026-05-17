@@ -108,6 +108,12 @@ import { tickForestWeaponDrops, disposeForestWeaponDrops } from './forestWeaponD
 import { tickForestDayNight, disposeForestDayNight } from './forestDayNight.js';
 import { tickForestHud, disposeForestHud } from './forestHud.js';
 import { tickForestBossBars, disposeForestBossBars } from './forestBossBars.js';
+// PHASE 1 P1E (2026-05-17) — Boss intro cinematic. Stage-agnostic: ticked
+// every frame regardless of stage so miniboss/elite/room-boss/Reaper spawns
+// on ANY stage get the 1.5s dolly+banner. Mount lives in arenaDecor.
+// Dispose mirrors the 5-site forestBossBars teardown so DOM doesn't leak
+// across stage swaps.
+import { tickBossIntroCinematic, disposeBossIntroCinematic } from './bossIntroCinematic.js';
 // PHASE 1 P1B (swarm/forest-achievements) — Achievement chain. Stage-agnostic
 // per-tick check loop (kills / time / weapon / hp). loadAchievements binds
 // state + WEAPON_REGISTRY for the visible-kit count probe. The module also
@@ -743,6 +749,10 @@ function _teardownActiveRun() {
   // DOM-only; no scene param. Idempotent; safe across stage swaps.
   disposeForestBossBars();
   if (state) state._bossBarsLoaded = false;
+  // PHASE 1 P1E Boss Intro Cinematic teardown — removes #kk-boss-intro-banner
+  // + style. DOM-only; no scene param. Idempotent; safe across stage swaps.
+  disposeBossIntroCinematic();
+  if (state) state._bossIntroLoaded = false;
   // Tear down twilight fountains (no-op on non-twilight stages). Mirrors
   // the forestAmber teardown shape; clear path also nulls
   // state.run.fountainSpeedBuff so the buff can't leak across runs.
@@ -1259,6 +1269,7 @@ function applyMetaUpgrades() {
       disposeForestDayNight(state.scene);   state._dayNightLoaded   = false; // FOREST-V2-A9 Day/Night
       disposeForestHud();                   state._hudLoaded        = false; // FOREST-V2-A10 Stage HUD
       disposeForestBossBars();              state._bossBarsLoaded   = false; // FOREST-V2-A11 Boss HP Bars
+      disposeBossIntroCinematic();          state._bossIntroLoaded  = false; // PHASE 1 P1E Boss Intro Cinematic
       clearCinderBallistas(state.scene);
       clearCinderHazards(state.scene);
       clearVoidTeleportPads(state.scene);
@@ -1298,6 +1309,7 @@ function applyMetaUpgrades() {
       disposeForestDayNight(state.scene);   state._dayNightLoaded   = false; // FOREST-V2-A9 Day/Night
       disposeForestHud();                   state._hudLoaded        = false; // FOREST-V2-A10 Stage HUD
       disposeForestBossBars();              state._bossBarsLoaded   = false; // FOREST-V2-A11 Boss HP Bars
+      disposeBossIntroCinematic();          state._bossIntroLoaded  = false; // PHASE 1 P1E Boss Intro Cinematic
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearVoidTeleportPads(state.scene);
@@ -1343,6 +1355,7 @@ function applyMetaUpgrades() {
       disposeForestDayNight(state.scene);   state._dayNightLoaded   = false; // FOREST-V2-A9 Day/Night
       disposeForestHud();                   state._hudLoaded        = false; // FOREST-V2-A10 Stage HUD
       disposeForestBossBars();              state._bossBarsLoaded   = false; // FOREST-V2-A11 Boss HP Bars
+      disposeBossIntroCinematic();          state._bossIntroLoaded  = false; // PHASE 1 P1E Boss Intro Cinematic
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearCinderBallistas(state.scene);
@@ -1370,6 +1383,7 @@ function applyMetaUpgrades() {
       disposeForestDayNight(state.scene);   state._dayNightLoaded   = false; // FOREST-V2-A9 Day/Night
       disposeForestHud();                   state._hudLoaded        = false; // FOREST-V2-A10 Stage HUD
       disposeForestBossBars();              state._bossBarsLoaded   = false; // FOREST-V2-A11 Boss HP Bars
+      disposeBossIntroCinematic();          state._bossIntroLoaded  = false; // PHASE 1 P1E Boss Intro Cinematic
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearCinderBallistas(state.scene);
@@ -2033,6 +2047,12 @@ function frame(now) {
   camera.left = -half * a; camera.right = half * a;
   camera.top  =  half;     camera.bottom = -half;
   camera.updateProjectionMatrix();
+
+  // PHASE 1 P1E — Boss intro cinematic. Ticked AFTER hero-follow + per-frame
+  // frustum bake so a writes to camera.position / camera.zoom override the
+  // hero-follow each frame during the 1.5s sequence. Stage-agnostic; bails
+  // fast when no sequence is active and no untriggered roomboss is present.
+  _p=perfStart(); tickBossIntroCinematic(state, realDt, camera); perfMark('bossIntroCinematic', _p);
 
   // Update post-FX uniforms
   if (state.postFXPass) {

@@ -37,6 +37,10 @@ import { loadForestWeaponDrops } from './forestWeaponDrops.js';
 import { loadForestDayNight } from './forestDayNight.js';
 import { loadForestHud } from './forestHud.js';
 import { loadForestBossBars } from './forestBossBars.js';
+// PHASE 1 P1E (2026-05-17) — Boss intro cinematic. Stage-agnostic (mounts in
+// loadArenaDecor for every stage, not inside _buildForestDecor). Once-per-
+// scene gate mirrors the forest-system pattern; flag flips back on dispose.
+import { loadBossIntroCinematic } from './bossIntroCinematic.js';
 import { state as _gameState } from './state.js';
 
 // Active decor group + cleanup hooks, tracked module-side so clearArenaDecor
@@ -2516,6 +2520,23 @@ export function loadArenaDecor(stageId, scene) {
   scene.add(group);
   _decorGroup = group;
   _tintSkybox(scene, stageId);
+
+  // ── PHASE 1 P1E Boss Intro Cinematic (2026-05-17) ──
+  // Stage-agnostic: mounts here in loadArenaDecor (not in _buildForestDecor)
+  // so miniboss / elite / room-boss / Reaper spawns trigger the dolly+banner
+  // on EVERY stage, not just forest. Once-per-scene gate mirrors the
+  // forestBossBars pattern; flag flips back on dispose so a re-enter
+  // rebuilds cleanly. Pass camera ref (state.camera was set in main.js l.176)
+  // so the cinematic can drive position + zoom directly.
+  if (_gameState && _gameState.scene && !_gameState._bossIntroLoaded) {
+    _gameState._bossIntroLoaded = true;
+    try {
+      loadBossIntroCinematic(_gameState.scene, _gameState, _gameState.camera);
+    } catch (e) {
+      console.warn('[arenaDecor] loadBossIntroCinematic failed:', e);
+      _gameState._bossIntroLoaded = false;
+    }
+  }
 
   // Kick off the bob/drift animation only if the active pack needs it.
   if (_bobbers || _drifters) {

@@ -63,6 +63,9 @@ import { showBanner } from './ui.js';
 import { takeDamage as heroTakeDamage } from './hero.js';
 import { getMeta, saveMeta } from './meta.js';
 import { sfx } from './audio.js';
+// PHASE 1 P1E (2026-05-17) — boss intro cinematic. Reaper-tier fires the
+// 1.5s dolly+banner once per run when _reaperSpawned flips true.
+import { triggerBossIntro as _triggerBossIntro } from './bossIntroCinematic.js';
 
 // ── palette (slot-locked) ───────────────────────────────────────────────────
 const SLOT1_BONE  = 0xc7b89a;
@@ -371,6 +374,9 @@ export function tickForestReaper(state, dt) {
     _group.position.set(spawn.x, 0, spawn.z);
     _group.visible = true;
     _alive = true;
+    // PHASE 1 P1E — boss intro cinematic ("INVINCIBLE: REAPER"). Pass the
+    // Reaper mesh group; module self-gates so a repeat is a no-op.
+    try { _triggerBossIntro(_group, 'reaper'); } catch (_) {}
     try { sfx.reaperSpawn && sfx.reaperSpawn(); } catch (_) {}
     // Tint stays on through the chase — fade it down to a softer steady
     // value by reducing opacity (still red but less overpowering).

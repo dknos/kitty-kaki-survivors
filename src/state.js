@@ -357,6 +357,15 @@ export function resetState() {
   state.run._reaperWarned         = false;
   state.run._reaperSpawned        = false;
   state.run._reaperOutlastedFired = false;
+  // PHASE 1 P1E (2026-05-17) — Boss intro cinematic per-run gating. One-shot
+  // per tier per run: the first miniboss / elite / room-boss / Reaper spawn
+  // fires a 1.5s camera dolly + name banner; subsequent same-tier spawns are
+  // skipped. _bossIntroActive is the in-flight flag (true during the 1.5s
+  // sequence) — any subsystem that wants to react to "boss intro playing"
+  // can read it (currently nothing does; spec FALLBACK path skips enemy
+  // freeze). See src/bossIntroCinematic.js.
+  state.run._cinematicSeen        = { miniboss: false, elite: false, roomboss: false, reaper: false };
+  state.run._bossIntroActive      = false;
   // Per-run chest counter consumed by forestHud.js (em-dash fallback path
   // flips to numeric "Chests: N" once this field exists). Bumped in
   // forestChests._onPicked after _applyReward succeeds (single dispatch site).

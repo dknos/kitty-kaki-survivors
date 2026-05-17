@@ -50,6 +50,12 @@ import { tryAchievement, trySecret, showBanner } from './ui.js';
 // salvos; dynamic-import microtasks would crater FPS (see memory
 // feedback_kks_dynamic_import_hotpath).
 import { spawnSprite } from './sprites/index.js';
+// PHASE 1 P1E (2026-05-17) — boss intro cinematic trigger. Static import:
+// triggerBossIntro is a cheap no-op when the tier has already fired this run,
+// so calling it on every spawn is safe. Roomboss tier is detected by the
+// cinematic tick scan (because forestSealedDoors stamps _isRoomBoss AFTER
+// spawnEnemy returns), so this site only fires miniboss + elite.
+import { triggerBossIntro as _triggerBossIntro } from './bossIntroCinematic.js';
 
 // ── Module-scope temp vectors (reuse, never `new` in update loops) ────────────
 const _tmpDir   = new THREE.Vector3();
@@ -453,6 +459,10 @@ export function spawnEnemy(tierConfig, x, z) {
   try { notifyStageEnemySpawn(enemy); } catch (_) {}
   // Codex discovery: stamp the bestiary the first time we see this tier.
   try { import('./codex.js').then(({ notifyEnemySeen }) => notifyEnemySeen(key)); } catch (_) {}
+  // PHASE 1 P1E — boss intro cinematic. First-of-tier per run only; module
+  // self-gates via state.run._cinematicSeen so repeated calls are cheap no-ops.
+  if (enemy.isMiniBoss)      { try { _triggerBossIntro(enemy, 'miniboss'); } catch (_) {} }
+  else if (enemy.elite && !enemy.isFinalBoss) { try { _triggerBossIntro(enemy, 'elite'); } catch (_) {} }
   return enemy;
 }
 
