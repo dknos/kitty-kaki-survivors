@@ -22,7 +22,7 @@ import { tickChainArcs } from './chainFx.js';
 import { tickEvolveBursts, disposeAllEvolveBursts, setEvolveBurstStateRef } from './fx/evolveBurst.js';
 import { initDissolveBurst, tickDissolveBursts, disposeAllDissolveBursts, setDissolveBurstStateRef } from './fx/dissolveBurst.js';
 import { tickVelocityVeils, disposeAllVelocityVeils } from './fx/ribbonTrail.js';
-import { tickSpriteSystem, setLowFxProbe as setSpriteLowFxProbe, disposeSpritePools } from './sprites/index.js';
+import { loadAtlas, ensurePool, spawnSprite, tickSpriteSystem, setLowFxProbe as setSpriteLowFxProbe, disposeSpritePools } from './sprites/index.js';
 import { initProjectileVisuals, releaseProjectileVisuals } from './weapons/autoAim.js';
 import { initXP, updateGems, applyLevelUpChoice } from './xp.js';
 import { initSpawnDirector, tickSpawnDirector, secondsUntilNextMiniBoss } from './spawnDirector.js';
@@ -261,6 +261,26 @@ async function boot() {
   // flagged bypassWhenLowFx skip spawn calls. Foundation only — no atlases
   // are loaded yet at this point; pools are created lazily by FX wiring.
   setSpriteLowFxProbe(() => !!(state.run && state.run.lowFx));
+
+  // Sprite FX bootstrap — load 4 starter sheets + create pools. Async; if any
+  // sheet fails to load (404 in dev, broken json), log warning and continue —
+  // missing atlas just means spawnSprite no-ops, no game crash.
+  (async () => {
+    try {
+      await Promise.all([
+        loadAtlas('fx/hit_flash_v1',       'assets/sprites/fx/hit_flash_v1.json'),
+        loadAtlas('fx/dust_puff_v1',       'assets/sprites/fx/dust_puff_v1.json'),
+        loadAtlas('fx/aura_rings_v1',      'assets/sprites/fx/aura_rings_v1.json'),
+        loadAtlas('fx/borgir_explosion_v1','assets/sprites/fx/borgir_explosion_v1.json'),
+      ]);
+      ensurePool(scene, 'fx/hit_flash_v1',        256, { bypassWhenLowFx: true });
+      ensurePool(scene, 'fx/dust_puff_v1',         96, { bypassWhenLowFx: true });
+      ensurePool(scene, 'fx/aura_rings_v1',        16, { bypassWhenLowFx: false });
+      ensurePool(scene, 'fx/borgir_explosion_v1',  32, { bypassWhenLowFx: false });
+    } catch (e) {
+      console.warn('[sprites] bootstrap failed:', e);
+    }
+  })();
 
   prewarmPools();   // create pooled meshes off-screen (hides first-horde stall)
 

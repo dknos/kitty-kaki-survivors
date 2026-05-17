@@ -34,6 +34,11 @@ import { notifyEnemyKilled } from './codex.js';
 import { notifyTutorialEvent } from './tutorial.js';
 import { questEvent, grantSigils, recordHyperBossKill, rollRelic, addRelic, bumpLifetime } from './meta.js';
 import { tryAchievement, trySecret, showBanner } from './ui.js';
+// Sprite FX — STATIC import per perf-fix 9509535. NEVER convert to dynamic
+// import() here. damageEnemy + killEnemy fire 100+ times/frame on borgir
+// salvos; dynamic-import microtasks would crater FPS (see memory
+// feedback_kks_dynamic_import_hotpath).
+import { spawnSprite } from './sprites/index.js';
 
 // ── Module-scope temp vectors (reuse, never `new` in update loops) ────────────
 const _tmpDir   = new THREE.Vector3();
@@ -694,6 +699,21 @@ export function killEnemy(enemy) {
   const _stageId = (state.run && state.run.stage && state.run.stage.id) || 'forest';
   try { spawnDissolveBurst(enemy.mesh.position, _stageId); } catch (_) { /* fx must never block gameplay */ }
 
+  // Sprite FX: dust-puff on every death. Anchored to ground (y=0.05). Pool
+  // bypasses on low-fx. STATIC import only — killEnemy is the hottest of all
+  // hot paths (borgir salvo = 32 deaths/frame). Returns -1 if atlas not
+  // loaded yet — safe no-op. try/catch isolates sprite faults from the
+  // kill-cleanup pipeline below.
+  try {
+    spawnSprite('fx/dust_puff_v1', {
+      x: enemy.mesh.position.x,
+      y: 0.05,
+      z: enemy.mesh.position.z,
+      scale: 1.0,
+      anim: 'default',
+    });
+  } catch (_) {}
+
   // Totem branch: custom death handling lives in src/totems.js (drops chest,
   // schedules respawn, removes mesh from scene since totems aren't pooled).
   if (enemy.isTotem) {
@@ -1038,6 +1058,20 @@ export function damageEnemy(enemy, dmg, source) {
   if (!state.run.dmgByWeapon) state.run.dmgByWeapon = {};
   state.run.dmgByWeapon[src] = (state.run.dmgByWeapon[src] || 0) + finalDmg;
   spawnDamageNumber(enemy.mesh.position, finalDmg, isCrit);
+
+  // Sprite FX: hit-flash on every applied-damage hit. Pool bypasses when
+  // state.run.lowFx is set (bypassWhenLowFx flag at pool init). Returns -1
+  // if atlas not loaded yet — safe no-op. try/catch so a sprite fault
+  // never blocks the enemy update tick. STATIC import only (see top-of-file).
+  try {
+    spawnSprite('fx/hit_flash_v1', {
+      x: enemy.mesh.position.x,
+      y: enemy.mesh.position.y + 0.8,
+      z: enemy.mesh.position.z,
+      scale: 0.7,
+      anim: 'default',
+    });
+  } catch (_) {}
 
   // ── Iter 24a/b/c: hit-feel pipeline ──
   //
