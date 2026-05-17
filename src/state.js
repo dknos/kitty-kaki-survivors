@@ -260,6 +260,9 @@ export function resetState() {
   state.hero.regenPerSec = 0;
   state.run.kills = 0; state.run.dmgDealt = 0; state.run.dmgTaken = 0; state.run.pickedGems = 0;
   state.run.miniBossKills = 0;
+  // FOREST-V2-A6 — per-run gold pool, fed by the forest treasure-chest gold
+  // option (3-option picker on miniboss/elite kill). 0 at run start.
+  state.run.gold = 0;
   // Ascension Evolution gate (Punch List #1, 2026-05-16). Set to true the
   // first time any weapon evolves this run; gate for badges + achievements.
   state.run.hasEvolvedThisRun = false;

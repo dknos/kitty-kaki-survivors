@@ -29,6 +29,7 @@ import { loadForestLandmarks } from './forestLandmarks.js';
 import { loadForestCoffins } from './forestCoffins.js';
 import { loadForestNeutrals } from './forestNeutrals.js';
 import { loadForestEnvHazards } from './forestEnvHazards.js';
+import { loadForestChests } from './forestChests.js';
 import { state as _gameState } from './state.js';
 
 // Active decor group + cleanup hooks, tracked module-side so clearArenaDecor
@@ -138,6 +139,20 @@ function _buildForestDecor(group, opts) {
     } catch (e) {
       console.warn('[arenaDecor] loadForestEnvHazards failed:', e);
       _gameState._envHazardsLoaded = false;
+    }
+  }
+  // ── FOREST-V2-A6 Treasure Chest Drops (2026-05-17) ──
+  // Scene-scoped pre-pool (8 active chests max) used by VS-style miniboss/
+  // elite drops. Once-per-scene gate mirrors envHazards/neutrals/etc.
+  // Independent of placement (chests spawn from enemy deaths, not arena
+  // scatter) — load just bootstraps the InstancedMesh pool.
+  if (_gameState && _gameState.scene && !_gameState._chestsLoaded) {
+    _gameState._chestsLoaded = true;
+    try {
+      loadForestChests(_gameState.scene, _gameState);
+    } catch (e) {
+      console.warn('[arenaDecor] loadForestChests failed:', e);
+      _gameState._chestsLoaded = false;
     }
   }
   return result;
