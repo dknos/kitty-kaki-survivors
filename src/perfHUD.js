@@ -11,6 +11,7 @@
  * gameplay element.
  */
 import { state } from './state.js';
+import { profilerRecord } from './perfProfiler.js';
 
 let _el = null;
 let _on = false;
@@ -27,12 +28,21 @@ let _nextPaint = 0;
 // Displayed in perfHUD as sorted ms breakdown over the same window as FPS.
 const _perfAcc = Object.create(null);
 const _perfDisp = Object.create(null);
+// FOREST-V2-A29: profiler taps the same bracket — when its localStorage
+// gate is set, we want to record every tick even when the F3 HUD is off.
+// `_profilerOn` lets `perfStart` return a usable timestamp without paying
+// the cost in normal play (the flag is set once by initPerfHUD from
+// localStorage; main.js doesn't have to know about it).
+let _profilerOn = false;
+export function _perfHUDSetProfilerOn(v) { _profilerOn = !!v; }
 export function perfMark(name, startMs) {
-  if (!_on) return;
-  _perfAcc[name] = (_perfAcc[name] || 0) + (performance.now() - startMs);
+  if (!_on && !_profilerOn) return;
+  const dt = performance.now() - startMs;
+  if (_on) _perfAcc[name] = (_perfAcc[name] || 0) + dt;
+  if (_profilerOn) profilerRecord(name, dt);
 }
 export function perfStart() {
-  return _on ? performance.now() : 0;
+  return (_on || _profilerOn) ? performance.now() : 0;
 }
 
 export function initPerfHUD() {

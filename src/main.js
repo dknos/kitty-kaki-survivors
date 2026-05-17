@@ -38,7 +38,8 @@ import { initVFXBurst, updateVFXBurst, resetVFXBurst } from './vfxBurst.js';
 import { initChests, tickChests, resetChests, spawnAt as spawnChestAt } from './chest.js';
 import { initBossTelegraphs, updateBossTelegraphs, resetBossTelegraphs } from './bossTelegraphs.js';
 import { initDestructibles, resetDestructibles } from './destructibles.js';
-import { initPerfHUD, updatePerfHUD, perfStart, perfMark } from './perfHUD.js';
+import { initPerfHUD, updatePerfHUD, perfStart, perfMark, _perfHUDSetProfilerOn } from './perfHUD.js';
+import { initPerfProfiler, renderOverlay as renderPerfProfilerOverlay, isEnabled as isPerfProfilerEnabled } from './perfProfiler.js';
 import { initParticleTextures } from './particleTextures.js';
 import { initPickups, tickPickups, resetPickups } from './pickups.js';
 import { initBlobShadows, updateBlobShadows } from './blobShadows.js';
@@ -346,6 +347,8 @@ async function boot() {
   initBossTelegraphs(scene);
   initDestructibles(scene);
   initPerfHUD();
+  initPerfProfiler();
+  _perfHUDSetProfilerOn(isPerfProfilerEnabled());
   initBlobShadows(scene);
   initHero(scene);
   initEnemies(scene);
@@ -1802,6 +1805,7 @@ function frame(now) {
     updateUI();
     renderFrame();
     updatePerfHUD();
+    renderPerfProfilerOverlay();
     requestAnimationFrame(frame);
     return;
   }
@@ -2187,6 +2191,7 @@ function frame(now) {
 
   _p=perfStart(); renderFrame();   perfMark('render', _p);
   updatePerfHUD();
+  renderPerfProfilerOverlay();
   requestAnimationFrame(frame);
 }
 
