@@ -302,6 +302,13 @@ export function resetState() {
   // src/trapCorridor.js). True if ≥1 corridor is armed; cheap flag so
   // readers don't have to iterate the corridor list.
   state.run.trapCorridorActive    = false;
+  // ── Forest Expansion v0.2 (FE-V2 Landmarks, 2026-05-17) ──
+  // Per-run additive bonus to outgoing damage, granted by Moss Shrine
+  // landmarks (+0.05 each). Composed into the main enemy damage hot path in
+  // enemies.js (sits next to passive_dmg). Reset to 0 every run so a fresh
+  // run starts clean; ALWAYS read as `(1 + (state.run._dmgGlobalBonus||0))`
+  // so a missing field on legacy save loads can't crash the math.
+  state.run._dmgGlobalBonus       = 0;
   state.run.relicDrop = null;
   state.run.equippedRelic = null;
   state.run.heartPotency = 1;

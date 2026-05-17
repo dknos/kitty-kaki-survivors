@@ -34,11 +34,16 @@
  */
 
 /** @type {Record<string, ForestRoomDef>} */
+// landmarkBudget (optional, FE-V2 2026-05-17): per-room override for the
+// shrines/altars/logs counts spawned by src/forestLandmarks.js. Module
+// defaults are {shrines:5, altars:2, logs:7}; per-room caps below bias
+// density toward the larger rooms and ease density in puzzle rooms so
+// landmarks don't shadow the puzzle telegraphs.
 export const FOREST_ROOMS = {
-  glade:          { id: 'glade',          name: 'The Glade',           center: { x:   0, z:   0 }, bounds: { minX:  -45, maxX:  45, minZ:  -45, maxZ:  45 }, isHub: true,  puzzle: null,                  weapon: null },
-  saphollow:      { id: 'saphollow',      name: 'Sap Hollow',          center: { x: -70, z: -90 }, bounds: { minX:  -90, maxX: -50, minZ: -120, maxZ: -60 }, isHub: false, puzzle: 'flow_weaver',         weapon: 'sap_weaver' },
-  crystalchoir:   { id: 'crystalchoir',   name: 'Crystal Choir Grove', center: { x:   0, z:  80 }, bounds: { minX:  -25, maxX:  25, minZ:   55, maxZ: 105 }, isHub: false, puzzle: 'harmonic_alignment',  weapon: 'choir_lance' },
-  amberlabyrinth: { id: 'amberlabyrinth', name: 'Amber Labyrinth',     center: { x: 130, z:   0 }, bounds: { minX:  103, maxX: 158, minZ:  -20, maxZ:  20 }, isHub: false, puzzle: 'prism_lock',          weapon: 'prism_warden' },
+  glade:          { id: 'glade',          name: 'The Glade',           center: { x:   0, z:   0 }, bounds: { minX:  -45, maxX:  45, minZ:  -45, maxZ:  45 }, isHub: true,  puzzle: null,                  weapon: null,           landmarkBudget: { shrines: 6, altars: 3, logs: 8 } },
+  saphollow:      { id: 'saphollow',      name: 'Sap Hollow',          center: { x: -70, z: -90 }, bounds: { minX:  -90, maxX: -50, minZ: -120, maxZ: -60 }, isHub: false, puzzle: 'flow_weaver',         weapon: 'sap_weaver',   landmarkBudget: { shrines: 5, altars: 2, logs: 7 } },
+  crystalchoir:   { id: 'crystalchoir',   name: 'Crystal Choir Grove', center: { x:   0, z:  80 }, bounds: { minX:  -25, maxX:  25, minZ:   55, maxZ: 105 }, isHub: false, puzzle: 'harmonic_alignment',  weapon: 'choir_lance',  landmarkBudget: { shrines: 4, altars: 2, logs: 6 } },
+  amberlabyrinth: { id: 'amberlabyrinth', name: 'Amber Labyrinth',     center: { x: 130, z:   0 }, bounds: { minX:  103, maxX: 158, minZ:  -20, maxZ:  20 }, isHub: false, puzzle: 'prism_lock',          weapon: 'prism_warden', landmarkBudget: { shrines: 4, altars: 2, logs: 6 } },
   // ── Forest Expansion v0.2 (FE-V2, 2026-05-17) — 3 new rooms ──
   // bramblemaze: SE relic-chest room. No puzzle, no hidden weapon (relic chest
   //   pattern — future hazards agent wires scratch DoT via _brambleMazeHazard.
@@ -47,9 +52,9 @@ export const FOREST_ROOMS = {
   // glowfen: far-W lore/relic room. No puzzle for v1; weapon 'wisp_lantern'
   //   ships as scaffolding — REGISTRY-ready, FOREST_SPECIAL_IDS-equipped, but
   //   no in-game unlock path (no puzzle). Future ticket wires unlock.
-  bramblemaze:    { id: 'bramblemaze',    name: 'Bramble Maze',        center: { x:  95, z:  80 }, bounds: { minX:   70, maxX: 120, minZ:   55, maxZ: 105 }, isHub: false, puzzle: null,                  weapon: null },
-  mossroot:       { id: 'mossroot',       name: 'Mossroot Hollow',     center: { x:   0, z: -140 }, bounds: { minX:  -35, maxX:  35, minZ: -170, maxZ: -110 }, isHub: false, puzzle: 'mossroot_pulse',     weapon: 'root_grasp' },
-  glowfen:        { id: 'glowfen',        name: 'Glowfen Marshes',     center: { x: -160, z:   0 }, bounds: { minX: -200, maxX: -130, minZ:  -30, maxZ:  30 }, isHub: false, puzzle: null,                  weapon: 'wisp_lantern' },
+  bramblemaze:    { id: 'bramblemaze',    name: 'Bramble Maze',        center: { x:  95, z:  80 }, bounds: { minX:   70, maxX: 120, minZ:   55, maxZ: 105 }, isHub: false, puzzle: null,                  weapon: null,           landmarkBudget: { shrines: 5, altars: 2, logs: 7 } },
+  mossroot:       { id: 'mossroot',       name: 'Mossroot Hollow',     center: { x:   0, z: -140 }, bounds: { minX:  -35, maxX:  35, minZ: -170, maxZ: -110 }, isHub: false, puzzle: 'mossroot_pulse',     weapon: 'root_grasp',   landmarkBudget: { shrines: 4, altars: 2, logs: 6 } },
+  glowfen:        { id: 'glowfen',        name: 'Glowfen Marshes',     center: { x: -160, z:   0 }, bounds: { minX: -200, maxX: -130, minZ:  -30, maxZ:  30 }, isHub: false, puzzle: null,                  weapon: 'wisp_lantern', landmarkBudget: { shrines: 5, altars: 2, logs: 7 } },
 };
 
 /**
