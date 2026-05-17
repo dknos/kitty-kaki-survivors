@@ -31,6 +31,7 @@ import { loadForestNeutrals } from './forestNeutrals.js';
 import { loadForestEnvHazards } from './forestEnvHazards.js';
 import { loadForestChests } from './forestChests.js';
 import { loadForestReaper } from './forestReaper.js';
+import { loadForestPickups } from './forestPickups.js';
 import { state as _gameState } from './state.js';
 
 // Active decor group + cleanup hooks, tracked module-side so clearArenaDecor
@@ -168,6 +169,20 @@ function _buildForestDecor(group, opts) {
     } catch (e) {
       console.warn('[arenaDecor] loadForestReaper failed:', e);
       _gameState._reaperLoaded = false;
+    }
+  }
+  // ── FOREST-V2-A8 Floor Pickups (2026-05-17) ──
+  // Scene-scoped pre-pool (16 bombs / 16 magnets / 8 chickens) for VS-style
+  // consumable drops off enemy kills. Once-per-scene gate mirrors chests /
+  // reaper. Drop-side is wired via dropForestPickup() in src/enemies.js; load
+  // just bootstraps the InstancedMesh pool.
+  if (_gameState && _gameState.scene && !_gameState._pickupsLoaded) {
+    _gameState._pickupsLoaded = true;
+    try {
+      loadForestPickups(_gameState.scene, _gameState);
+    } catch (e) {
+      console.warn('[arenaDecor] loadForestPickups failed:', e);
+      _gameState._pickupsLoaded = false;
     }
   }
   return result;

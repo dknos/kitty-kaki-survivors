@@ -102,6 +102,7 @@ import { tickForestChests, disposeForestChests } from './forestChests.js';
 // Self-contained mesh + tick (NOT in state.enemies), so weapon hit loops
 // can't touch it. Teardown mirrors the 5-site chests dispose pattern.
 import { tickForestReaper, disposeForestReaper } from './forestReaper.js';
+import { tickForestPickups, disposeForestPickups } from './forestPickups.js';
 import { loadTwilightFountains, tickTwilightFountains, clearTwilightFountains } from './twilightFountains.js';
 import { loadCinderBallistas, tickCinderBallistas, clearCinderBallistas } from './cinderBallistas.js';
 import { loadVoidTeleportPads, tickVoidTeleportPads, clearVoidTeleportPads } from './voidTeleportPads.js';
@@ -695,6 +696,11 @@ function _teardownActiveRun() {
     disposeForestReaper(state.scene);
     if (state) state._reaperLoaded = false;
   }
+  // FOREST-V2-A8 Floor Pickups teardown — pre-pool + flash overlay.
+  if (state.scene) {
+    disposeForestPickups(state.scene);
+    if (state) state._pickupsLoaded = false;
+  }
   // Tear down twilight fountains (no-op on non-twilight stages). Mirrors
   // the forestAmber teardown shape; clear path also nulls
   // state.run.fountainSpeedBuff so the buff can't leak across runs.
@@ -1205,6 +1211,7 @@ function applyMetaUpgrades() {
       disposeForestEnvHazards(state.scene); state._envHazardsLoaded = false; // FE-V2 EnvHazards
       disposeForestChests(state.scene);     state._chestsLoaded     = false; // FOREST-V2-A6 Chests
       disposeForestReaper(state.scene);     state._reaperLoaded     = false; // FOREST-V2-A7 Reaper
+      disposeForestPickups(state.scene);    state._pickupsLoaded    = false; // FOREST-V2-A8 Pickups
       clearCinderBallistas(state.scene);
       clearCinderHazards(state.scene);
       clearVoidTeleportPads(state.scene);
@@ -1238,6 +1245,7 @@ function applyMetaUpgrades() {
       disposeForestEnvHazards(state.scene); state._envHazardsLoaded = false; // FE-V2 EnvHazards
       disposeForestChests(state.scene);     state._chestsLoaded     = false; // FOREST-V2-A6 Chests
       disposeForestReaper(state.scene);     state._reaperLoaded     = false; // FOREST-V2-A7 Reaper
+      disposeForestPickups(state.scene);    state._pickupsLoaded    = false; // FOREST-V2-A8 Pickups
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearVoidTeleportPads(state.scene);
@@ -1277,6 +1285,7 @@ function applyMetaUpgrades() {
       disposeForestEnvHazards(state.scene); state._envHazardsLoaded = false; // FE-V2 EnvHazards
       disposeForestChests(state.scene);     state._chestsLoaded     = false; // FOREST-V2-A6 Chests
       disposeForestReaper(state.scene);     state._reaperLoaded     = false; // FOREST-V2-A7 Reaper
+      disposeForestPickups(state.scene);    state._pickupsLoaded    = false; // FOREST-V2-A8 Pickups
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearCinderBallistas(state.scene);
@@ -1298,6 +1307,7 @@ function applyMetaUpgrades() {
       disposeForestEnvHazards(state.scene); state._envHazardsLoaded = false; // FE-V2 EnvHazards
       disposeForestChests(state.scene);     state._chestsLoaded     = false; // FOREST-V2-A6 Chests
       disposeForestReaper(state.scene);     state._reaperLoaded     = false; // FOREST-V2-A7 Reaper
+      disposeForestPickups(state.scene);    state._pickupsLoaded    = false; // FOREST-V2-A8 Pickups
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearCinderBallistas(state.scene);
@@ -1803,6 +1813,10 @@ function frame(now) {
     // outlast bonus. No-op until state.time.game crosses WARN_T (1770s); cheap
     // on early-game frames (one early-return on the warned flag).
     _p=perfStart(); tickForestReaper(state, logicDt); perfMark('forestReaper', _p);
+    // FOREST-V2-A8 Floor Pickups — pickup detect + sparkle anim + linger
+    // despawn for bomb/magnet/chicken. Bails immediately when no pickups
+    // loaded. Effect dispatch (kill-all/vacuum/heal) fires on contact.
+    _p=perfStart(); tickForestPickups(state, logicDt); perfMark('forestPickups', _p);
     // FE-C3A — puzzle system tick + room transition detection. Puzzle tick
     // is a no-op when no puzzle is active. Room detection runs every frame
     // so a fast hero crossing portals doesn't strand a stale currentRoom.
