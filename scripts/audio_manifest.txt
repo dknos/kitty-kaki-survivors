@@ -133,3 +133,43 @@ modalOpen    | interface_pack/Audio/maximize_002.ogg           | modal_open_b.og
 # modalClose — swoosh-down (close + minimize), slightly darker than open
 modalClose   | interface_pack/Audio/close_001.ogg              | modal_close_a.ogg  | atrim=0:0.30,lowpass=f=5000
 modalClose   | interface_pack/Audio/minimize_002.ogg           | modal_close_b.ogg  | atrim=0:0.30,lowpass=f=5000
+
+# ── FOREST-V2-A13 (#117) — Forest-event SFX layer ─────────────────────────────
+# All CC0 Kenney. Distinct cues for level-up QoL economy, reaper warn/spawn,
+# coffin/landmark events, and the three new forest pickups (bomb/magnet/chicken).
+# Plus evolutionChime which fills the empty `audio/fx/evolution_chime.ogg` bucket
+# wired at src/puzzleSystem.js:240 (puzzle solve) and src/audio.js:223 (ascension).
+
+# ── REROLL — UI shuffle/swap (pizzicato pluck, bright + short)
+reroll       | interface_pack/Audio/switch_001.ogg             | reroll.ogg         | atrim=0:0.22,highpass=f=500,aecho=0.6:0.3:50:0.2
+
+# ── BANISH — UI deny/poof (low glitch + downward back-tone)
+banish       | interface_pack/Audio/glitch_002.ogg             | banish.ogg         | atrim=0:0.32,lowpass=f=3500,aecho=0.7:0.4:80:0.3
+
+# ── SKIP/HEAL — heal whoosh (forceField pad + bright pizzi chime suggestion)
+skipHeal     | scifi_pack/Audio/forceField_003.ogg             | skip_heal.ogg      | atrim=0:0.55,highpass=f=350,lowpass=f=4500,aecho=0.6:0.4:60:0.25
+
+# ── REAPER WARN — ominous low drone (~1s, sub-pitched low explosion)
+reaperWarn   | scifi_pack/Audio/lowFrequency_explosion_001.ogg | reaper_warn.ogg    | asetrate=44100*0.55,aresample=44100,atempo=1/0.55,atrim=0:1.20,lowpass=f=900,aecho=0.8:0.6:200:0.45
+
+# ── REAPER SPAWN — boss reveal (heavy bell pitched way down + tail reverb)
+reaperSpawn  | impact_pack/Audio/impactBell_heavy_001.ogg      | reaper_spawn.ogg   | asetrate=44100*0.60,aresample=44100,atempo=1/0.60,atrim=0:1.60,lowpass=f=2800,aecho=0.8:0.7:240:0.55
+
+# ── BOMB PICKUP — pickup chime (darker pizzi — bomb is heavier than magnet)
+bombPickup   | jingles_pack/Audio/Pizzicato jingles/jingles_PIZZI11.ogg | bomb_pickup.ogg | asetrate=44100*0.95,aresample=44100,atempo=1/0.95,atrim=0:0.55,lowpass=f=4500
+
+# ── MAGNET PICKUP — pickup chime (bright pizzi, pitched up — magnetic attract)
+magnetPickup | jingles_pack/Audio/Pizzicato jingles/jingles_PIZZI09.ogg | magnet_pickup.ogg | asetrate=44100*1.18,aresample=44100,atempo=1/1.18,atrim=0:0.55,highpass=f=400
+
+# ── CHICKEN PICKUP — heal pickup chime (warm pizzi, mid-pitched — fed&happy)
+chickenPickup| jingles_pack/Audio/Pizzicato jingles/jingles_PIZZI04.ogg | chicken_pickup.ogg | asetrate=44100*1.05,aresample=44100,atempo=1/1.05,atrim=0:0.65,aecho=0.6:0.3:60:0.2
+
+# ── COFFIN OPEN — heavy stone slide (deep wood impact stretched + reverb)
+coffinOpen   | impact_pack/Audio/impactWood_heavy_002.ogg      | coffin_open.ogg    | asetrate=44100*0.65,aresample=44100,atempo=1/0.65,atrim=0:0.90,lowpass=f=2500,aecho=0.8:0.6:140:0.4
+
+# ── LANDMARK ACTIVATE — shimmer (steel jingle — bright, magical reveal)
+landmarkActivate | jingles_pack/Audio/Steel jingles/jingles_STEEL05.ogg | landmark_activate.ogg | atrim=0:0.80,highpass=f=400,aecho=0.6:0.4:80:0.3
+
+# ── EVOLUTION CHIME — fills assets/audio/fx/evolution_chime.ogg (puzzle/asc)
+# NES rising arpeggio, bright + triumphant but shorter than full levelUp.
+evolutionChime | jingles_pack/Audio/8-Bit jingles/jingles_NES05.ogg | evolution_chime.ogg | atrim=0:0.85,aecho=0.6:0.3:60:0.25

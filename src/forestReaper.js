@@ -62,6 +62,7 @@ import { FOREST_ROOMS } from './forestRooms.js';
 import { showBanner } from './ui.js';
 import { takeDamage as heroTakeDamage } from './hero.js';
 import { getMeta, saveMeta } from './meta.js';
+import { sfx } from './audio.js';
 
 // ── palette (slot-locked) ───────────────────────────────────────────────────
 const SLOT1_BONE  = 0xc7b89a;
@@ -360,6 +361,7 @@ export function tickForestReaper(state, dt) {
     // applyShake; setting it pulse-high mirrors how takeDamage pulses shake.
     if (state.fx && state.fx.shake < SHAKE_PULSE) state.fx.shake = SHAKE_PULSE;
     if (state.fx) state.fx.chromaticPulse = Math.max(state.fx.chromaticPulse || 0, 0.4);
+    try { sfx.reaperWarn && sfx.reaperWarn(); } catch (_) {}
   }
 
   // ── 2. Spawn at T = 30:00 (one-shot) ──────────────────────────────────────
@@ -369,6 +371,7 @@ export function tickForestReaper(state, dt) {
     _group.position.set(spawn.x, 0, spawn.z);
     _group.visible = true;
     _alive = true;
+    try { sfx.reaperSpawn && sfx.reaperSpawn(); } catch (_) {}
     // Tint stays on through the chase — fade it down to a softer steady
     // value by reducing opacity (still red but less overpowering).
     if (_tintEl) _tintEl.style.opacity = '0.6';

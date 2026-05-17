@@ -68,6 +68,7 @@ import { BLOOM_LAYER } from './postfx.js';
 import { state as _gameState } from './state.js';
 import { damageEnemy } from './enemies.js';
 import { spawnMagnetSpark } from './fx.js';
+import { sfx } from './audio.js';
 
 // ── pool caps ───────────────────────────────────────────────────────────────
 const CAP_BOMBS    = 16;
@@ -455,6 +456,7 @@ function _fireBombEffect(cx, cz) {
   }
   // Faux audio cue — reuse magnet-spark FX as a centred burst.
   try { spawnMagnetSpark(cx, 0.8, cz, SLOT6_GOLD); } catch (_) {}
+  try { sfx.bombPickup && sfx.bombPickup(); } catch (_) {}
 }
 
 function _fireMagnetEffect(cx, cz) {
@@ -471,6 +473,7 @@ function _fireMagnetEffect(cx, cz) {
   // Visual cue — gold spark at hero (use cx/cz of pickup so it pops at
   // pickup location, not hero centre — clearer "the magnet did this").
   try { spawnMagnetSpark(cx, 0.9, cz, SLOT6_GOLD); } catch (_) {}
+  try { sfx.magnetPickup && sfx.magnetPickup(); } catch (_) {}
 }
 
 function _fireChickenEffect(cx, cz) {
@@ -486,6 +489,7 @@ function _fireChickenEffect(cx, cz) {
     } catch (_) {}
   }
   try { spawnMagnetSpark(cx, 0.9, cz, SLOT5_AMBER); } catch (_) {}
+  try { sfx.chickenPickup && sfx.chickenPickup(); } catch (_) {}
 }
 
 // ── flash overlay ──────────────────────────────────────────────────────────

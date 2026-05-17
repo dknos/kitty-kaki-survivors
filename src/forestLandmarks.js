@@ -63,6 +63,7 @@ import * as THREE from 'three';
 import { BLOOM_LAYER } from './postfx.js';
 import { FOREST_ROOMS, FOREST_PORTAL_POSITIONS } from './forestRooms.js';
 import { spawnHealNumber } from './damageNumbers.js';
+import { sfx } from './audio.js';
 
 // ── caps ─────────────────────────────────────────────────────────────────────
 const CAP_SHRINES = 64;
@@ -622,6 +623,7 @@ export function tickForestLandmarks(dt, state) {
       // shrine as discovered. Base + obelisk stay visible as the "spent" form.
       _shrineSparkleMesh.setMatrixAt(i, _ZERO_MATRIX);
       _shrineSparkleMesh.instanceMatrix.needsUpdate = true;
+      try { sfx.landmarkActivate && sfx.landmarkActivate(); } catch (_) {}
     }
   }
 
@@ -643,6 +645,7 @@ export function tickForestLandmarks(dt, state) {
       // Hide the base glow disc — pedestal + pillar remain as the "spent" form.
       _altarGlowMesh.setMatrixAt(i, _ZERO_MATRIX);
       _altarGlowMesh.instanceMatrix.needsUpdate = true;
+      try { sfx.landmarkActivate && sfx.landmarkActivate(); } catch (_) {}
     }
   }
 
