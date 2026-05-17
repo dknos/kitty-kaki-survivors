@@ -76,6 +76,7 @@ import { state as _gameState } from './state.js';
 import { acquireWeapon, REGISTRY } from './weapons/index.js';
 import { applyPassive, PASSIVES } from './weapons/passives.js';
 import { spawnKillRing, spawnMagnetSpark } from './fx.js';
+import { sfx } from './audio.js';
 
 // ── pool caps ───────────────────────────────────────────────────────────────
 const CAP_CHESTS = 8;
@@ -481,6 +482,8 @@ export function tickForestChests(state, dt) {
           _phaseT[i] = 0;
           // Spark FX on open.
           try { spawnKillRing(cx, cz, true); } catch (_) {}
+          // Cohort 13 deferred SFX wire — chest_open layer (FOREST-V2-A14).
+          try { if (sfx && sfx.chestOpen) sfx.chestOpen(); } catch (_) {}
           for (let s = 0; s < 8; s++) {
             const a = (s / 8) * Math.PI * 2;
             const r = 0.4 + Math.random() * 0.4;

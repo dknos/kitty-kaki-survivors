@@ -26,6 +26,7 @@ import { spawnChest } from './chest.js';
 // re: borgir-salvo dynamic-import stall). dropForestChest is a no-op when the
 // forest chest module isn't loaded, so non-forest stages pay nothing.
 import { dropForestChest } from './forestChests.js';
+import { onRoomBossKilled as _forestRoomBossKilled } from './forestSealedDoors.js';
 // FOREST-V2-A8 — VS floor pickups (bomb/magnet/chicken), forest stage only.
 // Static import to dodge dynamic-import stall on borgir-salvo deaths (matches
 // dropForestChest's rationale above). No-op when the module isn't loaded.
@@ -766,6 +767,13 @@ export function killEnemy(enemy) {
     import('./spawnDirector.js').then(({ onNemesisKilled }) => onNemesisKilled(enemy));
     return;
   }
+
+  // FOREST-V2-A14 — sealed-door room progression: notify the cohort that this
+  // tagged room boss died (unseals the return portal + banner + chest). Runs
+  // BEFORE the standard miniboss cleanup so the chest drop happens before
+  // dropForestChest fires again below for the regular miniboss chest path —
+  // both chests dropping at the same coord is fine (pool dedupes spatially).
+  if (enemy._isRoomBoss) { try { _forestRoomBossKilled(enemy); } catch (_) {} }
 
   // Iter 19 (FX_AUDIT_V2 §198): full boss-windup telegraph teardown if a
   // mini-boss or final boss dies during its windup. Previously only

@@ -63,6 +63,7 @@ import { initTrapCorridor, tickTrapCorridor, armCorridor, disposeTrapCorridors }
 import { tickPuzzleSystem, startPuzzle as _puzzleStart } from './puzzleSystem.js';
 import { detectRoom, FOREST_ROOMS } from './forestRooms.js';
 import { loadForestPortals, tickForestPortals, clearForestPortals } from './forestPortals.js';
+import { tickForestSealedDoors, disposeForestSealedDoors, onRoomEnter as _forestSealOnRoomEnter } from './forestSealedDoors.js';
 import { loadFlowWeaver, disposeFlowWeaver } from './puzzleFlowWeaver.js';
 import { loadHarmonicAlignment, disposeHarmonicAlignment } from './puzzleHarmonicAlignment.js';
 import { loadPrismLock, disposePrismLock } from './puzzlePrismLock.js';
@@ -693,6 +694,10 @@ function _teardownActiveRun() {
     disposeForestChests(state.scene);
     if (state) state._chestsLoaded = false;
   }
+  // FOREST-V2-A14 Sealed Door teardown — DOM prompt + module state. Idempotent
+  // across stage swaps; the per-run _sealedRooms state is wiped by resetState.
+  disposeForestSealedDoors();
+  if (state) state._sealedDoorsLoaded = false;
   // FOREST-V2-A7 Reaper teardown — mesh group + DOM red-tint overlay +
   // outlast pillar burst. Idempotent; safe on non-forest runs (no-op).
   if (state.scene) {
@@ -1228,6 +1233,7 @@ function applyMetaUpgrades() {
       disposeForestNeutrals(state.scene);  state._neutralsLoaded  = false; // FE-V2 Neutrals
       disposeForestEnvHazards(state.scene); state._envHazardsLoaded = false; // FE-V2 EnvHazards
       disposeForestChests(state.scene);     state._chestsLoaded     = false; // FOREST-V2-A6 Chests
+      disposeForestSealedDoors();           state._sealedDoorsLoaded = false; // FOREST-V2-A14 Sealed Doors
       disposeForestReaper(state.scene);     state._reaperLoaded     = false; // FOREST-V2-A7 Reaper
       disposeForestPickups(state.scene);    state._pickupsLoaded    = false; // FOREST-V2-A8 Pickups
       disposeForestDayNight(state.scene);   state._dayNightLoaded   = false; // FOREST-V2-A9 Day/Night
@@ -1265,6 +1271,7 @@ function applyMetaUpgrades() {
       disposeForestNeutrals(state.scene);  state._neutralsLoaded  = false; // FE-V2 Neutrals
       disposeForestEnvHazards(state.scene); state._envHazardsLoaded = false; // FE-V2 EnvHazards
       disposeForestChests(state.scene);     state._chestsLoaded     = false; // FOREST-V2-A6 Chests
+      disposeForestSealedDoors();           state._sealedDoorsLoaded = false; // FOREST-V2-A14 Sealed Doors
       disposeForestReaper(state.scene);     state._reaperLoaded     = false; // FOREST-V2-A7 Reaper
       disposeForestPickups(state.scene);    state._pickupsLoaded    = false; // FOREST-V2-A8 Pickups
       disposeForestDayNight(state.scene);   state._dayNightLoaded   = false; // FOREST-V2-A9 Day/Night
@@ -1308,6 +1315,7 @@ function applyMetaUpgrades() {
       disposeForestNeutrals(state.scene);  state._neutralsLoaded  = false; // FE-V2 Neutrals
       disposeForestEnvHazards(state.scene); state._envHazardsLoaded = false; // FE-V2 EnvHazards
       disposeForestChests(state.scene);     state._chestsLoaded     = false; // FOREST-V2-A6 Chests
+      disposeForestSealedDoors();           state._sealedDoorsLoaded = false; // FOREST-V2-A14 Sealed Doors
       disposeForestReaper(state.scene);     state._reaperLoaded     = false; // FOREST-V2-A7 Reaper
       disposeForestPickups(state.scene);    state._pickupsLoaded    = false; // FOREST-V2-A8 Pickups
       disposeForestDayNight(state.scene);   state._dayNightLoaded   = false; // FOREST-V2-A9 Day/Night
@@ -1333,6 +1341,7 @@ function applyMetaUpgrades() {
       disposeForestNeutrals(state.scene);  state._neutralsLoaded  = false; // FE-V2 Neutrals
       disposeForestEnvHazards(state.scene); state._envHazardsLoaded = false; // FE-V2 EnvHazards
       disposeForestChests(state.scene);     state._chestsLoaded     = false; // FOREST-V2-A6 Chests
+      disposeForestSealedDoors();           state._sealedDoorsLoaded = false; // FOREST-V2-A14 Sealed Doors
       disposeForestReaper(state.scene);     state._reaperLoaded     = false; // FOREST-V2-A7 Reaper
       disposeForestPickups(state.scene);    state._pickupsLoaded    = false; // FOREST-V2-A8 Pickups
       disposeForestDayNight(state.scene);   state._dayNightLoaded   = false; // FOREST-V2-A9 Day/Night
@@ -1520,6 +1529,12 @@ function _tickForestRoomTransition(dt) {
     state.run.currentRoom = detected;
     state.run.roomState = 'TRANSITIONING';
     _applyForestRoomVisibility(detected);
+    // FOREST-V2-A14 — sealed-door cohort needs the room-enter edge to spawn
+    // a miniboss + seal the return portal (first-time entries) or re-seal a
+    // mid-fight return (defensive — see forestSealedDoors.onRoomEnter). Glade
+    // is a no-op inside the hook. try/catch isolates seal faults from the
+    // camera/visibility transition that follows.
+    try { _forestSealOnRoomEnter(detected); } catch (e) { console.warn('[main] forestSeal onRoomEnter failed:', e); }
     const room = FOREST_ROOMS[detected];
     if (room && room.center) {
       _forestCamLerp.active = true;
@@ -1869,6 +1884,11 @@ function frame(now) {
     // FE-C3B — hub portals: drives interact-key teleport, cooldown ring, and
     // pollen breadcrumb bob. Bails when no portals registered.
     _p=perfStart(); tickForestPortals(logicDt); perfMark('forestPortals', _p);
+    // FOREST-V2-A14 — sealed-door room progression: pulses sealed portal tint
+    // + manages the "SEALED — clear room first" proximity prompt. Bails fast
+    // when no portals exist; event-driven spawn/unseal happens in onRoomEnter
+    // (wired below in _tickForestRoomTransition) and in enemies.killEnemy.
+    _p=perfStart(); tickForestSealedDoors(state, logicDt); perfMark('forestSealedDoors', _p);
     // FOREST ITER C1 — Lockdown Arena zone trigger. One-shot per run via
     // _forestLockdownFired guard (reset in state.resetState). Trigger fires
     // when hero crosses inside the arena radius AND no lockdown is already
