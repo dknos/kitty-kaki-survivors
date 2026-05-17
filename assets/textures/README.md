@@ -1,4 +1,4 @@
-# Forest Tree Textures (PHASE 3 P3A — FOREST-V2-A32)
+# Forest Textures (PHASE 3 P3A + P3B — FOREST-V2-A32/A33)
 
 Two tileable surface textures for the forest decor "tree" silhouettes
 (crystal-trunk bodies + facet-cone tips) in `src/arenaDecor.js`. Added to
@@ -67,6 +67,37 @@ Set in `src/arenaDecor.js` at texture load time:
 - `colorSpace = THREE.SRGBColorSpace`
 - Bark `repeat.set(1, 4)` (tall vertical run on trunks)
 - Leaves `repeat.set(2, 2)` (denser pattern on the cone tips)
+
+## P3B addendum — stone texture (FOREST-V2-A33, PR #137)
+
+Added one additional procedural texture for the forest landmark + coffin
+stone surfaces (shrine base, shrine obelisk, altar pedestal, altar pillar,
+coffin lid, coffin base). Same generator pattern as P3A:
+
+| File | Size | Use |
+|------|------|-----|
+| `forest_stone_512.png` | 256×256 grayscale PNG-8 (~41 KB) | `MeshStandardMaterial.map` on shrine/altar/coffin solid surfaces |
+
+Generator: `tools/_gen_stone_texture.mjs` — mulberry32(0x57104E55) seeded,
+4-octave value-noise fBm centered near luminance 0.70, 10 Bresenham crack
+hairlines, 5% moss-speck density. Re-running yields a byte-identical PNG.
+
+Tiling parameters (set in `src/forestLandmarks.js` and `src/forestCoffins.js`):
+
+- `wrapS = wrapT = THREE.RepeatWrapping`
+- `repeat.set(1, 1)` — small surfaces, no tiling needed
+- `anisotropy = 8`
+- `colorSpace = THREE.SRGBColorSpace`
+
+Palette: same luminance-only contract as P3A. The shared texture is
+multiplied into the existing palette slot color (slot-1 bone `0xc7b89a`
+for the altar pillar + coffin lid; slot-3 brown `0x6b4f3a` for the shrine
+base, altar pedestal, and coffin base; slot-2 green `0x4a7a4a` for the
+shrine obelisk). No new hex constants. Squint test holds.
+
+The texture instance is a module-private singleton inside each consumer
+file so the loader fires exactly once per scene (`TextureLoader.load` is
+cached, but the wrap/anisotropy setup runs only once either way).
 
 ## License
 
