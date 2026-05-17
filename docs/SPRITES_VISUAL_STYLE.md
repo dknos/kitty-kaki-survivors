@@ -41,6 +41,14 @@ Stage-agnostic FX (hit-flash, dust-puff used everywhere) — use a
 slot-8 (`#a8e6ff`), plus pure white (`#ffffff`) for peak flash frames
 only. Off-palette colors are BANNED.
 
+**Thematic-FX warm-accent exception (added 2026-05-16):** explosion-class
+FX (Borgir Big Bag rockets, future amber detonation FX, future Cinder
+explosion FX) MAY include amber slot-6 (`#f5a300`) + slot-7 (`#ffd86b`)
+on hot/core frames. Reasoning: cyan-only fireballs read as ice, not
+fire. Authorized list lives in `tools/sprite-gen/palette.mjs` as
+`WARM = { slot6, slot7 }`. Any FX adding warm accents must list them
+in its recipe doc and pass palette-audit when grep'd.
+
 ## Atlas JSON schema (locked)
 
 Every `.png` ships with a sibling `.json` of this exact shape. Atlas
