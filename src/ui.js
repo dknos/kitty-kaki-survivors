@@ -80,6 +80,13 @@ let _killsText = null;
 let _modal = null;
 let _modalKeyHandler = null;
 let _modalFocusScope = null;
+// FOREST-V2-A12 (#116) — banish-mode interception. When `_banishMode` is
+// true, card clicks call `_banishHook(choices, idx)` instead of `pickChoice`.
+// The hook is set/cleared by showLevelUpModal's banish toggle. Module-scope
+// so paintCards' card click handler (closure over `choices`/`i`) can route
+// through pickChoice without re-wiring the listener.
+let _banishMode = false;
+let _banishHook = null;
 
 let _deathScreen = null;
 let _deathKeyHandler = null;
@@ -1092,8 +1099,13 @@ export function showLevelUpModal(choices) {
     state.hero.rerolls -= 1;
     import('./weapons/index.js').then(({ weaponChoices }) => {
       const fresh = weaponChoices(3 + ((state && state.run && state.run.casinoExtraChoices) || 0));
-      state.levelUpChoices = fresh;
-      paintCards(row, fresh, _registry || {});
+      // FOREST-V2-A12 (#116) — honor BANISH "permanently" across all reroll
+      // paths, not just the new gold one. Strip banished ids from the
+      // legacy hero-charge reroll too.
+      const banned = (state.run && state.run._banishedThisRun) || new Set();
+      const filtered = banned.size ? fresh.filter(c => !banned.has(c.id)) : fresh;
+      state.levelUpChoices = filtered;
+      paintCards(row, filtered, _registry || {});
       rebuildQol();
       if (typeof row._kkRefreshFocus === 'function') row._kkRefreshFocus();
     });
@@ -1116,8 +1128,12 @@ export function showLevelUpModal(choices) {
     try { sfx.uiClick && sfx.uiClick(); } catch (_) {}
     import('./weapons/index.js').then(({ weaponChoices }) => {
       const fresh = weaponChoices(3 + ((state && state.run && state.run.casinoExtraChoices) || 0));
-      state.levelUpChoices = fresh;
-      paintCards(row, fresh, _registry || {});
+      // FOREST-V2-A12 (#116) — banished ids stay banished across the
+      // meta-coin reroll path too.
+      const banned = (state.run && state.run._banishedThisRun) || new Set();
+      const filtered = banned.size ? fresh.filter(c => !banned.has(c.id)) : fresh;
+      state.levelUpChoices = filtered;
+      paintCards(row, filtered, _registry || {});
       rebuildQol();
       if (typeof row._kkRefreshFocus === 'function') row._kkRefreshFocus();
     });
@@ -1143,7 +1159,236 @@ export function showLevelUpModal(choices) {
   _modal.appendChild(qolRow);
   rebuildQol();
 
+  // ─────────────────────────────────────────────────────────────────────
+  // FOREST-V2-A12 (#116) — Level-up gold economy: REROLL / BANISH / SKIP.
+  // VS-style QoL buttons fed by `state.run.gold` (per-run pool from forest
+  // chests). Orthogonal to the meta-coin reroll + hero-charge reroll/skip
+  // above; they share the same modal but draw on different currencies.
+  // Surgery kept inline (under the 300-line threshold) — no helper file.
+  // ─────────────────────────────────────────────────────────────────────
+  const goldText = document.createElement('div');
+  goldText.dataset.role = 'gold-label';
+  goldText.style.cssText = `font-family:${F.mono}; font-size:calc(var(--kk-font-scale, 1) * 13px);
+    color:${C.amber}; letter-spacing:0.22em; text-transform:uppercase;
+    margin-top:18px; margin-bottom:6px; text-align:center; pointer-events:none;`;
+  _modal.appendChild(goldText);
+
+  const econRow = document.createElement('div');
+  econRow.dataset.role = 'econ-row';
+  econRow.style.cssText = 'display:flex; gap:14px; margin-top:6px; pointer-events:auto; justify-content:center;';
+  _modal.appendChild(econRow);
+
+  const banishPrompt = document.createElement('div');
+  banishPrompt.dataset.role = 'banish-prompt';
+  banishPrompt.style.cssText = `display:none; margin-top:14px; padding:10px 18px;
+    font-family:${F.mono}; font-size:calc(var(--kk-font-scale, 1) * 12px);
+    color:${C.red}; letter-spacing:0.24em; text-transform:uppercase;
+    border:1px solid ${C.red}; border-radius:6px; text-align:center;
+    background:rgba(255,94,94,0.08); pointer-events:none;`;
+  banishPrompt.textContent = 'Click a choice to banish (75g) — ESC to cancel';
+  _modal.appendChild(banishPrompt);
+
+  // Cost ramp + caps live here so changes stay co-located.
+  const REROLL_BASE = 50;
+  const REROLL_STEP = 25;
+  const BANISH_COST = 75;
+  function _rerollCost() {
+    const used = (state.run && state.run._rerollsThisRun) || 0;
+    return REROLL_BASE + REROLL_STEP * used;
+  }
+  function _gold() { return (state.run && state.run.gold) || 0; }
+
+  // weaponChoices() doesn't accept an exclusion arg — wrap-and-filter as
+  // the brief's watch-out recommends. Re-rolls until the result has no
+  // banished ids, with a small retry cap so a near-empty pool can't spin.
+  function _rollNonBanished(n) {
+    const banned = (state.run && state.run._banishedThisRun) || new Set();
+    return import('./weapons/index.js').then(({ weaponChoices }) => {
+      let attempts = 0;
+      let fresh = weaponChoices(n);
+      let filtered = fresh.filter(c => !banned.has(c.id));
+      while (filtered.length < n && attempts < 6) {
+        const more = weaponChoices(n);
+        for (const m of more) {
+          if (!banned.has(m.id) && !filtered.find(f => f.id === m.id)) {
+            filtered.push(m);
+            if (filtered.length >= n) break;
+          }
+        }
+        attempts++;
+      }
+      // Pool depleted: return whatever survived, even if <n. The
+      // pool-depleted gate in rebuildEcon disables further interactions
+      // when the hand drops below 3, so an under-sized array is safe.
+      // Never fall back to the unfiltered roll — that would leak a
+      // banished id through the gold REROLL and break "permanently".
+      return filtered.slice(0, n);
+    });
+  }
+
+  // Pool-depleted gate: count unique non-banished options on the current
+  // hand. If <3 valid rolls exist, REROLL/BANISH disable + show "depleted".
+  function _poolDepleted() {
+    const banned = (state.run && state.run._banishedThisRun) || new Set();
+    const cur = state.levelUpChoices || [];
+    const valid = cur.filter(c => !banned.has(c.id));
+    return valid.length < 3;
+  }
+
+  function econBtn(label, costLabel, accent, disabled, onClick) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.innerHTML = `${label} <span style="font-family:${F.mono};
+      font-size:calc(var(--kk-font-scale, 1) * 11px); opacity:0.78; margin-left:8px;">${costLabel}</span>`;
+    b.style.cssText = `padding:10px 22px; cursor:${disabled ? 'not-allowed' : 'pointer'};
+      background: linear-gradient(180deg, rgba(20,28,22,0.86), rgba(8,14,12,0.92));
+      border:1px solid ${C.edge}; border-radius:8px;
+      color:${disabled ? 'rgba(245,239,225,0.35)' : accent};
+      font-family:${F.display}; font-size:calc(var(--kk-font-scale, 1) * 13px); font-weight:700;
+      letter-spacing:0.26em; opacity:${disabled ? '0.55' : '1'};
+      box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 8px 20px rgba(0,0,0,0.5);`;
+    b.dataset.disabled = disabled ? '1' : '0';
+    b.onclick = () => {
+      if (b.dataset.disabled === '1') {
+        try { sfx.uiError && sfx.uiError(); } catch (_) {}
+        return;
+      }
+      onClick();
+    };
+    return b;
+  }
+
+  function rebuildEcon() {
+    econRow.innerHTML = '';
+    goldText.textContent = `Gold: ${_gold()}`;
+    const depleted = _poolDepleted();
+    const rerollCost = _rerollCost();
+    const rerollDisabled = _banishMode || depleted || _gold() < rerollCost;
+    const banishDisabled = depleted || _gold() < BANISH_COST;
+    const skipDisabled = false; // SKIP is free; symmetric gold>=0 check never fails.
+
+    const rerollLabel = depleted ? 'POOL DEPLETED' : `(${rerollCost}g)`;
+    const rb = econBtn('REROLL', rerollLabel, C.cyan, rerollDisabled, () => {
+      if (_gold() < rerollCost) return;
+      state.run.gold -= rerollCost;
+      state.run._rerollsThisRun = ((state.run._rerollsThisRun) || 0) + 1;
+      try { sfx.uiClick && sfx.uiClick(); } catch (_) {}
+      _rollNonBanished(3 + ((state && state.run && state.run.casinoExtraChoices) || 0)).then(fresh => {
+        state.levelUpChoices = fresh;
+        paintCards(row, fresh, _registry || {});
+        rebuildEcon();
+        if (typeof row._kkRefreshFocus === 'function') row._kkRefreshFocus();
+      });
+    });
+    econRow.appendChild(rb);
+
+    const banishLabel = _banishMode ? '(CANCEL)' : (depleted ? 'POOL DEPLETED' : '(75g)');
+    const bb = econBtn('BANISH', banishLabel, C.red, banishDisabled && !_banishMode, () => {
+      // Toggle: arm → disarm (cancel). Disarm always allowed even while disabled.
+      _banishMode = !_banishMode;
+      banishPrompt.style.display = _banishMode ? 'block' : 'none';
+      _modal.classList.toggle('kk-banish-mode', _banishMode);
+      try { sfx.uiClick && sfx.uiClick(); } catch (_) {}
+      rebuildEcon();
+    });
+    econRow.appendChild(bb);
+
+    const sb = econBtn('SKIP', '(free)', C.green, skipDisabled, () => {
+      try { sfx.uiClick && sfx.uiClick(); } catch (_) {}
+      // Heal-to-full + 2s invuln, then burn one queued level (mirrors the
+      // legacy doSkip cascade decrement above so the cascade counter stays
+      // honest when SKIP bypasses the pick).
+      try {
+        if (state.hero) {
+          state.hero.hp = state.hero.hpMax || state.hero.hp;
+          state.hero.iFramesUntil = (state.time && state.time.game ? state.time.game : 0) + 2;
+        }
+      } catch (_) {}
+      // Clear banish mode on exit so it doesn't bleed to the next modal.
+      _banishMode = false; _banishHook = null;
+      state.pendingLevelCount = Math.max(0, (state.pendingLevelCount || 1) - 1);
+      state.levelUpChoices.length = 0;
+      hideLevelUpModal();
+      if (state.pendingLevelCount > 0) {
+        _rollNonBanished(3 + ((state && state.run && state.run.casinoExtraChoices) || 0)).then(fresh => {
+          state.pendingLevelUp = true;
+          state.levelUpChoices = fresh;
+          showLevelUpModal(fresh);
+        });
+      } else {
+        state.pendingLevelUp = false;
+      }
+    });
+    econRow.appendChild(sb);
+  }
+
+  // Banish-click handler: spend gold, mark id, re-roll just that slot
+  // (with retry until different id or pool exhausted), then drop banish mode.
+  _banishHook = (choiceList, idx) => {
+    if (!choiceList || !choiceList[idx]) return;
+    if (_gold() < BANISH_COST) {
+      try { sfx.uiError && sfx.uiError(); } catch (_) {}
+      _banishMode = false; _banishHook = null;
+      banishPrompt.style.display = 'none';
+      _modal && _modal.classList.remove('kk-banish-mode');
+      rebuildEcon();
+      return;
+    }
+    const target = choiceList[idx];
+    state.run.gold -= BANISH_COST;
+    if (!state.run._banishedThisRun) state.run._banishedThisRun = new Set();
+    state.run._banishedThisRun.add(target.id);
+    try { sfx.uiClick && sfx.uiClick(); } catch (_) {}
+    // Re-roll just that slot. Retry up to 6 times to get a non-banished
+    // id different from the others currently shown; if pool exhausted,
+    // splice the slot out so the row shrinks rather than show a dup.
+    import('./weapons/index.js').then(({ weaponChoices }) => {
+      const banned = state.run._banishedThisRun;
+      const others = new Set(choiceList.filter((_, j) => j !== idx).map(c => c.id));
+      let replacement = null;
+      for (let attempt = 0; attempt < 6 && !replacement; attempt++) {
+        const roll = weaponChoices(3 + ((state && state.run && state.run.casinoExtraChoices) || 0));
+        for (const r of roll) {
+          if (!banned.has(r.id) && !others.has(r.id)) { replacement = r; break; }
+        }
+      }
+      if (replacement) {
+        choiceList[idx] = replacement;
+      } else {
+        // Pool depleted: drop the slot rather than leave a banished card up.
+        choiceList.splice(idx, 1);
+      }
+      state.levelUpChoices = choiceList;
+      _banishMode = false; _banishHook = null;
+      banishPrompt.style.display = 'none';
+      _modal && _modal.classList.remove('kk-banish-mode');
+      paintCards(row, state.levelUpChoices, _registry || {});
+      rebuildEcon();
+      if (typeof row._kkRefreshFocus === 'function') row._kkRefreshFocus();
+    });
+  };
+
+  rebuildEcon();
+  // End FOREST-V2-A12 gold economy block.
+
   _root.appendChild(_modal);
+
+  // FOREST-V2-A12 (#116) — strip banished ids from the initial display. The
+  // upstream callers (xp.js _triggerLevelUp, xp.js applyLevelUpChoice
+  // cascade, hero.js post-XP path) hand us raw weaponChoices() output that
+  // hasn't been filtered. Mutate `choices` in place so paintCards + the
+  // hotkey dispatch (Digit1/2/3 → pickChoice(state.levelUpChoices, …)) and
+  // banish hook all reference the same trimmed array.
+  try {
+    const banned = (state.run && state.run._banishedThisRun) || new Set();
+    if (banned.size && Array.isArray(choices)) {
+      for (let i = choices.length - 1; i >= 0; i--) {
+        if (banned.has(choices[i].id)) choices.splice(i, 1);
+      }
+      // Keep state.levelUpChoices in sync if upstream passed that reference.
+      if (state.levelUpChoices !== choices) state.levelUpChoices = choices;
+    }
+  } catch (_) {}
 
   paintCards(row, choices, registry);
 
@@ -1158,6 +1403,16 @@ export function showLevelUpModal(choices) {
   refreshFocusScope();
 
   _modalKeyHandler = (e) => {
+    // FOREST-V2-A12 (#116) — ESC cancels banish mode without spending.
+    if (_banishMode && (e.code === 'Escape' || e.key === 'Escape')) {
+      _banishMode = false; _banishHook = null;
+      const bp = _modal && _modal.querySelector('[data-role="banish-prompt"]');
+      if (bp) bp.style.display = 'none';
+      _modal && _modal.classList.remove('kk-banish-mode');
+      // Re-render the econ row so BANISH label flips back from "(CANCEL)".
+      try { rebuildEcon(); } catch (_) {}
+      return;
+    }
     if (e.code === 'Digit1' || e.key === '1') pickChoice(state.levelUpChoices, 0);
     else if (e.code === 'Digit2' || e.key === '2') pickChoice(state.levelUpChoices, 1);
     else if (e.code === 'Digit3' || e.key === '3') pickChoice(state.levelUpChoices, 2);
@@ -1271,6 +1526,14 @@ function repaintCards(choices) {
 function pickChoice(choices, idx) {
   const c = choices[idx];
   if (!c) return;
+  // FOREST-V2-A12 (#116) — banish-mode interception. If the player armed
+  // BANISH, route the card click to the banish handler instead of applying
+  // the choice. Keypress paths (Digit1/2/3) are also gated by `_banishMode`
+  // inside the modal key handler so this stays the single dispatch point.
+  if (_banishMode && typeof _banishHook === 'function') {
+    _banishHook(choices, idx);
+    return;
+  }
   import('./xp.js').then(m => {
     if (m && typeof m.applyLevelUpChoice === 'function') m.applyLevelUpChoice(c);
   });
@@ -1413,6 +1676,10 @@ export function hideLevelUpModal() {
   if (_modalFocusScope) { popFocusScope(_modalFocusScope); _modalFocusScope = null; }
   if (_modal && _modal.parentNode) _modal.parentNode.removeChild(_modal);
   _modal = null;
+  // FOREST-V2-A12 (#116) — clear banish-mode flag + hook so a re-opened
+  // modal (cascade level-up) doesn't inherit a stale interception state.
+  _banishMode = false;
+  _banishHook = null;
   hideTooltip();
 }
 
