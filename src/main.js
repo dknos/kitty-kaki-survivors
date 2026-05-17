@@ -27,6 +27,10 @@ import { initProjectileVisuals, releaseProjectileVisuals } from './weapons/autoA
 import { initXP, updateGems, applyLevelUpChoice } from './xp.js';
 import { initSpawnDirector, tickSpawnDirector, secondsUntilNextMiniBoss } from './spawnDirector.js';
 import { initUI, updateUI, showDeathScreen, showStartScreen, hideStartScreen, showOptions, hideOptions, isOptionsOpen, showBanner, hideShop, isShopOpen, hideGrimoire, isGrimoireOpen, showHouse, hideHouse, isHouseOpen, showQuestBoard, hideQuestBoard, isQuestBoardOpen, hideCredits, isCreditsOpen, showContextLossModal, hideContextLossModal, showCasinoMenu, showCasinoSlots, showCasinoParlay } from './ui.js';
+// Menu V2 — Claude Design handoff redesign. Legacy showStartScreen is preserved
+// in ui.js as a safety-net fallback (callable directly) but main.js routes the
+// post-preload boot path through showMenuV2 instead.
+import { showMenuV2, hideMenuV2 } from './menuV2.js';
 import { showCodex, hideCodex, isCodexOpen } from './codex.js';
 import { initDamageNumbers, updateDamageNumbers } from './damageNumbers.js';
 import { initFX, updateFX, updatePickupRing } from './fx.js';
@@ -301,7 +305,13 @@ async function boot() {
   acquireWeapon(state.run.starterWeapon || 'orbitals');
   for (let i = 0; i < (state.run.cellarLv || 0); i++) acquireWeapon(state.run.starterWeapon || 'orbitals');
 
-  showStartScreen('Press Play to begin');
+  // Iter 35 — Menu V2 swap. Pre-preload showStartScreen('Loading…') stays for
+  // the loading screen (menuV2 needs GLTF_CACHE.hero before the carousel can
+  // mount). This first post-preload mount happens AFTER preloadAll resolves,
+  // so showMenuV2 has everything it needs. hideStartScreen() is still called
+  // to tear down the loader DOM the boot path put up.
+  try { hideStartScreen(); } catch (_) {}
+  showMenuV2();
   // ── Iter 10a — Apply saved options at boot ──
   const meta = getMeta();
   // Honor OS prefers-reduced-motion on FIRST boot only (sentinel:
@@ -378,6 +388,7 @@ async function boot() {
     // placeholder tint reflects the current selection.
     rebuildHero(state.scene);
     hideStartScreen();
+    hideMenuV2();
     state.run.startedAt = performance.now();
     if (meta.optMusic) startMusic();
     setMusicTier(0);
@@ -414,6 +425,7 @@ async function boot() {
   window.kkStartRun = start;
   window.kkEnterTown = () => {
     hideStartScreen();
+    hideMenuV2();
     enterTown();
     state.started = true;   // bypass start-screen idle render path
   };
@@ -517,7 +529,8 @@ async function boot() {
     state._deathShown = false;
     state.time.paused = false;
     try { hideOptions(); } catch (_) {}
-    showStartScreen('Press Play to begin');
+    // Death-return → Menu V2 (keep showStartScreen as fallback if v2 fails to mount).
+    try { showMenuV2(); } catch (e) { console.warn('[menuV2.deathReturn]', e); showStartScreen('Press Play to begin'); }
   };
   window.__kkNextMiniBoss = secondsUntilNextMiniBoss;
   // Iter 17 — Helltide debug hook. Lets the player (and QA) force-trigger the
