@@ -59,15 +59,11 @@
  *     fps > 0.5  → ok (rAF alive)
  *     fps <= 0.5 → fail (rAF dead)
  *
- * KNOWN PRE-EXISTING CONSOLE ERRORS (on main as of 91a1de1):
- *   - src/menuV2.js:301 has `preserveAspectRatio="xMidYEnd meet"` (typo;
- *     SVG spec requires xMidYMid/xMidYMax/etc.). Always emits a console
- *     error at boot.
- *   - One 404 (`Failed to load resource: ... 404 (Not Found)`) — asset
- *     hookup gap, also pre-existing.
- *   These are allow-listed below so this gate doesn't perpetually red on
- *   pre-existing bugs. The parent should triage them in a follow-up
- *   commit; the allow-list entries can then be removed.
+ * KNOWN PRE-EXISTING CONSOLE ERRORS:
+ *   None as of this commit — the two prior baseline errors (menuV2 SVG
+ *   `xMidYEnd` typo and the implicit `/favicon.ico` 404) were fixed in
+ *   the FOREST-V2-A16 baseline-console-fix branch. Allow-list mechanism
+ *   retained (empty) for future regressions.
  *
  * Run: node tools/smoke-forest-v2.mjs
  *
@@ -100,12 +96,10 @@ const MOSSROOT_Z = -140;
 // FPS liveness floor — see header for why this isn't a perf gate in headless.
 const FPS_LIVENESS_FLOOR = 0.5;
 
-// Known pre-existing console errors on main (as of 91a1de1). Substring match.
-// TODO: remove entries once the underlying bugs are fixed on main.
-const KNOWN_PRE_EXISTING_ERRORS = [
-  'xMidYEnd meet',                                       // src/menuV2.js:301 SVG typo
-  'Failed to load resource: the server responded with a status of 404',
-];
+// Known pre-existing console errors. Substring match.
+// Empty as of the FOREST-V2-A16 baseline-console-fix branch — append new
+// entries here if a regression triages as known-baseline rather than fixable.
+const KNOWN_PRE_EXISTING_ERRORS = [];
 function isPreExisting(msg) {
   return KNOWN_PRE_EXISTING_ERRORS.some((sub) => msg.includes(sub));
 }

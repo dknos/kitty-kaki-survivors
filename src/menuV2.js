@@ -298,7 +298,7 @@ function _buildHeroSilhouette() {
 
   // SVG hero — lifted verbatim from HeroCharacter component
   wrap.appendChild(_svg(`
-    <svg class="kkv2-hero-svg" viewBox="0 0 600 900" preserveAspectRatio="xMidYEnd meet">
+    <svg class="kkv2-hero-svg" viewBox="0 0 600 900" preserveAspectRatio="xMidYMid meet">
       <defs>
         <linearGradient id="kkv2-hero-body" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stop-color="#0c0807" />
