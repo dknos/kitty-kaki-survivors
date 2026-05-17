@@ -79,7 +79,7 @@ const NAV_ITEMS = [
   { id: 'characters', label: 'Heroes',     glyph: '✦', kbd: 'H' },
   { id: 'arsenal',    label: 'Arsenal',    glyph: '⚔', kbd: 'A' },
   { id: 'codex',      label: 'Codex',      glyph: '❡', kbd: 'C' },
-  { id: 'social',     label: 'Companions', glyph: '◈', kbd: 'F' },
+  { id: 'town',       label: 'Town',       glyph: '◈', kbd: 'T' },
   { id: 'options',    label: 'Settings',   glyph: '✲', kbd: 'O' },
 ];
 
@@ -558,7 +558,7 @@ function _dispatchNav(id) {
     case 'characters': _openHeroes(); break;
     case 'arsenal':    _openArsenal(); break;
     case 'codex':      _openCodex(); break;
-    case 'social':     _openCompanions(); break;
+    case 'town':       _enterTownFromMenu(); break;
     case 'options':    _openSettings(); break;
   }
 }
@@ -955,11 +955,13 @@ function _openArsenal() {
   import('./ui.js').then(m => { try { m.showGrimoire && m.showGrimoire(); } catch (_) {} }).catch(() => {});
 }
 
-function _openCompanions() {
-  // TODO: no dedicated companions/social system yet — Quest Board is the
-  // closest existing modal (PvE quests have a social-board vibe). Replace when
-  // a real friends/leaderboard panel ships.
-  import('./ui.js').then(m => { try { m.showQuestBoard && m.showQuestBoard(); } catch (_) {} }).catch(() => {});
+function _enterTownFromMenu() {
+  // Town hub — NPCs, casino, shop, character interactions. Calls the
+  // window-exposed entry the legacy menu used. Hide the menu first so the
+  // town world is visible.
+  try { hideMenuV2(); } catch (_) {}
+  try { if (typeof window.kkEnterTown === 'function') window.kkEnterTown(); }
+  catch (e) { console.warn('[menuV2.town]', e); }
 }
 
 function _openHeroes() {
