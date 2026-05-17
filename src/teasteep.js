@@ -9,18 +9,10 @@
  */
 import { grantEmbers } from './meta.js';
 import { hideTooltip } from './tooltips.js';
+import { MINIGAME_PALETTE as PALETTE } from './utils/palette.js';
+import { bindMinigameEvents, unbindMinigameEvents } from './utils/minigame.js';
 
-const PALETTE = {
-  paper:    '#f3e8cf',
-  ink:      '#231a14',
-  warmTan:  '#d99b54',
-  teaAmber: '#c98a3a',
-  sakura:   '#e8a3c7',
-  sage:     '#8aaa6a',
-  indigo:   '#384a78',
-  ember:    '#ff7a3a',
-  highlight:'#fff9e6',
-};
+
 
 // Arc geometry (in canvas-relative units; recomputed on resize)
 const ARC_THICK = 60;
@@ -343,9 +335,7 @@ export function showTeaSteep() {
   _root.appendChild(_canvas);
   document.body.appendChild(_root);
   _state = _resetState();
-  _root.addEventListener('pointerdown', _onPointerDown);
-  window.addEventListener('keydown', _onKey);
-  window.addEventListener('resize', _onResize);
+  bindMinigameEvents(_root, _onPointerDown, null, null, _onKey, _onResize);
   _lastT = performance.now();
   _raf = requestAnimationFrame(_loop);
 }
@@ -355,8 +345,7 @@ function _close() {
   _open = false;
   if (_raf) cancelAnimationFrame(_raf);
   _raf = 0;
-  window.removeEventListener('keydown', _onKey);
-  window.removeEventListener('resize', _onResize);
+  unbindMinigameEvents(_root, _onPointerDown, null, null, _onKey, _onResize);
   if (_root && _root.parentNode) _root.parentNode.removeChild(_root);
   _root = null; _canvas = null; _ctx = null; _state = null;
 }
