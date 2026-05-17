@@ -117,6 +117,19 @@ const WEAPON_BLURBS = {
     body: (lv) => `Lobs ${lv.count} rockets in a 40° forward fan every ${lv.cooldown.toFixed(2)}s, ${lv.dmg} damage each. Each rocket pierces ${lv.pierce} enem${lv.pierce > 1 ? 'ies' : 'y'} before fading.`,
     tags: ['AoE', 'Fan', 'Heavy'],
   },
+  // ── Forest Expansion v0.2 (FE-V2, 2026-05-17) — hidden Forest specials ──
+  // These are filtered out of the level-up card pool by `hidden: true`, so
+  // the tooltip blurb is consumed only by codex / Hall of Records views.
+  root_grasp: {
+    flavor: 'Root Grasp — Mossroot vines surge from the earth; whatever you snare stays put.',
+    body: (lv) => `Plants a vine snare every ${lv.cooldown.toFixed(2)}s that roots enemies inside for ${lv.rootDur.toFixed(2)}s, dealing ${lv.dmg} damage on contact.`,
+    tags: ['Trap', 'Root', 'AoE'],
+  },
+  wisp_lantern: {
+    flavor: 'Wisp Lantern — Glowfen wisps follow your lamp; whatever stays close, dies cold.',
+    body: (lv) => `${lv.wisps} orbiting wisp${lv.wisps > 1 ? 's' : ''} auto-strike the closest enemy every ${lv.cadence.toFixed(2)}s for ${lv.dmg} damage each.`,
+    tags: ['Orbit', 'Auto-Lock', 'Constant'],
+  },
 };
 
 // Passive copy. Each line tells the player what the number actually does to
@@ -274,6 +287,18 @@ const STAT_FIELDS = {
     { key: 'dmg',       label: 'DMG' },
     { key: 'radius',    label: 'Radius', fmt: v => v.toFixed(1) + 'm' },
     { key: 'maxSigils', label: 'Active' },
+  ],
+  // FE-V2 Forest specials — stat rows for codex view (hidden from level-up cards).
+  root_grasp: [
+    { key: 'cooldown', label: 'CD',     fmt: v => v.toFixed(2) + 's' },
+    { key: 'dmg',      label: 'DMG' },
+    { key: 'rootDur',  label: 'Root',   fmt: v => v.toFixed(2) + 's' },
+  ],
+  wisp_lantern: [
+    { key: 'wisps',     label: 'Wisps' },
+    { key: 'cadence',   label: 'Cadence', fmt: v => v.toFixed(2) + 's' },
+    { key: 'dmg',       label: 'DMG' },
+    { key: 'radiusMul', label: 'Orbit×',  fmt: v => v.toFixed(2) },
   ],
 };
 

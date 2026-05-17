@@ -66,6 +66,10 @@ import { loadForestPortals, tickForestPortals, clearForestPortals } from './fore
 import { loadFlowWeaver, disposeFlowWeaver } from './puzzleFlowWeaver.js';
 import { loadHarmonicAlignment, disposeHarmonicAlignment } from './puzzleHarmonicAlignment.js';
 import { loadPrismLock, disposePrismLock } from './puzzlePrismLock.js';
+// FE-V2 (2026-05-17) — Mossroot Hollow simon-says puzzle. tickMossrootPulse
+// is driven internally by puzzleSystem.onTick (registered at module load);
+// main.js only handles load + dispose lifecycle.
+import { loadMossrootPulse, disposeMossrootPulse } from './puzzleMossrootPulse.js';
 import { loadTwilightFountains, tickTwilightFountains, clearTwilightFountains } from './twilightFountains.js';
 import { loadCinderBallistas, tickCinderBallistas, clearCinderBallistas } from './cinderBallistas.js';
 import { loadVoidTeleportPads, tickVoidTeleportPads, clearVoidTeleportPads } from './voidTeleportPads.js';
@@ -621,6 +625,7 @@ function _teardownActiveRun() {
   if (state.scene) disposeFlowWeaver(state.scene);
   if (state.scene) disposeHarmonicAlignment(state.scene);
   if (state.scene) disposePrismLock(state.scene);
+  if (state.scene) disposeMossrootPulse(state.scene);   // FE-V2
   // Tear down twilight fountains (no-op on non-twilight stages). Mirrors
   // the forestAmber teardown shape; clear path also nulls
   // state.run.fountainSpeedBuff so the buff can't leak across runs.
@@ -1058,6 +1063,9 @@ function applyMetaUpgrades() {
       try { loadFlowWeaver(state.scene); } catch (e) { console.warn('[main] loadFlowWeaver failed:', e); }
       try { loadHarmonicAlignment(state.scene); } catch (e) { console.warn('[main] loadHarmonicAlignment failed:', e); }
       try { loadPrismLock(state.scene); } catch (e) { console.warn('[main] loadPrismLock failed:', e); }
+      // FE-V2: Mossroot Pulse puzzle (Mossroot Hollow). Bramble Maze + Glowfen
+      // ship without puzzles in v0.2 (no load* needed).
+      try { loadMossrootPulse(state.scene); } catch (e) { console.warn('[main] loadMossrootPulse failed:', e); }
       // FOREST ITER C1: Lockdown Arena, one arena per run for v1. Anchored on
       // the south amber cluster (~1, -28) — 6 dense hotspots (seeds 1003,
       // 1007, 1009, 1011, 1013, 1014) inside Glade bounds (glade maxZ=45 so
@@ -1121,6 +1129,7 @@ function applyMetaUpgrades() {
       disposeFlowWeaver(state.scene);
       disposeHarmonicAlignment(state.scene);
       disposePrismLock(state.scene);
+      disposeMossrootPulse(state.scene);   // FE-V2
       clearCinderBallistas(state.scene);
       clearCinderHazards(state.scene);
       clearVoidTeleportPads(state.scene);
@@ -1147,6 +1156,7 @@ function applyMetaUpgrades() {
       disposeFlowWeaver(state.scene);
       disposeHarmonicAlignment(state.scene);
       disposePrismLock(state.scene);
+      disposeMossrootPulse(state.scene);   // FE-V2
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearVoidTeleportPads(state.scene);
@@ -1179,6 +1189,7 @@ function applyMetaUpgrades() {
       disposeFlowWeaver(state.scene);
       disposeHarmonicAlignment(state.scene);
       disposePrismLock(state.scene);
+      disposeMossrootPulse(state.scene);   // FE-V2
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearCinderBallistas(state.scene);
@@ -1193,6 +1204,7 @@ function applyMetaUpgrades() {
       disposeFlowWeaver(state.scene);
       disposeHarmonicAlignment(state.scene);
       disposePrismLock(state.scene);
+      disposeMossrootPulse(state.scene);   // FE-V2
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearCinderBallistas(state.scene);

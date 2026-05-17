@@ -25,17 +25,33 @@
  * Defensive optional-chain on input so a missing field can't crash this
  * module while FE-C3A is in flight.
  *
- * === PORTAL TOPOLOGY (LOCKED) ===
- * 3 outbound portals in the Glade (from FOREST_PORTAL_POSITIONS) +
- * 3 return portals at each puzzle room's center. Total = 6. NO meta-gate;
- * all portals are usable from run 1.
+ * === PORTAL TOPOLOGY (data-driven from FOREST_PORTAL_POSITIONS + FOREST_ROOMS) ===
+ * Outbound portals are auto-enumerated from FOREST_PORTAL_POSITIONS; return
+ * portals are auto-enumerated from FOREST_ROOMS (skipping the hub). NO
+ * meta-gate; all portals are usable from run 1.
  *
+ * FE-V0.1 (3 outbound + 3 return = 6 total):
  *   toSaphollow      (-35, -45)  →  saphollow.center      (-70, -90)
  *   toCrystalchoir   (  0,  55)  →  crystalchoir.center   (  0,  80)
  *   toAmberlabyrinth ( 55,  10)  →  amberlabyrinth.center ( 130,  0)
  *   returnSaphollow      → glade.center (0,0)
  *   returnCrystalchoir   → glade.center (0,0)
  *   returnAmberlabyrinth → glade.center (0,0)
+ *
+ * FE-V0.2 (2026-05-17, +3 outbound + +3 return = 12 total):
+ *   toBramblemaze    ( 40,  40)  →  bramblemaze.center    ( 95,  80)
+ *   toMossroot       (  0, -44)  →  mossroot.center       (  0, -140)
+ *   toGlowfen        (-44,   0)  →  glowfen.center        (-160,   0)
+ *   returnBramblemaze   → glade.center (0,0)
+ *   returnMossroot      → glade.center (0,0)
+ *   returnGlowfen       → glade.center (0,0)
+ *
+ * NOTE on mossroot path: the south breadcrumb trail (0,0)→(0,-44) passes
+ * directly through the Lockdown Arena trigger at (1,-28) r=8. That's
+ * expected one-shot per run behavior — the trigger only fires while
+ * currentRoom === 'glade', and player exits glade by reaching the portal
+ * which sits 16u south of the arena. Trap Corridor at x=-1, z=19/22/25
+ * is north of glade origin so the south breadcrumb avoids it cleanly.
  *
  * Arrival is at the puzzle room's center (NOT at the symmetric portal
  * position) so the player lands well inside the room. Return portals all
