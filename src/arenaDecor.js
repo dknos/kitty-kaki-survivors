@@ -27,6 +27,7 @@ import { fxTex } from './fxTextures.js';
 import { FOREST_ROOMS } from './forestRooms.js';
 import { loadForestLandmarks } from './forestLandmarks.js';
 import { loadForestCoffins } from './forestCoffins.js';
+import { loadForestSealedDoors } from './forestSealedDoors.js';
 import { loadForestNeutrals } from './forestNeutrals.js';
 import { loadForestEnvHazards } from './forestEnvHazards.js';
 import { loadForestChests } from './forestChests.js';
@@ -158,6 +159,21 @@ function _buildForestDecor(group, opts) {
     } catch (e) {
       console.warn('[arenaDecor] loadForestChests failed:', e);
       _gameState._chestsLoaded = false;
+    }
+  }
+  // ── FOREST-V2-A14 Sealed Door Room Progression (2026-05-17) ──
+  // Scene-scoped DOM prompt + per-run sealed-room state init for the VS-style
+  // room-gating cohort. Once-per-scene gate mirrors chests/reaper/etc. The
+  // module is event-driven (onRoomEnter / onRoomBossKilled hooks); load just
+  // ensures the DOM overlay exists and seeds state.run._sealedRooms when a
+  // legacy save reaches us without resetState being run.
+  if (_gameState && _gameState.scene && !_gameState._sealedDoorsLoaded) {
+    _gameState._sealedDoorsLoaded = true;
+    try {
+      loadForestSealedDoors(_gameState.scene, _gameState);
+    } catch (e) {
+      console.warn('[arenaDecor] loadForestSealedDoors failed:', e);
+      _gameState._sealedDoorsLoaded = false;
     }
   }
   // ── FOREST-V2-A7 Reaper Endgame (2026-05-17) ──

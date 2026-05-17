@@ -319,6 +319,15 @@ export function resetState() {
   state.run.lockdownWavesCleared  = 0;       // 0..3 wave-progression mirror for UI/badges
   state.run.lockdownEliteSeen     = false;   // any elite tagged into the live lockdown
   state.run._forestLockdownFired  = false;   // one-time per-run trigger guard (Forest)
+  // ── Sealed Door Room Progression (FOREST-V2-A14, 2026-05-17) ──
+  // Per-run map keyed by FOREST_ROOMS id (sealable non-glade rooms only).
+  // Shape: { roomId: { bossId: string, alive: boolean }, ... }
+  // - Key MISSING        → never entered this run (next entry spawns boss + seals)
+  // - alive === true     → boss alive (return portal stays sealed)
+  // - alive === false    → cleared (return portal already open; no respawn)
+  // Reset every run so a fresh forest run replays the gating from zero.
+  // Consumed by src/forestSealedDoors.js (onRoomEnter / onRoomBossKilled).
+  state.run._sealedRooms          = {};
   // FOREST ITER C2 — Trap Corridor (stage-agnostic env-damage hazard lane,
   // src/trapCorridor.js). True if ≥1 corridor is armed; cheap flag so
   // readers don't have to iterate the corridor list.

@@ -306,6 +306,11 @@ function _spawnPortal(parentGroup, sharedGeos, sharedMats, def) {
     z: def.z,
     dest: { x: def.dest.x, z: def.dest.z },
     kind: def.kind,
+    // FOREST-V2-A14 — room identity for sealed-door cohort (forestSealedDoors.js).
+    // `roomId`     = the room this portal SITS IN (outbound: 'glade'; return: room id)
+    // `destRoomId` = the room this portal TRANSPORTS TO (outbound: p.to; return: 'glade')
+    roomId: def.roomId || null,
+    destRoomId: def.destRoomId || null,
     seed: def.seed,
     baseColorHex: baseColor,
     peakColorHex: peakColor,
@@ -429,6 +434,8 @@ export function loadForestPortals(scene) {
       z: p.z,
       dest: { x: destRoom.center.x, z: destRoom.center.z },
       kind: 'outbound',
+      roomId: 'glade',
+      destRoomId: p.to,
       seed: seedCounter++,
     });
   }
@@ -449,6 +456,8 @@ export function loadForestPortals(scene) {
       z: room.center.z,
       dest: { x: gladeCenter.x, z: gladeCenter.z },
       kind: 'return',
+      roomId: roomId,
+      destRoomId: 'glade',
       seed: seedCounter++,
     }));
   }
@@ -476,6 +485,11 @@ function _findReadyPortalNearHero(heroPos, tNow) {
   let best = null;
   let bestD2 = PROXIMITY_R2;
   for (const portal of _portals) {
+    // FOREST-V2-A14 — sealed-door cohort flips portal._sealed=true when the
+    // room's miniboss is alive. Treat sealed portals as un-pickable here so
+    // both E-press and walk-into-portal paths no-op cleanly without any
+    // hero teleport. The proximity prompt overlay is owned by forestSealedDoors.
+    if (portal._sealed) continue;
     if (portal.cooldownUntil > tNow) continue;
     if (portal.localStepGuard > tNow) continue;
     const dx = heroPos.x - portal.x;
@@ -688,3 +702,10 @@ export { disposeForestPortals as clearForestPortals };
 export function _debugPortals()    { return _portals.slice(); }
 export function _debugTrails()     { return _trails.slice(); }
 export function _debugFlashRings() { return _flashRings.slice(); }
+
+// FOREST-V2-A14 — live portal-record accessor for the sealed-door cohort.
+// Returns the same internal array reference (NOT a copy) so the consumer
+// (src/forestSealedDoors.js) can mutate per-portal `_sealed` flags + tint
+// materials in place. Cohort 14 is the only intended caller; other modules
+// should keep using _debugPortals() which returns a defensive shallow copy.
+export function getForestPortals() { return _portals; }
