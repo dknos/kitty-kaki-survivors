@@ -86,6 +86,11 @@ import { tickForestCoffins, disposeForestCoffins } from './forestCoffins.js';
 // mirrors disposeForestCoffins — also clears state._neutralsLoaded so the
 // next forest scene load triggers a fresh placement.
 import { tickForestNeutrals, disposeForestNeutrals } from './forestNeutrals.js';
+// FE-V2 Environmental Hazards (FE-V2-A5, 2026-05-17) — mushroom rings, tar
+// pits, falling branches across all 7 forest rooms. Damage hero AND enemies
+// (VS-style kite mechanic). Hero also gets slow (mushrooms/tar pit) and
+// stun-via-zero-spd (branches). Loaded by arenaDecor alongside neutrals.
+import { tickForestEnvHazards, disposeForestEnvHazards } from './forestEnvHazards.js';
 import { loadTwilightFountains, tickTwilightFountains, clearTwilightFountains } from './twilightFountains.js';
 import { loadCinderBallistas, tickCinderBallistas, clearCinderBallistas } from './cinderBallistas.js';
 import { loadVoidTeleportPads, tickVoidTeleportPads, clearVoidTeleportPads } from './voidTeleportPads.js';
@@ -662,6 +667,12 @@ function _teardownActiveRun() {
     disposeForestNeutrals(state.scene);
     if (state) state._neutralsLoaded = false;
   }
+  // FE-V2 Env-Hazards teardown — same idempotency + gate-flag reset shape as
+  // landmarks/coffins/neutrals. Next forest scene load re-scatters hazards.
+  if (state.scene) {
+    disposeForestEnvHazards(state.scene);
+    if (state) state._envHazardsLoaded = false;
+  }
   // Tear down twilight fountains (no-op on non-twilight stages). Mirrors
   // the forestAmber teardown shape; clear path also nulls
   // state.run.fountainSpeedBuff so the buff can't leak across runs.
@@ -1169,6 +1180,7 @@ function applyMetaUpgrades() {
       disposeForestLandmarks(state.scene); state._landmarksLoaded = false; // FE-V2 Landmarks
       disposeForestCoffins(state.scene);   state._coffinsLoaded   = false; // FE-V2 Coffins
       disposeForestNeutrals(state.scene);  state._neutralsLoaded  = false; // FE-V2 Neutrals
+      disposeForestEnvHazards(state.scene); state._envHazardsLoaded = false; // FE-V2 EnvHazards
       clearCinderBallistas(state.scene);
       clearCinderHazards(state.scene);
       clearVoidTeleportPads(state.scene);
@@ -1199,6 +1211,7 @@ function applyMetaUpgrades() {
       disposeForestLandmarks(state.scene); state._landmarksLoaded = false; // FE-V2 Landmarks
       disposeForestCoffins(state.scene);   state._coffinsLoaded   = false; // FE-V2 Coffins
       disposeForestNeutrals(state.scene);  state._neutralsLoaded  = false; // FE-V2 Neutrals
+      disposeForestEnvHazards(state.scene); state._envHazardsLoaded = false; // FE-V2 EnvHazards
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearVoidTeleportPads(state.scene);
@@ -1235,6 +1248,7 @@ function applyMetaUpgrades() {
       disposeForestLandmarks(state.scene); state._landmarksLoaded = false; // FE-V2 Landmarks
       disposeForestCoffins(state.scene);   state._coffinsLoaded   = false; // FE-V2 Coffins
       disposeForestNeutrals(state.scene);  state._neutralsLoaded  = false; // FE-V2 Neutrals
+      disposeForestEnvHazards(state.scene); state._envHazardsLoaded = false; // FE-V2 EnvHazards
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearCinderBallistas(state.scene);
@@ -1253,6 +1267,7 @@ function applyMetaUpgrades() {
       disposeForestLandmarks(state.scene); state._landmarksLoaded = false; // FE-V2 Landmarks
       disposeForestCoffins(state.scene);   state._coffinsLoaded   = false; // FE-V2 Coffins
       disposeForestNeutrals(state.scene);  state._neutralsLoaded  = false; // FE-V2 Neutrals
+      disposeForestEnvHazards(state.scene); state._envHazardsLoaded = false; // FE-V2 EnvHazards
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearCinderBallistas(state.scene);
@@ -1745,6 +1760,11 @@ function frame(now) {
     // FE-V2 Neutrals (2026-05-17) — fireflies drift, deer state machine,
     // owl blink scheduler. Bails immediately when no neutrals loaded.
     _p=perfStart(); tickForestNeutrals(state, logicDt); perfMark('forestNeutrals', _p);
+    // FE-V2-A5 EnvHazards (2026-05-17) — mushroom rings / tar pits / falling
+    // branches. Reads hero + enemies; MIN-stacks hero hazardSlow against
+    // pollen (tickStageHazards writes absolute at line 1734 above — our tick
+    // ordering matters, must run AFTER). Bails immediately when not loaded.
+    _p=perfStart(); tickForestEnvHazards(state, logicDt); perfMark('forestEnvHazards', _p);
     // FE-C3A — puzzle system tick + room transition detection. Puzzle tick
     // is a no-op when no puzzle is active. Room detection runs every frame
     // so a fast hero crossing portals doesn't strand a stale currentRoom.
