@@ -33,6 +33,12 @@
  */
 
 import * as THREE from 'three';
+import { music } from './audio.js';
+
+// FOREST-V2-A18 — emit phase-change event on first entry to each phase.
+// Index → name map for music.setForestPhase. Aligned with P_* constants below.
+const _PHASE_NAMES = ['midday', 'golden', 'dusk', 'twilight', 'bloodmoon'];
+let _lastEmittedPhase = -1;
 
 // ── 8-color palette slots (NO new hex) ─────────────────────────────────────
 const SLOT4_DARK  = 0x4a3220; // dusk/blood-moon darkness
@@ -317,6 +323,14 @@ export function tickForestDayNight(state, _dt) {
   const gameT = (state.time && typeof state.time.game === 'number') ? state.time.game : 0;
   const { idx, t } = _phaseAt(gameT);
 
+  // FOREST-V2-A18 — phase-change hook: emit music.setForestPhase exactly
+  // once per transition (not every frame). Initial entry (was -1) also
+  // fires so the music layer boots even if forestDayNight loads mid-phase.
+  if (idx !== _lastEmittedPhase) {
+    _lastEmittedPhase = idx;
+    try { music.setForestPhase(_PHASE_NAMES[idx]); } catch (_) {}
+  }
+
   // Resolve previous-phase + current-phase anchors, then lerp between them
   // by `t`. Continuous: no step discontinuities at phase boundaries.
   const prevIdx = idx === 0 ? 0 : idx - 1;
@@ -378,6 +392,7 @@ export function disposeForestDayNight(scene) {
     _scene = null;
     _sun = null;
     _hemi = null;
+    _lastEmittedPhase = -1;
     return;
   }
 
@@ -406,6 +421,9 @@ export function disposeForestDayNight(scene) {
   _scene = null;
   _sun = null;
   _hemi = null;
+  // FOREST-V2-A18 — reset phase memory so a subsequent load re-emits the
+  // initial phase to the music layer.
+  _lastEmittedPhase = -1;
 }
 
 /**
