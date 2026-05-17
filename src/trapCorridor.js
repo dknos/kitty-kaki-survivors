@@ -128,10 +128,17 @@ function _buildRingMesh(radius, hexColor) {
     blending: THREE.AdditiveBlending,
     depthWrite: false,
     side: THREE.DoubleSide,
+    // Ground-decal Z-order fix (2026-05-17 user report): trap shard
+    // telegraph/impact rings lie flat on the floor; bias them BELOW the
+    // hero+enemy meshes so opaque entities occlude correctly.
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
   });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.layers.enable(BLOOM_LAYER); // ring is bloom-tagged per spec
   mesh.visible = false;
+  mesh.renderOrder = -1;
   return mesh;
 }
 
