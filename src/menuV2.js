@@ -19,8 +19,8 @@
  * showStartScreen call ("Press Play to begin"), which we re-route.
  */
 
-import { getMeta, selectedStage, setOption, AVATARS, selectedAvatar } from './meta.js';
-import { STAGES, CHARACTERS } from './config.js';
+import { getMeta, selectedStage, setOption, selectedAvatar } from './meta.js';
+import { STAGES, CHARACTERS, AVATARS } from './config.js';
 import { createCharCarousel } from './charCarousel.js';
 import { state } from './state.js';
 
