@@ -75,14 +75,30 @@ export function updateBlobShadows() {
 
   // Other entities: enemies with castShadow already cast a real one — skip.
   const arr = state.enemies.active;
+  // Performance: 24u camera-distance gate (576 squared). Skips matrix updates
+  // and drawn instances for enemies far off-screen. O(n) math is cheaper than GPU draw.
+  const DIST_SQ_CAP = 24 * 24;
   for (let k = 0; k < arr.length && i < CAP; k++) {
     const e = arr[k];
     if (!e.alive) continue;
     if (e.mesh && e.mesh.userData && e.mesh.userData._castSet) continue;
+
+    // Fallback to state position if mesh position is unavailable
+    const px = e.mesh ? e.mesh.position.x : (e.pos ? e.pos.x : 0);
+    const pz = e.mesh ? e.mesh.position.z : (e.pos ? e.pos.z : 0);
+
+    // Check distance to hero
+    if (hp) {
+      const dx = px - hp.x;
+      const dz = pz - hp.z;
+      if (dx * dx + dz * dz > DIST_SQ_CAP) continue;
+    }
+
     const ms = e.mesh ? e.mesh.scale.x : 1;
     // size ≈ horizontal footprint of the model
     const r = Math.max(0.6, ms * 0.9);
-    _v3.set(e.mesh.position.x, Y_DECAL, e.mesh.position.z);
+
+    _v3.set(px, Y_DECAL, pz);
     _m4.compose(_v3, _flatX, _tmpScale.set(r, r, r));
     _inst.setMatrixAt(i++, _m4);
   }
