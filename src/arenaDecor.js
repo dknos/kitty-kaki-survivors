@@ -28,6 +28,7 @@ import { FOREST_ROOMS } from './forestRooms.js';
 import { loadForestLandmarks } from './forestLandmarks.js';
 import { loadForestCoffins } from './forestCoffins.js';
 import { loadForestNeutrals } from './forestNeutrals.js';
+import { loadForestEnvHazards } from './forestEnvHazards.js';
 import { state as _gameState } from './state.js';
 
 // Active decor group + cleanup hooks, tracked module-side so clearArenaDecor
@@ -122,6 +123,21 @@ function _buildForestDecor(group, opts) {
     } catch (e) {
       console.warn('[arenaDecor] loadForestNeutrals failed:', e);
       _gameState._neutralsLoaded = false;
+    }
+  }
+  // ── FE-V2 Environmental Hazards (FE-V2-A5, 2026-05-17) ──
+  // Scene-scoped (mushroom rings / tar pits / falling branches across all 7
+  // rooms). Same once-per-scene gate as landmarks/coffins/neutrals. Load
+  // AFTER landmarks because the keep-out test reads getLandmarkPositions()
+  // for placement (landmarks loader sits four blocks above us so the ordering
+  // is guaranteed).
+  if (_gameState && _gameState.scene && !_gameState._envHazardsLoaded) {
+    _gameState._envHazardsLoaded = true;
+    try {
+      loadForestEnvHazards(_gameState.scene, _gameState, opts && opts.rng);
+    } catch (e) {
+      console.warn('[arenaDecor] loadForestEnvHazards failed:', e);
+      _gameState._envHazardsLoaded = false;
     }
   }
   return result;
