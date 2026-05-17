@@ -330,6 +330,10 @@ export function resetState() {
   state.run._reaperWarned         = false;
   state.run._reaperSpawned        = false;
   state.run._reaperOutlastedFired = false;
+  // Per-run chest counter consumed by forestHud.js (em-dash fallback path
+  // flips to numeric "Chests: N" once this field exists). Bumped in
+  // forestChests._onPicked after _applyReward succeeds (single dispatch site).
+  state.run._chestsOpened         = 0;
   state.run.stats                 = {};
   state.run.relicDrop = null;
   state.run.equippedRelic = null;
