@@ -92,6 +92,7 @@ import { getLandmarkPositions } from './forestLandmarks.js';
 import { state as _gameState } from './state.js';
 import { damageEnemy } from './enemies.js';
 import { takeDamage as heroTakeDamage } from './hero.js';
+import { createRuneRing } from './fx/runeRing.js';
 
 // ── pool caps ───────────────────────────────────────────────────────────────
 const MUSHROOMS_PER_RING_MIN = 5;
@@ -328,42 +329,18 @@ function _buildMushroomMeshes() {
   _capMesh.userData.envHazardKind = 'mushroom_cap';
   _track(capGeo); _track(capMat);
 
-  // Puff ring — one per ring slot. Uses RingGeometry so the visual is a
-  // green halo expanding outward. Material is additive + bloom-tagged so the
-  // puff reads at iso distance. Built at radius=1 then scaled per-frame.
-  const puffInner = PUFF_INNER;
-  const puffOuter = PUFF_OUTER;
-  const puffGeo = new THREE.RingGeometry(puffInner, puffOuter, 24);
-  puffGeo.rotateX(-Math.PI / 2);
-  // Shared material across all CAP_RINGS instances — per-instance opacity
-  // would need an InstancedBufferAttribute + custom shader (not justifiable
-  // for first-cut). Instead the puff "show/hide" rides on the per-instance
-  // y-scale (collapse to 0 when hidden, full when visible — see
-  // _puffSetVisual). The opacity baseline 0.7 reads as a punchy halo when
-  // visible without needing per-instance alpha ramping. Brief's expand-and-
-  // fade animation is approximated by the scale ramp (0.4 → 1.0 during the
-  // 0.3s puff window) — the disc grows while staying additive-bloom
-  // visible, then snaps off at puff-end.
-  const puffMat = new THREE.MeshBasicMaterial({
-    color: SLOT2_GREEN,
-    transparent: true,
-    opacity: 0.7,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-    // Ground-decal Z-order fix (2026-05-17 user report: AoE rendering above
-    // hero). polygonOffset pushes the ring further BELOW in the depth buffer
-    // so the opaque hero/enemy meshes occlude it correctly.
-    polygonOffset: true,
-    polygonOffsetFactor: -1,
-    polygonOffsetUnits: -1,
+  // Puff ring — canonical rune-ring helper (PHASE 2 P2A). Replaces the flat
+  // RingGeometry placeholder with the 8-layer baked-glyph quality bar so the
+  // spore halo reads as a "magical sigil" instead of a featureless donut.
+  // Ground-decal: polygonOffset BELOW + renderOrder -1 so hero/enemy meshes
+  // occlude correctly (2026-05-17 cohort 20 fix).
+  const puffRune = createRuneRing({
+    radius: PUFF_OUTER, color: SLOT2_GREEN, opacity: 0.7,
+    groundDecal: true, instanced: true, cap: CAP_RINGS,
+    userData: { envHazardKind: 'mushroom_puff' },
   });
-  _puffMesh = new THREE.InstancedMesh(puffGeo, puffMat, CAP_RINGS);
-  _puffMesh.layers.enable(BLOOM_LAYER);
-  _puffMesh.userData.envHazardKind = 'mushroom_puff';
-  _puffMesh.frustumCulled = false;
-  _puffMesh.renderOrder = -1;
-  _track(puffGeo); _track(puffMat);
+  _puffMesh = puffRune.mesh;
+  _track(puffRune.material);
 }
 
 function _buildTarPitMesh() {
@@ -401,31 +378,16 @@ function _buildBranchMeshes() {
   _branchBoxMesh.userData.envHazardKind = 'branch';
   _track(bGeo); _track(bMat);
 
-  // Telegraph ring — slot-6 amber, on bloom layer. RingGeometry inner=1.3
-  // outer=1.5 per brief. Built once at unit, never resized.
-  const rGeo = new THREE.RingGeometry(BRANCH_TELE_INNER, BRANCH_TELE_OUTER, 32);
-  rGeo.rotateX(-Math.PI / 2);
-  // Shared material — per-instance opacity ramp would need a custom shader.
-  // Hard on/off via _ZERO_MATRIX (hidden) → identity (1.5s warning visible)
-  // matches the rest of this module's stamped-show/hide approach. opacity
-  // 0.85 reads as a strong amber telegraph circle without being eye-popping.
-  const rMat = new THREE.MeshBasicMaterial({
-    color: SLOT6_GOLD,
-    transparent: true,
-    opacity: 0.85,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-    // Ground-decal Z-order fix (2026-05-17 user report).
-    polygonOffset: true,
-    polygonOffsetFactor: -1,
-    polygonOffsetUnits: -1,
+  // Telegraph ring — canonical rune-ring helper (PHASE 2 P2A). Slot-6 amber
+  // baked-glyph quality bar replaces the flat RingGeometry placeholder.
+  // Ground-decal flag keeps the renderOrder=-1 + polygonOffset Z-fix.
+  const teleRune = createRuneRing({
+    radius: BRANCH_TELE_OUTER, color: SLOT6_GOLD, opacity: 0.85,
+    groundDecal: true, instanced: true, cap: CAP_ACTIVE_BRANCHES,
+    userData: { envHazardKind: 'branch_ring' },
   });
-  _branchRingMesh = new THREE.InstancedMesh(rGeo, rMat, CAP_ACTIVE_BRANCHES);
-  _branchRingMesh.layers.enable(BLOOM_LAYER);
-  _branchRingMesh.userData.envHazardKind = 'branch_ring';
-  _branchRingMesh.renderOrder = -1;
-  _track(rGeo); _track(rMat);
+  _branchRingMesh = teleRune.mesh;
+  _track(teleRune.material);
 }
 
 // ── placement ──────────────────────────────────────────────────────────────

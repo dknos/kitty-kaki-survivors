@@ -77,6 +77,7 @@ import { acquireWeapon, REGISTRY } from './weapons/index.js';
 import { applyPassive, PASSIVES } from './weapons/passives.js';
 import { spawnKillRing, spawnMagnetSpark } from './fx.js';
 import { sfx } from './audio.js';
+import { createRuneRing } from './fx/runeRing.js';
 
 // ── pool caps ───────────────────────────────────────────────────────────────
 const CAP_CHESTS = 8;
@@ -234,23 +235,15 @@ function _buildChestMeshes() {
   _lockMesh.layers.enable(BLOOM_LAYER);
   _track(lockGeo); _track(lockMat);
 
-  // Sparkle ring overhead — RingGeometry, additive bloom-tagged amber.
-  // Built once at unit; rotated flat to xz plane.
-  const sparkleGeo = new THREE.RingGeometry(SPARKLE_R_INNER, SPARKLE_R_OUTER, 24);
-  sparkleGeo.rotateX(-Math.PI / 2);
-  const sparkleMat = new THREE.MeshBasicMaterial({
-    color: SLOT6_GOLD,
-    transparent: true,
-    opacity: 0.85,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    side: THREE.DoubleSide,
+  // Sparkle ring overhead — canonical rune-ring helper (PHASE 2 P2A).
+  // Builds the 8-layer baked-glyph PlaneGeometry+MeshBasicMaterial pattern
+  // used by every quality consumer (frostbloom/sigilbell/bossTelegraphs).
+  const sparkleRune = createRuneRing({
+    radius: SPARKLE_R_OUTER, color: SLOT6_GOLD, opacity: 0.85,
+    instanced: true, cap: CAP_CHESTS, userData: { chestPart: 'sparkle' },
   });
-  _sparkleMesh = new THREE.InstancedMesh(sparkleGeo, sparkleMat, CAP_CHESTS);
-  _sparkleMesh.userData.chestPart = 'sparkle';
-  _sparkleMesh.layers.enable(BLOOM_LAYER);
-  _sparkleMesh.frustumCulled = false;
-  _track(sparkleGeo); _track(sparkleMat);
+  _sparkleMesh = sparkleRune.mesh;
+  _track(sparkleRune.material);
 
   // Gold pillar burst — vertical box, additive amber, scaled up during the
   // open beat. CAP_CHESTS slots, hidden via ZERO_MATRIX when not bursting.

@@ -51,6 +51,7 @@ import { state } from './state.js';
 import { BLOOM_LAYER } from './postfx.js';
 import { damageEnemy } from './enemies.js';
 import { takeDamage as heroTakeDamage } from './hero.js';
+import { createRuneRing } from './fx/runeRing.js';
 
 // ─── module state ─────────────────────────────────────────────────────────────
 /** @type {THREE.Scene|null} */
@@ -115,31 +116,17 @@ function _buildShardMesh(paletteSlots) {
 }
 
 function _buildRingMesh(radius, hexColor) {
-  // Thin ring: inner = radius - lineWeight, outer = radius. Pre-rotated flat.
-  // Use plane-base RingGeometry: 32 segs is plenty for a 1-2u radius ring.
-  const inner = Math.max(0.02, radius - RING_LINE_WEIGHT);
-  const outer = radius;
-  const geo = new THREE.RingGeometry(inner, outer, 32);
-  geo.rotateX(-Math.PI / 2);
-  const mat = new THREE.MeshBasicMaterial({
-    color: hexColor,
-    transparent: true,
-    opacity: 0.0,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-    // Ground-decal Z-order fix (2026-05-17 user report): trap shard
-    // telegraph/impact rings lie flat on the floor; bias them BELOW the
-    // hero+enemy meshes so opaque entities occlude correctly.
-    polygonOffset: true,
-    polygonOffsetFactor: -1,
-    polygonOffsetUnits: -1,
+  // Canonical rune-ring helper (PHASE 2 P2A) — replaces flat RingGeometry
+  // placeholder with the 8-layer baked-glyph quality bar. Each trap ring
+  // gets its OWN material (no shareMaterial) because opacity is animated
+  // independently per-frame across telegraph/impact phases. Ground-decal
+  // mode applies polygonOffset + renderOrder=-1 (cohort 20 Z-fix).
+  const rune = createRuneRing({
+    radius, color: hexColor, opacity: 0.0,
+    groundDecal: true,
   });
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.layers.enable(BLOOM_LAYER); // ring is bloom-tagged per spec
-  mesh.visible = false;
-  mesh.renderOrder = -1;
-  return mesh;
+  rune.mesh.visible = false;
+  return rune.mesh;
 }
 
 // ─── per-frame: trap state machine ────────────────────────────────────────────

@@ -69,6 +69,7 @@ import { state as _gameState } from './state.js';
 import { REGISTRY, acquireWeapon } from './weapons/index.js';
 import { sfx } from './audio.js';
 import { showBanner } from './ui.js';
+import { createRuneRing } from './fx/runeRing.js';
 
 // ── pool cap (per brief) ───────────────────────────────────────────────────
 const CAP_PICKUPS = 4;
@@ -151,21 +152,15 @@ function _buildBodyMesh() {
 }
 
 function _buildSparkleMesh() {
-  const geo = new THREE.RingGeometry(SPARKLE_R_INNER, SPARKLE_R_OUTER, 16);
-  geo.rotateX(-Math.PI / 2);
-  const mat = new THREE.MeshBasicMaterial({
-    color: SLOT7_GOLD,
-    transparent: true,
-    opacity: 0.85,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    side: THREE.DoubleSide,
+  // Canonical rune-ring helper (PHASE 2 P2A) — baked-glyph quality bar
+  // replaces the flat RingGeometry placeholder.
+  const rune = createRuneRing({
+    radius: SPARKLE_R_OUTER, color: SLOT7_GOLD, opacity: 0.85,
+    instanced: true, cap: CAP_PICKUPS,
+    userData: { pickupPart: 'weaponDropSparkle' },
   });
-  _sparkleMesh = new THREE.InstancedMesh(geo, mat, CAP_PICKUPS);
-  _sparkleMesh.layers.enable(BLOOM_LAYER);
-  _sparkleMesh.frustumCulled = false;
-  _sparkleMesh.userData.pickupPart = 'weaponDropSparkle';
-  _track(geo); _track(mat);
+  _sparkleMesh = rune.mesh;
+  _track(rune.material);
 }
 
 function _zeroInstanced(mesh, cap) {
