@@ -145,6 +145,16 @@ export const state = {
     // level-up/sigil offer. Reset to 0 at the top of showLevelUpModal so the
     // cap (SIGIL_REROLL.capPerOffer) never leaks across queued offers.
     rerollsThisOffer: 0,
+    // FOREST-V2-A12 (#116) — level-up QoL economy.
+    // `_rerollsThisRun` ramps the GOLD-paid reroll button cost
+    // (50 + 25 * uses, per run). Distinct from `rerollsThisOffer` above,
+    // which gates the META-coin reroll's per-offer cap.
+    _rerollsThisRun: 0,
+    // Set of choice ids banished this run (filtered from weaponChoices()
+    // forever after the BANISH action). Set for O(1) lookup; Sets serialize
+    // to `{}` in JSON.stringify — any save/load layer must convert to Array.
+    /** @type {Set<string>} */
+    _banishedThisRun: new Set(),
     // Punch List #3 (2026-05-16) — Dissolve-to-Gold death FX kill-switch.
     // When true, `spawnDissolveBurst` early-outs and skips the 24-instance
     // burst (the kill ring + blob-shadow scale-down still fire). Toggle from
@@ -263,6 +273,14 @@ export function resetState() {
   // FOREST-V2-A6 — per-run gold pool, fed by the forest treasure-chest gold
   // option (3-option picker on miniboss/elite kill). 0 at run start.
   state.run.gold = 0;
+  // FOREST-V2-A12 (#116) — level-up QoL economy (REROLL/BANISH/SKIP).
+  // `_rerollsThisRun` ramps the gold-paid reroll cost (50 + 25 * uses).
+  // `_banishedThisRun` is a Set of choice ids permanently filtered out of
+  // weaponChoices() rolls for the rest of this run. Set chosen for O(1)
+  // lookup; NOTE: Sets serialize to `{}` in JSON.stringify, so any future
+  // save/load layer must convert to Array (acceptable loss for this PR).
+  state.run._rerollsThisRun = 0;
+  state.run._banishedThisRun = new Set();
   // Ascension Evolution gate (Punch List #1, 2026-05-16). Set to true the
   // first time any weapon evolves this run; gate for badges + achievements.
   state.run.hasEvolvedThisRun = false;
