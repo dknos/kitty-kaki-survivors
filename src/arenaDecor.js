@@ -27,6 +27,7 @@ import { fxTex } from './fxTextures.js';
 import { FOREST_ROOMS } from './forestRooms.js';
 import { loadForestLandmarks } from './forestLandmarks.js';
 import { loadForestCoffins } from './forestCoffins.js';
+import { loadForestNeutrals } from './forestNeutrals.js';
 import { state as _gameState } from './state.js';
 
 // Active decor group + cleanup hooks, tracked module-side so clearArenaDecor
@@ -106,6 +107,21 @@ function _buildForestDecor(group, opts) {
     } catch (e) {
       console.warn('[arenaDecor] loadForestCoffins failed:', e);
       _gameState._coffinsLoaded = false;
+    }
+  }
+  // ── FE-V2 Neutrals (2026-05-17) ──
+  // Roaming neutrals (fireflies / deer / owls) are scene-scoped — same
+  // once-per-scene gating pattern as landmarks + coffins. Must load AFTER
+  // landmarks because owl placement reads getLandmarkPositions() for perch
+  // candidates; the landmarks loader sits two blocks above us so the
+  // ordering is guaranteed.
+  if (_gameState && _gameState.scene && !_gameState._neutralsLoaded) {
+    _gameState._neutralsLoaded = true;
+    try {
+      loadForestNeutrals(_gameState.scene, _gameState, opts && opts.rng);
+    } catch (e) {
+      console.warn('[arenaDecor] loadForestNeutrals failed:', e);
+      _gameState._neutralsLoaded = false;
     }
   }
   return result;

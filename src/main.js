@@ -81,6 +81,11 @@ import { tickForestLandmarks, disposeForestLandmarks } from './forestLandmarks.j
 // Teardown mirrors disposeForestLandmarks — also clears state._coffinsLoaded
 // so the next forest scene load triggers a fresh placement.
 import { tickForestCoffins, disposeForestCoffins } from './forestCoffins.js';
+// FE-V2 Neutrals (2026-05-17) — roaming non-combat entities (fireflies / deer
+// / owls). Loaded by arenaDecor alongside landmarks + coffins. Teardown
+// mirrors disposeForestCoffins — also clears state._neutralsLoaded so the
+// next forest scene load triggers a fresh placement.
+import { tickForestNeutrals, disposeForestNeutrals } from './forestNeutrals.js';
 import { loadTwilightFountains, tickTwilightFountains, clearTwilightFountains } from './twilightFountains.js';
 import { loadCinderBallistas, tickCinderBallistas, clearCinderBallistas } from './cinderBallistas.js';
 import { loadVoidTeleportPads, tickVoidTeleportPads, clearVoidTeleportPads } from './voidTeleportPads.js';
@@ -651,6 +656,12 @@ function _teardownActiveRun() {
     disposeForestCoffins(state.scene);
     if (state) state._coffinsLoaded = false;
   }
+  // FE-V2 Neutrals teardown — same idempotency + gate-flag reset shape as
+  // landmarks/coffins. Next forest scene load gets fresh fireflies/deer/owls.
+  if (state.scene) {
+    disposeForestNeutrals(state.scene);
+    if (state) state._neutralsLoaded = false;
+  }
   // Tear down twilight fountains (no-op on non-twilight stages). Mirrors
   // the forestAmber teardown shape; clear path also nulls
   // state.run.fountainSpeedBuff so the buff can't leak across runs.
@@ -1157,6 +1168,7 @@ function applyMetaUpgrades() {
       disposeMossrootPulse(state.scene);   // FE-V2
       disposeForestLandmarks(state.scene); state._landmarksLoaded = false; // FE-V2 Landmarks
       disposeForestCoffins(state.scene);   state._coffinsLoaded   = false; // FE-V2 Coffins
+      disposeForestNeutrals(state.scene);  state._neutralsLoaded  = false; // FE-V2 Neutrals
       clearCinderBallistas(state.scene);
       clearCinderHazards(state.scene);
       clearVoidTeleportPads(state.scene);
@@ -1186,6 +1198,7 @@ function applyMetaUpgrades() {
       disposeMossrootPulse(state.scene);   // FE-V2
       disposeForestLandmarks(state.scene); state._landmarksLoaded = false; // FE-V2 Landmarks
       disposeForestCoffins(state.scene);   state._coffinsLoaded   = false; // FE-V2 Coffins
+      disposeForestNeutrals(state.scene);  state._neutralsLoaded  = false; // FE-V2 Neutrals
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearVoidTeleportPads(state.scene);
@@ -1221,6 +1234,7 @@ function applyMetaUpgrades() {
       disposeMossrootPulse(state.scene);   // FE-V2
       disposeForestLandmarks(state.scene); state._landmarksLoaded = false; // FE-V2 Landmarks
       disposeForestCoffins(state.scene);   state._coffinsLoaded   = false; // FE-V2 Coffins
+      disposeForestNeutrals(state.scene);  state._neutralsLoaded  = false; // FE-V2 Neutrals
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearCinderBallistas(state.scene);
@@ -1238,6 +1252,7 @@ function applyMetaUpgrades() {
       disposeMossrootPulse(state.scene);   // FE-V2
       disposeForestLandmarks(state.scene); state._landmarksLoaded = false; // FE-V2 Landmarks
       disposeForestCoffins(state.scene);   state._coffinsLoaded   = false; // FE-V2 Coffins
+      disposeForestNeutrals(state.scene);  state._neutralsLoaded  = false; // FE-V2 Neutrals
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearCinderBallistas(state.scene);
@@ -1727,6 +1742,9 @@ function frame(now) {
     // FE-V2 Coffins (2026-05-17) — state-machine + open-burst tick. Bails
     // immediately when no coffins loaded; cheap on non-trigger frames.
     _p=perfStart(); tickForestCoffins(state, logicDt); perfMark('forestCoffins', _p);
+    // FE-V2 Neutrals (2026-05-17) — fireflies drift, deer state machine,
+    // owl blink scheduler. Bails immediately when no neutrals loaded.
+    _p=perfStart(); tickForestNeutrals(state, logicDt); perfMark('forestNeutrals', _p);
     // FE-C3A — puzzle system tick + room transition detection. Puzzle tick
     // is a no-op when no puzzle is active. Room detection runs every frame
     // so a fast hero crossing portals doesn't strand a stale currentRoom.
