@@ -309,6 +309,13 @@ export function resetState() {
   // run starts clean; ALWAYS read as `(1 + (state.run._dmgGlobalBonus||0))`
   // so a missing field on legacy save loads can't crash the math.
   state.run._dmgGlobalBonus       = 0;
+  // ── Forest Expansion v0.2 (FE-V2 Coffins, 2026-05-17) ──
+  // Per-run map of opened Evolution Coffin instance ids. Reset every run
+  // so a fresh forest scene gets a fresh placement + fresh opens. Coffin
+  // entities live in src/forestCoffins.js; the dispatch path writes a
+  // truthy entry here keyed by `'c' + instanceIdx`. Persistence is per
+  // run only — coffins refresh between runs (matches VS staple).
+  state.run._coffinsOpened        = {};
   state.run.relicDrop = null;
   state.run.equippedRelic = null;
   state.run.heartPotency = 1;

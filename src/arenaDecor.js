@@ -26,6 +26,7 @@ import { makeRuneRingTexture } from './enemyTells.js';
 import { fxTex } from './fxTextures.js';
 import { FOREST_ROOMS } from './forestRooms.js';
 import { loadForestLandmarks } from './forestLandmarks.js';
+import { loadForestCoffins } from './forestCoffins.js';
 import { state as _gameState } from './state.js';
 
 // Active decor group + cleanup hooks, tracked module-side so clearArenaDecor
@@ -91,6 +92,20 @@ function _buildForestDecor(group, opts) {
     } catch (e) {
       console.warn('[arenaDecor] loadForestLandmarks failed:', e);
       _gameState._landmarksLoaded = false;
+    }
+  }
+  // ── FE-V2 Coffins (2026-05-17) ──
+  // Coffins are scene-scoped (1-2 placements across mossroot/glowfen).
+  // Gate-once-per-scene mirrors the landmarks pattern above. Must load
+  // AFTER landmarks so getLandmarkPositions() returns a populated snapshot
+  // for the keep-out query (landmarks loader sits directly above us).
+  if (_gameState && _gameState.scene && !_gameState._coffinsLoaded) {
+    _gameState._coffinsLoaded = true;
+    try {
+      loadForestCoffins(_gameState.scene, _gameState, opts && opts.rng);
+    } catch (e) {
+      console.warn('[arenaDecor] loadForestCoffins failed:', e);
+      _gameState._coffinsLoaded = false;
     }
   }
   return result;

@@ -76,6 +76,11 @@ import { loadMossrootPulse, disposeMossrootPulse } from './puzzleMossrootPulse.j
 // teardown shape — also clears `state._landmarksLoaded` so the next forest
 // scene load re-populates landmarks fresh.
 import { tickForestLandmarks, disposeForestLandmarks } from './forestLandmarks.js';
+// FE-V2 Coffins (2026-05-17) — Evolution Coffin entities (VS-style hidden
+// chests that unlock superweapons). Loaded by arenaDecor alongside landmarks.
+// Teardown mirrors disposeForestLandmarks — also clears state._coffinsLoaded
+// so the next forest scene load triggers a fresh placement.
+import { tickForestCoffins, disposeForestCoffins } from './forestCoffins.js';
 import { loadTwilightFountains, tickTwilightFountains, clearTwilightFountains } from './twilightFountains.js';
 import { loadCinderBallistas, tickCinderBallistas, clearCinderBallistas } from './cinderBallistas.js';
 import { loadVoidTeleportPads, tickVoidTeleportPads, clearVoidTeleportPads } from './voidTeleportPads.js';
@@ -640,6 +645,12 @@ function _teardownActiveRun() {
     disposeForestLandmarks(state.scene);
     if (state) state._landmarksLoaded = false;
   }
+  // FE-V2 Coffins teardown — same idempotency + gate-flag reset shape as
+  // landmarks. The next forest scene load gets a fresh coffin placement.
+  if (state.scene) {
+    disposeForestCoffins(state.scene);
+    if (state) state._coffinsLoaded = false;
+  }
   // Tear down twilight fountains (no-op on non-twilight stages). Mirrors
   // the forestAmber teardown shape; clear path also nulls
   // state.run.fountainSpeedBuff so the buff can't leak across runs.
@@ -1145,6 +1156,7 @@ function applyMetaUpgrades() {
       disposePrismLock(state.scene);
       disposeMossrootPulse(state.scene);   // FE-V2
       disposeForestLandmarks(state.scene); state._landmarksLoaded = false; // FE-V2 Landmarks
+      disposeForestCoffins(state.scene);   state._coffinsLoaded   = false; // FE-V2 Coffins
       clearCinderBallistas(state.scene);
       clearCinderHazards(state.scene);
       clearVoidTeleportPads(state.scene);
@@ -1173,6 +1185,7 @@ function applyMetaUpgrades() {
       disposePrismLock(state.scene);
       disposeMossrootPulse(state.scene);   // FE-V2
       disposeForestLandmarks(state.scene); state._landmarksLoaded = false; // FE-V2 Landmarks
+      disposeForestCoffins(state.scene);   state._coffinsLoaded   = false; // FE-V2 Coffins
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearVoidTeleportPads(state.scene);
@@ -1207,6 +1220,7 @@ function applyMetaUpgrades() {
       disposePrismLock(state.scene);
       disposeMossrootPulse(state.scene);   // FE-V2
       disposeForestLandmarks(state.scene); state._landmarksLoaded = false; // FE-V2 Landmarks
+      disposeForestCoffins(state.scene);   state._coffinsLoaded   = false; // FE-V2 Coffins
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearCinderBallistas(state.scene);
@@ -1223,6 +1237,7 @@ function applyMetaUpgrades() {
       disposePrismLock(state.scene);
       disposeMossrootPulse(state.scene);   // FE-V2
       disposeForestLandmarks(state.scene); state._landmarksLoaded = false; // FE-V2 Landmarks
+      disposeForestCoffins(state.scene);   state._coffinsLoaded   = false; // FE-V2 Coffins
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearCinderBallistas(state.scene);
@@ -1709,6 +1724,9 @@ function frame(now) {
     // FE-V2 Landmarks (2026-05-17) — AABB trigger pass for shrines/altars +
     // telegraph pulse fade. Bails immediately when no landmarks loaded.
     _p=perfStart(); tickForestLandmarks(logicDt, state); perfMark('forestLandmarks', _p);
+    // FE-V2 Coffins (2026-05-17) — state-machine + open-burst tick. Bails
+    // immediately when no coffins loaded; cheap on non-trigger frames.
+    _p=perfStart(); tickForestCoffins(state, logicDt); perfMark('forestCoffins', _p);
     // FE-C3A — puzzle system tick + room transition detection. Puzzle tick
     // is a no-op when no puzzle is active. Room detection runs every frame
     // so a fast hero crossing portals doesn't strand a stale currentRoom.
