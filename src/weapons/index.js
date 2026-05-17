@@ -50,6 +50,14 @@ import prismWarden  from './prismWarden.js';
 //   the id, _equipForestSpecialsForRun() picks it up with no further change.
 import rootGrasp    from './rootGrasp.js';
 import wispLantern  from './wispLantern.js';
+// FE-V2 cohort 2 (2026-05-17) — 3 more hidden Forest specials. These are
+// REGISTRY-only / `hidden: true` — no in-game unlock path yet (PHASE 1 P1D
+// adds the weapons; future puzzle/coffin tickets wire unlock). Once
+// meta.forestWeapons carries any of these ids, _equipForestSpecialsForRun()
+// picks them up unchanged.
+import sporeCloud   from './sporeCloud.js';
+import briarWhip    from './briarWhip.js';
+import lightningBug from './lightningBug.js';
 // Forest Expansion v0.2 (FE-V2 Coffins, 2026-05-17) — Evolution Coffin
 // superweapons. Unlocked PER RUN (not via meta) by opening a Coffin in
 // mossroot / glowfen while holding base@L8 + paired-passive@L5. Coffin
@@ -90,6 +98,10 @@ export const REGISTRY = {
   // FE-V2
   [rootGrasp.id]:    rootGrasp,
   [wispLantern.id]:  wispLantern,
+  // FE-V2 cohort 2
+  [sporeCloud.id]:   sporeCloud,
+  [briarWhip.id]:    briarWhip,
+  [lightningBug.id]: lightningBug,
   // FE-V2 Coffins — coffin-unlocked evolved superweapons. Per-run only;
   // never enter meta.forestWeapons. acquireWeapon path = forestCoffins.js
   // _dispatchEvolution.
@@ -106,6 +118,11 @@ const FOREST_SPECIAL_IDS = ['sap_weaver', 'choir_lance', 'prism_warden',
   // yet (Glowfen has no puzzle in v0.2); root_grasp unlocks via the
   // mossroot_pulse puzzle reward.
   'root_grasp', 'wisp_lantern',
+  // FE-V2 cohort 2 — scaffolding only in this iter (no unlock path yet;
+  // future puzzle/coffin assignments wire them in). Listed here so when
+  // a future ticket flips them on via meta.forestWeapons the equip flow
+  // picks them up with zero further changes.
+  'spore_cloud', 'briar_whip', 'lightning_bug',
   // FE-V2 Coffins — these are per-run (coffin-dispatched), never persisted
   // to meta.forestWeapons. Listed here for consistency with the seam
   // contract; auto-equip is a no-op for them because the meta gate never
