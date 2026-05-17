@@ -130,6 +130,23 @@ const WEAPON_BLURBS = {
     body: (lv) => `${lv.wisps} orbiting wisp${lv.wisps > 1 ? 's' : ''} auto-strike the closest enemy every ${lv.cadence.toFixed(2)}s for ${lv.dmg} damage each.`,
     tags: ['Orbit', 'Auto-Lock', 'Constant'],
   },
+  // ── FE-V2 cohort 2 (2026-05-17) — three new hidden Forest specials ──
+  // No in-game unlock path yet; codex/Hall of Records consume these blurbs.
+  spore_cloud: {
+    flavor: 'Spore Cloud — A bloom of mushroom spores drifts around you; what wanders into it forgets how to walk.',
+    body: (lv) => `Every ${lv.interval.toFixed(2)}s emits a ${lv.area.toFixed(1)}m spore cloud. Enemies inside take ${lv.dmg} damage per 0.5s and move at ${Math.round((1 - lv.slow) * 100)}% speed.`,
+    tags: ['Aura', 'Slow', 'DoT'],
+  },
+  briar_whip: {
+    flavor: 'Briar Whip — A thorned vine cracks where you face. It cuts shallow but the cuts keep cutting.',
+    body: (lv) => `Sweeps a ${Math.round(lv.arc * 180 / Math.PI)}° / ${lv.length.toFixed(1)}m cone every ${lv.cooldown.toFixed(2)}s for ${lv.dmg} damage, with ${Math.round(lv.bleedChance * 100)}% chance to bleed (5 dmg/s for 2s).`,
+    tags: ['Cone', 'Bleed', 'Directional'],
+  },
+  lightning_bug: {
+    flavor: 'Lightning Bug — A spark with wings finds the closest soul, and once it lands, it leaps to the next.',
+    body: (lv) => `Fires a homing bug every ${lv.cooldown.toFixed(2)}s for ${lv.dmg} damage. Chains to up to ${lv.chains} more target${lv.chains > 1 ? 's' : ''} within ${lv.chainRange.toFixed(1)}m per hit.`,
+    tags: ['Homing', 'Chain', 'Lightning'],
+  },
   // ── FE-V2 Coffins (2026-05-17) — evolution-coffin superweapons ──
   // chain_storm: doubled chain damage + 50% range + 3-bolt fork per pulse.
   // frost_eternal: permanent slow aura + chance-on-tick freeze proc.
@@ -312,6 +329,26 @@ const STAT_FIELDS = {
     { key: 'cadence',   label: 'Cadence', fmt: v => v.toFixed(2) + 's' },
     { key: 'dmg',       label: 'DMG' },
     { key: 'radiusMul', label: 'Orbit×',  fmt: v => v.toFixed(2) },
+  ],
+  // FE-V2 cohort 2 — codex stat rows for the three new hidden specials.
+  spore_cloud: [
+    { key: 'interval', label: 'Interval', fmt: v => v.toFixed(2) + 's' },
+    { key: 'area',     label: 'Area',     fmt: v => v.toFixed(1) + 'm' },
+    { key: 'dmg',      label: 'DMG' },
+    { key: 'slow',     label: 'Slow',     fmt: v => Math.round(v * 100) + '%' },
+  ],
+  briar_whip: [
+    { key: 'cooldown',    label: 'CD',     fmt: v => v.toFixed(2) + 's' },
+    { key: 'arc',         label: 'Arc',    fmt: v => Math.round(v * 180 / Math.PI) + '°' },
+    { key: 'length',      label: 'Length', fmt: v => v.toFixed(1) + 'm' },
+    { key: 'dmg',         label: 'DMG' },
+    { key: 'bleedChance', label: 'Bleed',  fmt: v => Math.round(v * 100) + '%' },
+  ],
+  lightning_bug: [
+    { key: 'cooldown',   label: 'CD',     fmt: v => v.toFixed(2) + 's' },
+    { key: 'dmg',        label: 'DMG' },
+    { key: 'chains',     label: 'Chains' },
+    { key: 'chainRange', label: 'Range',  fmt: v => v.toFixed(1) + 'm' },
   ],
   // FE-V2 Coffins — evolved superweapon stat rows for codex / Hall view
   // (hidden from level-up cards via mod.hidden, same as the FE-V2 hidden
