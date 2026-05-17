@@ -27,6 +27,13 @@ import { notifyStageEnemySpawn, notifyStageEnemyKill } from './stageRules.js';
 import { rollAffixes } from './enemyAffixes.js';
 import { setLeapMarker, clearLeapMarker } from './enemyTells.js';
 import { disposeBossTelegraphs } from './bossTelegraphs.js';
+// Hot-path: kill handlers — converted from dynamic import() to static (commit
+// 358dce1 follow-up). Borgir salvo killing 32 enemies/frame was firing 128+
+// dynamic-import Promises per frame, stalling next-frame entry → 20fps.
+import { notifyEnemyKilled } from './codex.js';
+import { notifyTutorialEvent } from './tutorial.js';
+import { questEvent, grantSigils, recordHyperBossKill, rollRelic, addRelic, bumpLifetime } from './meta.js';
+import { tryAchievement, trySecret, showBanner } from './ui.js';
 
 // ── Module-scope temp vectors (reuse, never `new` in update loops) ────────────
 const _tmpDir   = new THREE.Vector3();
@@ -818,9 +825,9 @@ export function killEnemy(enemy) {
   state.run.kills++;
   state.run.noDmgKills = (state.run.noDmgKills || 0) + 1;
   // Codex: bump kill tally for this tier (silently throttled in codex.js).
-  try { import('./codex.js').then(({ notifyEnemyKilled }) => notifyEnemyKilled(enemy.glbKey)); } catch (_) {}
+  try { notifyEnemyKilled(enemy.glbKey); } catch (_) {}
   // Tutorial: 3-kill auto-advance for stage 2.
-  import('./tutorial.js').then(({ notifyTutorialEvent }) => notifyTutorialEvent('enemyKill'));
+  try { notifyTutorialEvent('enemyKill'); } catch (_) {}
   // Stage-rule kill hook (e.g. Cinder "Eruption" bonus heart near puddles).
   try { notifyStageEnemyKill(enemy); } catch (_) {}
 
@@ -836,28 +843,28 @@ export function killEnemy(enemy) {
   // (baked by applyMetaUpgrades) and stack additively on the base grant of 1.
   // Final boss grant is intentionally untouched — node text scopes to mini-boss.
   const miniBossSigilBonus = (state.run && state.run.passive_miniBossSigilBonus) || 0;
-  import('./meta.js').then(({ questEvent, grantSigils }) => {
+  try {
     questEvent('kill', { tier: enemy.glbKey });
     if (enemy.isMiniBoss)  { questEvent('miniBoss');  grantSigils(1 + miniBossSigilBonus, 'miniBoss'); }
     if (enemy.isFinalBoss) { questEvent('finalBoss'); grantSigils(5, 'finalBoss'); }
-  });
+  } catch (_) {}
 
   // Achievements
-  import('./ui.js').then(({ tryAchievement, trySecret }) => {
+  try {
     tryAchievement('first_kill');
     if (enemy.elite) tryAchievement('first_elite');
     if (state.run.kills >= 100) tryAchievement('kills_100');
     // Secret: Flawless — 100 kills this run without taking damage
     if (state.run.flawless && state.run.noDmgKills >= 100) trySecret('pacifist_100');
-  });
+  } catch (_) {}
 
   // Secret: lifetime bug kills (tiers with procAnim are the forest-bug set)
   const tier = _tierByGlb[enemy.glbKey];
   if (tier && tier.procAnim) {
-    import('./meta.js').then(({ bumpLifetime }) => {
+    try {
       const total = bumpLifetime('bugKills', 1);
-      if (total >= 500) import('./ui.js').then(({ trySecret }) => trySecret('bug_lord'));
-    });
+      if (total >= 500) trySecret('bug_lord');
+    } catch (_) {}
   }
 
   // Final boss kill = victory (or just a banner in Endless mode)
@@ -865,36 +872,32 @@ export function killEnemy(enemy) {
     state.fx.bloomBoost = 1.0;
     state.fx.shake = 0.9;
     if (sfx && sfx.victory) sfx.victory();
-    import('./ui.js').then(({ tryAchievement }) => tryAchievement('first_victory'));
+    try { tryAchievement('first_victory'); } catch (_) {}
     // BorgirBoss unlock — record this stage's final-boss win under hypermode.
     // When the roster (forest/twilight/cinder/void) is fully cleared on hyper,
     // recordHyperBossKill flips the allBossesHypermode flag and we banner it.
     if (state.modes && state.modes.hyper) {
       const stageId = state.run && state.run.stage && state.run.stage.id;
       if (stageId) {
-        import('./meta.js').then(({ recordHyperBossKill }) => {
+        try {
           const justFlipped = recordHyperBossKill(stageId);
-          if (justFlipped) {
-            import('./ui.js').then(({ showBanner }) => {
-              try { showBanner('🍔 BORGIRBOSS UNLOCKED', 4.0, '#ffd27f'); } catch (_) {}
-            });
-          }
-        });
+          if (justFlipped) showBanner('🍔 BORGIRBOSS UNLOCKED', 4.0, '#ffd27f');
+        } catch (_) {}
       }
     }
     // Roll + persist a relic for the death-screen reveal.
-    import('./meta.js').then(({ rollRelic, addRelic }) => {
+    try {
       const drop = rollRelic();
       addRelic(drop);
       state.run.relicDrop = drop;
-    });
+    } catch (_) {}
     if (state.modes && state.modes.endless) {
       // Endless: don't end the run. Drop another reward chest and let the run continue.
-      import('./chest.js').then(({ spawnChest }) => {
+      try {
         spawnChest(enemy.mesh.position.x + 2, enemy.mesh.position.z);
         spawnChest(enemy.mesh.position.x - 2, enemy.mesh.position.z);
-      });
-      import('./ui.js').then(({ showBanner }) => showBanner('THE NIGHTMARE CONTINUES', 4.0, '#ff5555'));
+      } catch (_) {}
+      try { showBanner('THE NIGHTMARE CONTINUES', 4.0, '#ff5555'); } catch (_) {}
     } else {
       state.gameOver = true;
       state.victory = true;
