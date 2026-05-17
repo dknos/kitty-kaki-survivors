@@ -33,6 +33,7 @@ import { loadForestChests } from './forestChests.js';
 import { loadForestReaper } from './forestReaper.js';
 import { loadForestPickups } from './forestPickups.js';
 import { loadForestDayNight } from './forestDayNight.js';
+import { loadForestHud } from './forestHud.js';
 import { state as _gameState } from './state.js';
 
 // Active decor group + cleanup hooks, tracked module-side so clearArenaDecor
@@ -201,6 +202,19 @@ function _buildForestDecor(group, opts) {
     } catch (e) {
       console.warn('[arenaDecor] loadForestDayNight failed:', e);
       _gameState._dayNightLoaded = false;
+    }
+  }
+  // ── FOREST-V2-A10 Stage HUD (2026-05-17) ──
+  // Top-bar overlay (clock + Reaper countdown + counters). DOM-only; no
+  // scene mutation. Once-per-scene gate mirrors daynight; flag flips back
+  // on dispose so the next forest load gets a fresh mount.
+  if (_gameState && _gameState.scene && !_gameState._hudLoaded) {
+    _gameState._hudLoaded = true;
+    try {
+      loadForestHud(_gameState.scene, _gameState);
+    } catch (e) {
+      console.warn('[arenaDecor] loadForestHud failed:', e);
+      _gameState._hudLoaded = false;
     }
   }
   return result;
