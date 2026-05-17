@@ -103,6 +103,7 @@ import { tickForestChests, disposeForestChests } from './forestChests.js';
 // can't touch it. Teardown mirrors the 5-site chests dispose pattern.
 import { tickForestReaper, disposeForestReaper } from './forestReaper.js';
 import { tickForestPickups, disposeForestPickups } from './forestPickups.js';
+import { tickForestDayNight, disposeForestDayNight } from './forestDayNight.js';
 import { loadTwilightFountains, tickTwilightFountains, clearTwilightFountains } from './twilightFountains.js';
 import { loadCinderBallistas, tickCinderBallistas, clearCinderBallistas } from './cinderBallistas.js';
 import { loadVoidTeleportPads, tickVoidTeleportPads, clearVoidTeleportPads } from './voidTeleportPads.js';
@@ -701,6 +702,13 @@ function _teardownActiveRun() {
     disposeForestPickups(state.scene);
     if (state) state._pickupsLoaded = false;
   }
+  // FOREST-V2-A9 Day/Night Cycle teardown — restores baseline light/fog
+  // values via fingerprint compare so a stage-transition dispose (where
+  // applyStageTint already overwrote) skips the restore. Idempotent.
+  if (state.scene) {
+    disposeForestDayNight(state.scene);
+    if (state) state._dayNightLoaded = false;
+  }
   // Tear down twilight fountains (no-op on non-twilight stages). Mirrors
   // the forestAmber teardown shape; clear path also nulls
   // state.run.fountainSpeedBuff so the buff can't leak across runs.
@@ -1212,6 +1220,7 @@ function applyMetaUpgrades() {
       disposeForestChests(state.scene);     state._chestsLoaded     = false; // FOREST-V2-A6 Chests
       disposeForestReaper(state.scene);     state._reaperLoaded     = false; // FOREST-V2-A7 Reaper
       disposeForestPickups(state.scene);    state._pickupsLoaded    = false; // FOREST-V2-A8 Pickups
+      disposeForestDayNight(state.scene);   state._dayNightLoaded   = false; // FOREST-V2-A9 Day/Night
       clearCinderBallistas(state.scene);
       clearCinderHazards(state.scene);
       clearVoidTeleportPads(state.scene);
@@ -1246,6 +1255,7 @@ function applyMetaUpgrades() {
       disposeForestChests(state.scene);     state._chestsLoaded     = false; // FOREST-V2-A6 Chests
       disposeForestReaper(state.scene);     state._reaperLoaded     = false; // FOREST-V2-A7 Reaper
       disposeForestPickups(state.scene);    state._pickupsLoaded    = false; // FOREST-V2-A8 Pickups
+      disposeForestDayNight(state.scene);   state._dayNightLoaded   = false; // FOREST-V2-A9 Day/Night
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearVoidTeleportPads(state.scene);
@@ -1286,6 +1296,7 @@ function applyMetaUpgrades() {
       disposeForestChests(state.scene);     state._chestsLoaded     = false; // FOREST-V2-A6 Chests
       disposeForestReaper(state.scene);     state._reaperLoaded     = false; // FOREST-V2-A7 Reaper
       disposeForestPickups(state.scene);    state._pickupsLoaded    = false; // FOREST-V2-A8 Pickups
+      disposeForestDayNight(state.scene);   state._dayNightLoaded   = false; // FOREST-V2-A9 Day/Night
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearCinderBallistas(state.scene);
@@ -1308,6 +1319,7 @@ function applyMetaUpgrades() {
       disposeForestChests(state.scene);     state._chestsLoaded     = false; // FOREST-V2-A6 Chests
       disposeForestReaper(state.scene);     state._reaperLoaded     = false; // FOREST-V2-A7 Reaper
       disposeForestPickups(state.scene);    state._pickupsLoaded    = false; // FOREST-V2-A8 Pickups
+      disposeForestDayNight(state.scene);   state._dayNightLoaded   = false; // FOREST-V2-A9 Day/Night
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearCinderBallistas(state.scene);
@@ -1817,6 +1829,10 @@ function frame(now) {
     // despawn for bomb/magnet/chicken. Bails immediately when no pickups
     // loaded. Effect dispatch (kill-all/vacuum/heal) fires on contact.
     _p=perfStart(); tickForestPickups(state, logicDt); perfMark('forestPickups', _p);
+    // FOREST-V2-A9 Day/Night Cycle — lerps sun/hemi/fog from MIDDAY→BLOOD_MOON
+    // over the 30:00 Reaper arc. Bails immediately when not loaded (forest-
+    // only gate above already filters non-forest stages).
+    _p=perfStart(); tickForestDayNight(state, logicDt); perfMark('forestDayNight', _p);
     // FE-C3A — puzzle system tick + room transition detection. Puzzle tick
     // is a no-op when no puzzle is active. Room detection runs every frame
     // so a fast hero crossing portals doesn't strand a stale currentRoom.

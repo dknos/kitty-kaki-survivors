@@ -32,6 +32,7 @@ import { loadForestEnvHazards } from './forestEnvHazards.js';
 import { loadForestChests } from './forestChests.js';
 import { loadForestReaper } from './forestReaper.js';
 import { loadForestPickups } from './forestPickups.js';
+import { loadForestDayNight } from './forestDayNight.js';
 import { state as _gameState } from './state.js';
 
 // Active decor group + cleanup hooks, tracked module-side so clearArenaDecor
@@ -183,6 +184,23 @@ function _buildForestDecor(group, opts) {
     } catch (e) {
       console.warn('[arenaDecor] loadForestPickups failed:', e);
       _gameState._pickupsLoaded = false;
+    }
+  }
+  // ── FOREST-V2-A9 Day/Night Cycle (2026-05-17) ──
+  // Scene-scoped atmospheric lighting tied to stage clock. Five lerped phases
+  // from MIDDAY → BLOOD_MOON; Reaper at 30:00 lands at peak darkness. Once-
+  // per-scene gate mirrors pickups/reaper. Pure value mutation on existing
+  // envGroup.userData.{sun,hemi} + scene.fog — no new lights/geometry. The
+  // tick (forestDayNight.js::tickForestDayNight) is wired in the forest-only
+  // block of main.js; baseline capture is deferred to first tick so it runs
+  // AFTER applyStageTint(forest) has set the post-tint baseline.
+  if (_gameState && _gameState.scene && !_gameState._dayNightLoaded) {
+    _gameState._dayNightLoaded = true;
+    try {
+      loadForestDayNight(_gameState.scene, _gameState);
+    } catch (e) {
+      console.warn('[arenaDecor] loadForestDayNight failed:', e);
+      _gameState._dayNightLoaded = false;
     }
   }
   return result;
