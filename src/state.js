@@ -357,6 +357,13 @@ export function resetState() {
   state.run._reaperWarned         = false;
   state.run._reaperSpawned        = false;
   state.run._reaperOutlastedFired = false;
+  // PHASE 1 P1G Sigil Arc (2026-05-17) — last-seen lifetime sigil count.
+  // Used by src/forestSigilArc.js to detect grants via monotonic diff on
+  // meta.lifetime.sigilsEarned. Re-baselined to the live lifetime value
+  // inside loadForestSigilArc so the very first poll doesn't false-fire
+  // on prior-run accumulation. null sentinel here forces that re-baseline
+  // on first load even if state.run gets mutated by another flow.
+  state.run._sigilsLastSeen       = null;
   // PHASE 1 P1E (2026-05-17) — Boss intro cinematic per-run gating. One-shot
   // per tier per run: the first miniboss / elite / room-boss / Reaper spawn
   // fires a 1.5s camera dolly + name banner; subsequent same-tier spawns are
@@ -402,6 +409,9 @@ export function resetState() {
   state.run.passive_staggerResist  = 0;
   state.run.passive_greedMul       = 1;
   state.run.passive_soulLinkXpMul  = 1;
+  // Druid's Charm (P1H, 2026-05-17): forest-only XP boost. xp.js reads this
+  // gated on stage.id === 'forest'. Identity 1.0 when not picked.
+  state.run.passive_druidXpMul     = 1;
   // ── Meta shop-tree scalars (iter 6, "Meta With Teeth") ──
   // Survival / Power / Greed branch effects bake into these at run start.
   // Effects authored in src/meta.js SHOP_TREE; consumers read these flags.
