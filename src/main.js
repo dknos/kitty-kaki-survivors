@@ -104,6 +104,7 @@ import { tickForestChests, disposeForestChests } from './forestChests.js';
 import { tickForestReaper, disposeForestReaper } from './forestReaper.js';
 import { tickForestPickups, disposeForestPickups } from './forestPickups.js';
 import { tickForestDayNight, disposeForestDayNight } from './forestDayNight.js';
+import { tickForestHud, disposeForestHud } from './forestHud.js';
 import { loadTwilightFountains, tickTwilightFountains, clearTwilightFountains } from './twilightFountains.js';
 import { loadCinderBallistas, tickCinderBallistas, clearCinderBallistas } from './cinderBallistas.js';
 import { loadVoidTeleportPads, tickVoidTeleportPads, clearVoidTeleportPads } from './voidTeleportPads.js';
@@ -709,6 +710,10 @@ function _teardownActiveRun() {
     disposeForestDayNight(state.scene);
     if (state) state._dayNightLoaded = false;
   }
+  // FOREST-V2-A10 Stage HUD teardown — removes #kk-forest-hud + style by id.
+  // DOM-only; no scene param. Idempotent; safe across stage swaps.
+  disposeForestHud();
+  if (state) state._hudLoaded = false;
   // Tear down twilight fountains (no-op on non-twilight stages). Mirrors
   // the forestAmber teardown shape; clear path also nulls
   // state.run.fountainSpeedBuff so the buff can't leak across runs.
@@ -1221,6 +1226,7 @@ function applyMetaUpgrades() {
       disposeForestReaper(state.scene);     state._reaperLoaded     = false; // FOREST-V2-A7 Reaper
       disposeForestPickups(state.scene);    state._pickupsLoaded    = false; // FOREST-V2-A8 Pickups
       disposeForestDayNight(state.scene);   state._dayNightLoaded   = false; // FOREST-V2-A9 Day/Night
+      disposeForestHud();                   state._hudLoaded        = false; // FOREST-V2-A10 Stage HUD
       clearCinderBallistas(state.scene);
       clearCinderHazards(state.scene);
       clearVoidTeleportPads(state.scene);
@@ -1256,6 +1262,7 @@ function applyMetaUpgrades() {
       disposeForestReaper(state.scene);     state._reaperLoaded     = false; // FOREST-V2-A7 Reaper
       disposeForestPickups(state.scene);    state._pickupsLoaded    = false; // FOREST-V2-A8 Pickups
       disposeForestDayNight(state.scene);   state._dayNightLoaded   = false; // FOREST-V2-A9 Day/Night
+      disposeForestHud();                   state._hudLoaded        = false; // FOREST-V2-A10 Stage HUD
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearVoidTeleportPads(state.scene);
@@ -1297,6 +1304,7 @@ function applyMetaUpgrades() {
       disposeForestReaper(state.scene);     state._reaperLoaded     = false; // FOREST-V2-A7 Reaper
       disposeForestPickups(state.scene);    state._pickupsLoaded    = false; // FOREST-V2-A8 Pickups
       disposeForestDayNight(state.scene);   state._dayNightLoaded   = false; // FOREST-V2-A9 Day/Night
+      disposeForestHud();                   state._hudLoaded        = false; // FOREST-V2-A10 Stage HUD
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearCinderBallistas(state.scene);
@@ -1320,6 +1328,7 @@ function applyMetaUpgrades() {
       disposeForestReaper(state.scene);     state._reaperLoaded     = false; // FOREST-V2-A7 Reaper
       disposeForestPickups(state.scene);    state._pickupsLoaded    = false; // FOREST-V2-A8 Pickups
       disposeForestDayNight(state.scene);   state._dayNightLoaded   = false; // FOREST-V2-A9 Day/Night
+      disposeForestHud();                   state._hudLoaded        = false; // FOREST-V2-A10 Stage HUD
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearCinderBallistas(state.scene);
@@ -1833,6 +1842,11 @@ function frame(now) {
     // over the 30:00 Reaper arc. Bails immediately when not loaded (forest-
     // only gate above already filters non-forest stages).
     _p=perfStart(); tickForestDayNight(state, logicDt); perfMark('forestDayNight', _p);
+    // FOREST-V2-A10 Stage HUD — top-bar clock + Reaper countdown + counters.
+    // DOM-only; reads state.time.game + state.run.kills; mutates textContent
+    // + clock color only. Bails when not loaded (forest-only gate above
+    // already filters non-forest stages). Show/hide via style.visibility.
+    _p=perfStart(); tickForestHud(state, logicDt); perfMark('forestHud', _p);
     // FE-C3A — puzzle system tick + room transition detection. Puzzle tick
     // is a no-op when no puzzle is active. Room detection runs every frame
     // so a fast hero crossing portals doesn't strand a stale currentRoom.
