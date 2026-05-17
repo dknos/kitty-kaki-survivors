@@ -8,6 +8,7 @@
  * Stars:   instantly magnetize every on-screen gem. 2% chance, 50% on elite.
  */
 import * as THREE from 'three';
+import { createInstancedMesh } from './utils/instanced.js';
 import { state } from './state.js';
 import { spawnMagnetSpark } from './fx.js';
 import { HERO } from './config.js';
@@ -108,16 +109,7 @@ function _makeInstanced(geo, color, emissiveColor, cap) {
     roughness: 0.4,
     metalness: 0.15,
   });
-  const inst = new THREE.InstancedMesh(geo, mat, cap);
-  inst.count = cap;
-  inst.frustumCulled = false;
-  inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  for (let i = 0; i < cap; i++) {
-    _m4.compose(_v3.set(0, -1000, 0), _q.identity(), _zeroScale);
-    inst.setMatrixAt(i, _m4);
-  }
-  inst.instanceMatrix.needsUpdate = true;
-  return inst;
+  return createInstancedMesh(geo, mat, cap);
 }
 
 /**

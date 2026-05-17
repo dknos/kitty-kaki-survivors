@@ -8,6 +8,8 @@ import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 import { WORLD } from './config.js';
 import { cloneCached } from './assets.js';
 import { tex as particleTex } from './particleTextures.js';
+import { wrapAtmosParticles } from "./utils/envUtils.js";
+import { hexLerp } from "./utils/math.js";
 
 // ── Per-stage atmospheric particles (iter 15) ────────────────────────────────
 // Single THREE.Points cluster per stage, attached to envGroup at boot. Only
@@ -169,12 +171,7 @@ function _tickForest(points, dt, hx, hz) {
       pos[ix + 1] = spec.yMin + Math.random() * 1.0;
     }
     // Horizontal wrap around hero (mirror to opposite edge)
-    const dx = pos[ix + 0] - hx;
-    const dz = pos[ix + 2] - hz;
-    if (dx * dx + dz * dz > R2) {
-      pos[ix + 0] = hx - dx;
-      pos[ix + 2] = hz - dz;
-    }
+    wrapAtmosParticles(pos, ix, hx, hz, R2);
   }
   points.geometry.attributes.position.needsUpdate = true;
 }
@@ -201,12 +198,7 @@ function _tickTwilight(points, dt, hx, hz) {
     if (pos[ix + 1] > spec.yMax) {
       pos[ix + 1] = spec.yMin + Math.random() * 1.0;
     }
-    const dx = pos[ix + 0] - hx;
-    const dz = pos[ix + 2] - hz;
-    if (dx * dx + dz * dz > R2) {
-      pos[ix + 0] = hx - dx;
-      pos[ix + 2] = hz - dz;
-    }
+    wrapAtmosParticles(pos, ix, hx, hz, R2);
     // Occasional flicker — per-point alpha sine with random phase
     const flicker = 0.5 + 0.5 * Math.sin(t * 2.1 + phases[i] * 3.0);
     alphas[i] = Math.max(0.05, base + (flicker - 0.5) * 2 * aJit);
@@ -233,12 +225,7 @@ function _tickCinder(points, dt, hx, hz) {
     if (pos[ix + 1] > spec.yMax) {
       pos[ix + 1] = spec.yMin + Math.random() * 0.5;
     }
-    const dx = pos[ix + 0] - hx;
-    const dz = pos[ix + 2] - hz;
-    if (dx * dx + dz * dz > R2) {
-      pos[ix + 0] = hx - dx;
-      pos[ix + 2] = hz - dz;
-    }
+    wrapAtmosParticles(pos, ix, hx, hz, R2);
   }
   points.geometry.attributes.position.needsUpdate = true;
 }
@@ -265,12 +252,7 @@ function _tickVoid(points, dt, hx, hz) {
     // Hard bounds (no vertical respawn — they barely move)
     if (pos[ix + 1] > spec.yMax) pos[ix + 1] = spec.yMax;
     if (pos[ix + 1] < spec.yMin) pos[ix + 1] = spec.yMin;
-    const dx = pos[ix + 0] - hx;
-    const dz = pos[ix + 2] - hz;
-    if (dx * dx + dz * dz > R2) {
-      pos[ix + 0] = hx - dx;
-      pos[ix + 2] = hz - dz;
-    }
+    wrapAtmosParticles(pos, ix, hx, hz, R2);
     // Strong twinkle — per-point alpha sine with random phase
     const tw = 0.5 + 0.5 * Math.sin(t * 3.2 + phases[i] * 4.5 + seeds[i] * 0.01);
     alphas[i] = Math.max(0.05, base + (tw - 0.5) * 2 * aJit);
@@ -642,13 +624,7 @@ export function buildEnv(scene, renderer) {
     fill:   { color: 0xff4422, intensity: 0.55 },
     fogHex: 0x3a0a06,
   };
-  function _hexLerp(a, b, k) {
-    const ar = (a >> 16) & 0xff, ag = (a >> 8) & 0xff, ab = a & 0xff;
-    const br = (b >> 16) & 0xff, bg = (b >> 8) & 0xff, bb = b & 0xff;
-    return ((Math.round(ar + (br - ar) * k) << 16) |
-            (Math.round(ag + (bg - ag) * k) << 8)  |
-             Math.round(ab + (bb - ab) * k)) >>> 0;
-  }
+
   group.userData.applyHelltideOverlay = (active, intensity) => {
     const itn = (intensity == null) ? 1.0 : Math.max(0, Math.min(1.5, intensity));
     if (active) {
@@ -675,15 +651,15 @@ export function buildEnv(scene, renderer) {
     const blend = k * tw.intensity;
     const snap = tw.snap;
     const T = _HELLTIDE_TARGET;
-    sun.color.setHex(_hexLerp(snap.sunColor, T.sun.color, blend));
+    sun.color.setHex(hexLerp(snap.sunColor, T.sun.color, blend));
     sun.intensity = snap.sunIntensity + (T.sun.intensity - snap.sunIntensity) * blend;
-    hemi.color.setHex(_hexLerp(snap.hemiSky, T.hemi.sky, blend));
-    hemi.groundColor.setHex(_hexLerp(snap.hemiGround, T.hemi.ground, blend));
+    hemi.color.setHex(hexLerp(snap.hemiSky, T.hemi.sky, blend));
+    hemi.groundColor.setHex(hexLerp(snap.hemiGround, T.hemi.ground, blend));
     hemi.intensity = snap.hemiIntensity + (T.hemi.intensity - snap.hemiIntensity) * blend;
-    fill.color.setHex(_hexLerp(snap.fillColor, T.fill.color, blend));
+    fill.color.setHex(hexLerp(snap.fillColor, T.fill.color, blend));
     fill.intensity = snap.fillIntensity + (T.fill.intensity - snap.fillIntensity) * blend;
     if (snap.fogHex != null && scene.fog && scene.fog.color) {
-      scene.fog.color.setHex(_hexLerp(snap.fogHex, T.fogHex, blend));
+      scene.fog.color.setHex(hexLerp(snap.fogHex, T.fogHex, blend));
     }
     if (tw.t >= 1) {
       if (tw.dir < 0) _helltideTween = null;  // fully restored — release snap

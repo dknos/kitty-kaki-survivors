@@ -16,6 +16,7 @@
  */
 import * as THREE from 'three';
 import { state } from './state.js';
+import { updateInteractables } from './utils/interactable.js';
 import { bindPrompt, setPromptLabel } from './buttonPrompts.js';
 import { BLOOM_LAYER } from './postfx.js';
 import { cloneCached } from './assets.js';
@@ -615,21 +616,7 @@ export function tickCasinoInterior(dt) {
   }
 
   // Find closest interactable
-  const h = state.hero.pos;
-  let best = null, bestD = Infinity;
-  for (const it of _interactables) {
-    const dx = h.x - it.pos.x;
-    const dz = h.z - it.pos.z;
-    const d2 = dx * dx + dz * dz;
-    if (d2 < it.radius * it.radius && d2 < bestD) { best = it; bestD = d2; }
-  }
-  _activeKey = best ? best.key : null;
-  if (best) {
-    setPromptLabel(_promptBinding, best.label);
-    _promptEl.style.display = 'block';
-  } else {
-    _promptEl.style.display = 'none';
-  }
+  _activeKey = updateInteractables(_interactables, _promptBinding, _promptEl);
 
   // Constrain hero to room interior with a small wall margin
   const margin = 0.6;

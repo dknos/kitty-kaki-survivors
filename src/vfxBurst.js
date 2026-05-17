@@ -4,6 +4,7 @@
  * Spawn with burstExplosion(x, z, scale, colorHex) for a complete bomb-style FX.
  */
 import * as THREE from 'three';
+import { createInstancedMesh } from './utils/instanced.js';
 import { state } from './state.js';
 import { tex } from './particleTextures.js';
 import { BLOOM_LAYER } from './postfx.js';
@@ -34,15 +35,7 @@ const _dashStreaks = []; // {x,z, ang, length, t, life, color}
 let _smokeDirty=false, _emberDirty=false, _flashDirty=false, _shockDirty=false, _dashDirty=false;
 
 function _mkInst(geo, mat, cap, flat = true) {
-  const inst = new THREE.InstancedMesh(geo, mat, cap);
-  inst.count = cap;
-  inst.frustumCulled = false;
-  inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  for (let i = 0; i < cap; i++) {
-    _m4.compose(_v3.set(0, -1000, 0), flat ? _flatX : new THREE.Quaternion(), _zeroScale);
-    inst.setMatrixAt(i, _m4);
-  }
-  inst.instanceMatrix.needsUpdate = true;
+  const inst = createInstancedMesh(geo, mat, cap, flat ? _flatX : new THREE.Quaternion());
   inst.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cap * 3), 3);
   inst.instanceColor.setUsage(THREE.DynamicDrawUsage);
   const c = new THREE.Color(0xffffff);

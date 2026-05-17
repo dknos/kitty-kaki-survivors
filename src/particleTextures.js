@@ -8,6 +8,7 @@
  * Each texture is 128×128 RGBA, mipmapped, with anisotropy where useful.
  */
 import * as THREE from 'three';
+import { wrapCanvasTexture } from './utils/textureUtils.js';
 
 const SIZE = 128;
 const _cache = {};
@@ -248,14 +249,7 @@ function _makeLightningRing(color = '#ffe14a') {
   }
   ctx.putImageData(img, 0, 0);
 
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 8;
-  t.generateMipmaps = true;
-  t.minFilter = THREE.LinearMipmapLinearFilter;
-  t.magFilter = THREE.LinearFilter;
-  t.needsUpdate = true;
-  return t;
+  return wrapCanvasTexture(c);
 }
 
 /** Shockwave — thick double-edge ring for explosions (legacy basic). */
@@ -325,14 +319,7 @@ function _makeShockwave(color = '#ffd078') {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.globalCompositeOperation = 'source-over';
 
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 8;
-  t.generateMipmaps = true;
-  t.minFilter = THREE.LinearMipmapLinearFilter;
-  t.magFilter = THREE.LinearFilter;
-  t.needsUpdate = true;
-  return t;
+  return wrapCanvasTexture(c);
 }
 
 /** Multi-point flash star — hot white core with 6 long flares. */

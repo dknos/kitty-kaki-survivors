@@ -9,18 +9,11 @@
  */
 import { grantEmbers } from './meta.js';
 import { hideTooltip } from './tooltips.js';
+import { MINIGAME_PALETTE as PALETTE } from './utils/palette.js';
+import { eventToCanvas } from './utils/dom.js';
+import { bindMinigameEvents, unbindMinigameEvents } from './utils/minigame.js';
 
-const PALETTE = {
-  paper:    '#f3e8cf',
-  ink:      '#231a14',
-  warmTan:  '#d99b54',
-  teaAmber: '#c98a3a',
-  sakura:   '#e8a3c7',
-  sage:     '#8aaa6a',
-  indigo:   '#384a78',
-  ember:    '#ff7a3a',
-  highlight:'#fff9e6',
-};
+
 
 const ROUND_DURATION = 30.0;
 const GRAVITY = 1400;       // px/s²
@@ -310,7 +303,7 @@ function _tick(dt) {
 function _onPointerDown(e) {
   if (!_open || !_state) return;
   if (_state.phase === 'result') { _close(); return; }
-  const p = _eventToCanvas(e);
+  const p = eventToCanvas(e, _canvas);
   // Only allow drag starting near the yarn pile
   const dx = p[0] - _state.pile.x;
   const dy = p[1] - _state.pile.y;
@@ -319,7 +312,7 @@ function _onPointerDown(e) {
 }
 function _onPointerMove(e) {
   if (!_open || !_state || !_state.drag) return;
-  const p = _eventToCanvas(e);
+  const p = eventToCanvas(e, _canvas);
   _state.drag.cx = p[0];
   _state.drag.cy = p[1];
 }
@@ -343,12 +336,7 @@ function _onPointerUp() {
   _state.shotsFired += 1;
 }
 
-function _eventToCanvas(e) {
-  const r = _canvas.getBoundingClientRect();
-  const x = (e.clientX - r.left) * (_canvas.width / r.width);
-  const y = (e.clientY - r.top)  * (_canvas.height / r.height);
-  return [x, y];
-}
+
 
 function _onKey(e) { if (_open && e.code === 'Escape') _close(); }
 function _onResize() {
@@ -389,11 +377,7 @@ export function showYarnDart() {
   _state = {};
   _resetRound();
 
-  _root.addEventListener('pointerdown', _onPointerDown);
-  window.addEventListener('pointermove', _onPointerMove);
-  window.addEventListener('pointerup', _onPointerUp);
-  window.addEventListener('keydown', _onKey);
-  window.addEventListener('resize', _onResize);
+  bindMinigameEvents(_root, _onPointerDown, _onPointerMove, _onPointerUp, _onKey, _onResize);
 
   _lastT = performance.now();
   _raf = requestAnimationFrame(_loop);
@@ -404,10 +388,7 @@ function _close() {
   _open = false;
   if (_raf) cancelAnimationFrame(_raf);
   _raf = 0;
-  window.removeEventListener('pointermove', _onPointerMove);
-  window.removeEventListener('pointerup', _onPointerUp);
-  window.removeEventListener('keydown', _onKey);
-  window.removeEventListener('resize', _onResize);
+  unbindMinigameEvents(_root, _onPointerDown, _onPointerMove, _onPointerUp, _onKey, _onResize);
   if (_root && _root.parentNode) _root.parentNode.removeChild(_root);
   _root = null; _canvas = null; _ctx = null; _state = null;
 }

@@ -17,6 +17,7 @@ import { state } from './state.js';
 import { CHARACTERS } from './config.js';
 import { getMeta, setOption } from './meta.js';
 import { initChatBindings, tickBubbles } from './chatBubble.js';
+import { updateInteractables } from './utils/interactable.js';
 import { bindPrompt, setPromptLabel, formatPrompt } from './buttonPrompts.js';
 import { BLOOM_LAYER } from './postfx.js';
 import { makeRuneRingTexture } from './enemyTells.js';
@@ -769,22 +770,7 @@ export function tickTown(dt) {
   }
 
   // Closest interactable inside its trigger radius
-  const h = state.hero.pos;
-  let best = null, bestD = Infinity;
-  for (const it of _interactables) {
-    const dx = h.x - it.pos.x;
-    const dz = h.z - it.pos.z;
-    const d2 = dx * dx + dz * dz;
-    const r = it.radius;
-    if (d2 < r * r && d2 < bestD) { best = it; bestD = d2; }
-  }
-  _activeKey = best ? best.key : null;
-  if (best) {
-    setPromptLabel(_promptBinding, best.label);
-    _promptEl.style.display = 'block';
-  } else {
-    _promptEl.style.display = 'none';
-  }
+  _activeKey = updateInteractables(_interactables, _promptBinding, _promptEl);
 
   // Constrain hero to fence — sliding clamp
   const r2 = h.x * h.x + h.z * h.z;
