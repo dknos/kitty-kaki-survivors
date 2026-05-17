@@ -34,6 +34,7 @@ import { loadForestReaper } from './forestReaper.js';
 import { loadForestPickups } from './forestPickups.js';
 import { loadForestDayNight } from './forestDayNight.js';
 import { loadForestHud } from './forestHud.js';
+import { loadForestBossBars } from './forestBossBars.js';
 import { state as _gameState } from './state.js';
 
 // Active decor group + cleanup hooks, tracked module-side so clearArenaDecor
@@ -215,6 +216,19 @@ function _buildForestDecor(group, opts) {
     } catch (e) {
       console.warn('[arenaDecor] loadForestHud failed:', e);
       _gameState._hudLoaded = false;
+    }
+  }
+  // ── FOREST-V2-A11 Boss HP Bars (2026-05-17) ──
+  // Top-center DOM overlay listing active mini-boss/elite/final-boss/Reaper
+  // HP. Once-per-scene gate mirrors HUD; flag flips back on dispose so a
+  // re-enter rebuilds cleanly.
+  if (_gameState && _gameState.scene && !_gameState._bossBarsLoaded) {
+    _gameState._bossBarsLoaded = true;
+    try {
+      loadForestBossBars(_gameState.scene, _gameState);
+    } catch (e) {
+      console.warn('[arenaDecor] loadForestBossBars failed:', e);
+      _gameState._bossBarsLoaded = false;
     }
   }
   return result;

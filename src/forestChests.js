@@ -581,6 +581,12 @@ function _onPicked(chestIdx, opt) {
   _hideModal();
   try { _applyReward(opt); }
   catch (e) { console.warn('[forestChests] reward apply failed:', e); }
+  // FOREST-V2-A11 — per-run chest counter consumed by forestHud + bossBars.
+  // Increment AFTER apply so a throw in _applyReward still counts the open
+  // (the reward modal was committed; failure to apply shouldn't lie about it).
+  if (_gameState && _gameState.run) {
+    _gameState.run._chestsOpened = (_gameState.run._chestsOpened || 0) + 1;
+  }
   _phase[chestIdx] = CP_DISPATCH;
   _phaseT[chestIdx] = 0;
   _activePickIdx = -1;
