@@ -114,6 +114,14 @@ import { tickForestBossBars, disposeForestBossBars } from './forestBossBars.js';
 // Dispose mirrors the 5-site forestBossBars teardown so DOM doesn't leak
 // across stage swaps.
 import { tickBossIntroCinematic, disposeBossIntroCinematic } from './bossIntroCinematic.js';
+// PHASE 1 P1F (2026-05-17) — End-of-run summary screen. Stage-agnostic VS-
+// style results panel. Tick polls state.gameOver + state.run.stats
+// .reaperOutlasted (NO direct hooks into enemies/death paths). Mounted
+// AFTER the per-frame return guards so the main tick can short-circuit
+// normally during gameOver — see _tickEndRunSummaryEarly call site at the
+// top of frame() for placement detail. Dispose mirrors the 5-site
+// bossIntroCinematic teardown so DOM doesn't leak across stage swaps.
+import { loadEndRunSummary, tickEndRunSummary, disposeEndRunSummary } from './endRunSummary.js';
 // PHASE 1 P1B (swarm/forest-achievements) — Achievement chain. Stage-agnostic
 // per-tick check loop (kills / time / weapon / hp). loadAchievements binds
 // state + WEAPON_REGISTRY for the visible-kit count probe. The module also
@@ -292,6 +300,11 @@ async function boot() {
   // work without a circular import. No DOM is touched here; mountTitlePanel
   // is wired separately by menuV2.
   loadAchievements(state, WEAPON_REGISTRY);
+  // PHASE 1 P1F — End-of-run summary screen. Binds state ref so the per-
+  // frame tick poll can read state.run + state.gameOver without a static
+  // import cycle. DOM is lazy-built on first show; load() does NOT touch
+  // the document tree.
+  loadEndRunSummary(state);
   initDamageNumbers();
   initFX(scene);
   // Ascension Evolution FX (Punch List #1) needs a state handle so the
@@ -753,6 +766,12 @@ function _teardownActiveRun() {
   // + style. DOM-only; no scene param. Idempotent; safe across stage swaps.
   disposeBossIntroCinematic();
   if (state) state._bossIntroLoaded = false;
+  // PHASE 1 P1F End-of-run summary teardown — removes #kk-endrun-summary
+  // + style + keydown handler. DOM-only; no scene param. Idempotent; safe
+  // across stage swaps. Does NOT clear state.run._summaryShown — that's
+  // owned by state.resetState() which fires on the next run start.
+  disposeEndRunSummary();
+  if (state) state._endRunSummaryLoaded = false;
   // Tear down twilight fountains (no-op on non-twilight stages). Mirrors
   // the forestAmber teardown shape; clear path also nulls
   // state.run.fountainSpeedBuff so the buff can't leak across runs.
@@ -1270,6 +1289,7 @@ function applyMetaUpgrades() {
       disposeForestHud();                   state._hudLoaded        = false; // FOREST-V2-A10 Stage HUD
       disposeForestBossBars();              state._bossBarsLoaded   = false; // FOREST-V2-A11 Boss HP Bars
       disposeBossIntroCinematic();          state._bossIntroLoaded  = false; // PHASE 1 P1E Boss Intro Cinematic
+      disposeEndRunSummary();               state._endRunSummaryLoaded = false; // PHASE 1 P1F End-of-run Summary
       clearCinderBallistas(state.scene);
       clearCinderHazards(state.scene);
       clearVoidTeleportPads(state.scene);
@@ -1310,6 +1330,7 @@ function applyMetaUpgrades() {
       disposeForestHud();                   state._hudLoaded        = false; // FOREST-V2-A10 Stage HUD
       disposeForestBossBars();              state._bossBarsLoaded   = false; // FOREST-V2-A11 Boss HP Bars
       disposeBossIntroCinematic();          state._bossIntroLoaded  = false; // PHASE 1 P1E Boss Intro Cinematic
+      disposeEndRunSummary();               state._endRunSummaryLoaded = false; // PHASE 1 P1F End-of-run Summary
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearVoidTeleportPads(state.scene);
@@ -1356,6 +1377,7 @@ function applyMetaUpgrades() {
       disposeForestHud();                   state._hudLoaded        = false; // FOREST-V2-A10 Stage HUD
       disposeForestBossBars();              state._bossBarsLoaded   = false; // FOREST-V2-A11 Boss HP Bars
       disposeBossIntroCinematic();          state._bossIntroLoaded  = false; // PHASE 1 P1E Boss Intro Cinematic
+      disposeEndRunSummary();               state._endRunSummaryLoaded = false; // PHASE 1 P1F End-of-run Summary
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearCinderBallistas(state.scene);
@@ -1384,6 +1406,7 @@ function applyMetaUpgrades() {
       disposeForestHud();                   state._hudLoaded        = false; // FOREST-V2-A10 Stage HUD
       disposeForestBossBars();              state._bossBarsLoaded   = false; // FOREST-V2-A11 Boss HP Bars
       disposeBossIntroCinematic();          state._bossIntroLoaded  = false; // PHASE 1 P1E Boss Intro Cinematic
+      disposeEndRunSummary();               state._endRunSummaryLoaded = false; // PHASE 1 P1F End-of-run Summary
       clearTwilightFountains(state.scene);
       clearTwilightHazards(state.scene);
       clearCinderBallistas(state.scene);
@@ -1607,6 +1630,15 @@ function frame(now) {
   const realDt = Math.min(0.05, (now - _lastT) / 1000);
   _lastT = now;
   state.time.real += realDt;
+
+  // PHASE 1 P1F — End-of-run summary polling. MUST run BEFORE the per-mode
+  // early-return branches (interior/casino/catacomb/town) AND before the
+  // gameOver/paused/pendingLevelUp gate at the main-run branch, because
+  // those branches short-circuit the rest of frame(). The poll itself is
+  // cheap (one boolean + one stats lookup) and self-gates on
+  // state.run._summaryShown so it does real work only on the first
+  // transition frame each run.
+  tickEndRunSummary(state, realDt);
 
   // Interior mode — close iso camera over a small room.
   if (state.mode === 'interior') {

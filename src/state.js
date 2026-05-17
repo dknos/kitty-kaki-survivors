@@ -366,6 +366,13 @@ export function resetState() {
   // freeze). See src/bossIntroCinematic.js.
   state.run._cinematicSeen        = { miniboss: false, elite: false, roomboss: false, reaper: false };
   state.run._bossIntroActive      = false;
+  // PHASE 1 P1F (2026-05-17) — End-of-run summary screen one-shot flag.
+  // Set true by src/endRunSummary.js the first frame it detects either
+  // state.gameOver === true OR state.run.stats.reaperOutlasted === true.
+  // Reset every run so a fresh run can fire the panel again. The endRun
+  // module never clears this itself — ownership lives here so the tick
+  // poll has a single canonical source of truth across run resets.
+  state.run._summaryShown         = false;
   // Per-run chest counter consumed by forestHud.js (em-dash fallback path
   // flips to numeric "Chests: N" once this field exists). Bumped in
   // forestChests._onPicked after _applyReward succeeds (single dispatch site).
