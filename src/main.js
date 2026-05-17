@@ -104,6 +104,7 @@ import { tickForestChests, disposeForestChests } from './forestChests.js';
 // can't touch it. Teardown mirrors the 5-site chests dispose pattern.
 import { tickForestReaper, disposeForestReaper } from './forestReaper.js';
 import { tickForestPickups, disposeForestPickups } from './forestPickups.js';
+import { tickForestWeaponDrops, disposeForestWeaponDrops } from './forestWeaponDrops.js';
 import { tickForestDayNight, disposeForestDayNight } from './forestDayNight.js';
 import { tickForestHud, disposeForestHud } from './forestHud.js';
 import { tickForestBossBars, disposeForestBossBars } from './forestBossBars.js';
@@ -709,6 +710,11 @@ function _teardownActiveRun() {
     disposeForestPickups(state.scene);
     if (state) state._pickupsLoaded = false;
   }
+  // FOREST-V2-A17 Ground Weapon Drops teardown — pre-pool only.
+  if (state.scene) {
+    disposeForestWeaponDrops(state.scene);
+    if (state) state._weaponDropsLoaded = false;
+  }
   // FOREST-V2-A9 Day/Night Cycle teardown — restores baseline light/fog
   // values via fingerprint compare so a stage-transition dispose (where
   // applyStageTint already overwrote) skips the restore. Idempotent.
@@ -1236,6 +1242,7 @@ function applyMetaUpgrades() {
       disposeForestSealedDoors();           state._sealedDoorsLoaded = false; // FOREST-V2-A14 Sealed Doors
       disposeForestReaper(state.scene);     state._reaperLoaded     = false; // FOREST-V2-A7 Reaper
       disposeForestPickups(state.scene);    state._pickupsLoaded    = false; // FOREST-V2-A8 Pickups
+      disposeForestWeaponDrops(state.scene); state._weaponDropsLoaded = false; // FOREST-V2-A17 Weapon Drops
       disposeForestDayNight(state.scene);   state._dayNightLoaded   = false; // FOREST-V2-A9 Day/Night
       disposeForestHud();                   state._hudLoaded        = false; // FOREST-V2-A10 Stage HUD
       disposeForestBossBars();              state._bossBarsLoaded   = false; // FOREST-V2-A11 Boss HP Bars
@@ -1274,6 +1281,7 @@ function applyMetaUpgrades() {
       disposeForestSealedDoors();           state._sealedDoorsLoaded = false; // FOREST-V2-A14 Sealed Doors
       disposeForestReaper(state.scene);     state._reaperLoaded     = false; // FOREST-V2-A7 Reaper
       disposeForestPickups(state.scene);    state._pickupsLoaded    = false; // FOREST-V2-A8 Pickups
+      disposeForestWeaponDrops(state.scene); state._weaponDropsLoaded = false; // FOREST-V2-A17 Weapon Drops
       disposeForestDayNight(state.scene);   state._dayNightLoaded   = false; // FOREST-V2-A9 Day/Night
       disposeForestHud();                   state._hudLoaded        = false; // FOREST-V2-A10 Stage HUD
       disposeForestBossBars();              state._bossBarsLoaded   = false; // FOREST-V2-A11 Boss HP Bars
@@ -1318,6 +1326,7 @@ function applyMetaUpgrades() {
       disposeForestSealedDoors();           state._sealedDoorsLoaded = false; // FOREST-V2-A14 Sealed Doors
       disposeForestReaper(state.scene);     state._reaperLoaded     = false; // FOREST-V2-A7 Reaper
       disposeForestPickups(state.scene);    state._pickupsLoaded    = false; // FOREST-V2-A8 Pickups
+      disposeForestWeaponDrops(state.scene); state._weaponDropsLoaded = false; // FOREST-V2-A17 Weapon Drops
       disposeForestDayNight(state.scene);   state._dayNightLoaded   = false; // FOREST-V2-A9 Day/Night
       disposeForestHud();                   state._hudLoaded        = false; // FOREST-V2-A10 Stage HUD
       disposeForestBossBars();              state._bossBarsLoaded   = false; // FOREST-V2-A11 Boss HP Bars
@@ -1344,6 +1353,7 @@ function applyMetaUpgrades() {
       disposeForestSealedDoors();           state._sealedDoorsLoaded = false; // FOREST-V2-A14 Sealed Doors
       disposeForestReaper(state.scene);     state._reaperLoaded     = false; // FOREST-V2-A7 Reaper
       disposeForestPickups(state.scene);    state._pickupsLoaded    = false; // FOREST-V2-A8 Pickups
+      disposeForestWeaponDrops(state.scene); state._weaponDropsLoaded = false; // FOREST-V2-A17 Weapon Drops
       disposeForestDayNight(state.scene);   state._dayNightLoaded   = false; // FOREST-V2-A9 Day/Night
       disposeForestHud();                   state._hudLoaded        = false; // FOREST-V2-A10 Stage HUD
       disposeForestBossBars();              state._bossBarsLoaded   = false; // FOREST-V2-A11 Boss HP Bars
@@ -1862,6 +1872,10 @@ function frame(now) {
     // despawn for bomb/magnet/chicken. Bails immediately when no pickups
     // loaded. Effect dispatch (kill-all/vacuum/heal) fires on contact.
     _p=perfStart(); tickForestPickups(state, logicDt); perfMark('forestPickups', _p);
+    // FOREST-V2-A17 Ground Weapon Drops — pickup detect + sparkle anim + 60s
+    // linger despawn for weapon-drop pickups. Bails immediately when no
+    // pickups loaded. acquireWeapon dispatch fires on contact.
+    _p=perfStart(); tickForestWeaponDrops(state, logicDt); perfMark('forestWeaponDrops', _p);
     // FOREST-V2-A9 Day/Night Cycle — lerps sun/hemi/fog from MIDDAY→BLOOD_MOON
     // over the 30:00 Reaper arc. Bails immediately when not loaded (forest-
     // only gate above already filters non-forest stages).
