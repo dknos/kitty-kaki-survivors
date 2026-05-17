@@ -69,6 +69,7 @@ import { state as _gameState } from './state.js';
 import { damageEnemy } from './enemies.js';
 import { spawnMagnetSpark } from './fx.js';
 import { sfx } from './audio.js';
+import { createRuneRing } from './fx/runeRing.js';
 
 // ── pool caps ───────────────────────────────────────────────────────────────
 const CAP_BOMBS    = 16;
@@ -249,22 +250,14 @@ function _buildChickenMeshes() {
 }
 
 function _buildSparkleMesh(cap) {
-  const geo = new THREE.RingGeometry(SPARKLE_R_INNER, SPARKLE_R_OUTER, 16);
-  geo.rotateX(-Math.PI / 2);
-  const mat = new THREE.MeshBasicMaterial({
-    color: SLOT6_GOLD,
-    transparent: true,
-    opacity: 0.82,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-    side: THREE.DoubleSide,
+  // Canonical rune-ring helper (PHASE 2 P2A) — replaces the prior flat
+  // RingGeometry+MeshBasicMaterial donut with the baked-glyph quality bar.
+  const rune = createRuneRing({
+    radius: SPARKLE_R_OUTER, color: SLOT6_GOLD, opacity: 0.82,
+    instanced: true, cap, userData: { pickupPart: 'sparkle' },
   });
-  const mesh = new THREE.InstancedMesh(geo, mat, cap);
-  mesh.layers.enable(BLOOM_LAYER);
-  mesh.frustumCulled = false;
-  mesh.userData.pickupPart = 'sparkle';
-  _track(geo); _track(mat);
-  return mesh;
+  _track(rune.material);
+  return rune.mesh;
 }
 
 function _zeroInstanced(mesh, cap) {

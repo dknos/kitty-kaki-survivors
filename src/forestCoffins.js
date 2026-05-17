@@ -92,6 +92,7 @@ import { sfx } from './audio.js';
 // PHASE 1 P1J (2026-05-17) — Weapon evolve cinematic trigger. Fired once
 // per coffin dispatch right after acquireWeapon. See src/evolveCinematic.js.
 import { triggerEvolveCinematic } from './evolveCinematic.js';
+import { createRuneRing } from './fx/runeRing.js';
 
 // ── pool caps ────────────────────────────────────────────────────────────────
 const CAP_COFFINS = 8; // pre-pool cap; actual placement is 1-2
@@ -287,19 +288,17 @@ function _buildCoffinMeshes() {
   _coffinLockMesh.userData.coffinKind = 'lock';
   _track(lockGeo); _track(lockMat);
 
-  // Sparkle ring — TorusGeometry slot-6 gold, additive + bloom. Only visible
-  // when state == UNLOCKABLE. The ring spins around Y via per-frame matrix
-  // recompute on each unlockable instance.
-  const sparkGeo = new THREE.TorusGeometry(0.55, 0.06, 6, 16);
-  const sparkMat = new THREE.MeshBasicMaterial({
-    color: SLOT6_GOLD,
-    transparent: true, opacity: 0.9,
-    blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+  // Sparkle ring — canonical rune-ring helper (PHASE 2 P2A). Replaces the
+  // prior TorusGeometry "blank gold donut" with the 8-layer baked-glyph
+  // quality bar. Per-instance matrix still drives Y-spin (rotation baked
+  // into the InstancedMesh slot transform, not the geometry).
+  const sparkRune = createRuneRing({
+    radius: 0.55, color: SLOT6_GOLD, opacity: 0.9,
+    instanced: true, cap: CAP_COFFINS,
+    userData: { coffinKind: 'spark' },
   });
-  _coffinSparkMesh = new THREE.InstancedMesh(sparkGeo, sparkMat, CAP_COFFINS);
-  _coffinSparkMesh.layers.enable(BLOOM_LAYER);
-  _coffinSparkMesh.userData.coffinKind = 'spark';
-  _track(sparkGeo); _track(sparkMat);
+  _coffinSparkMesh = sparkRune.mesh;
+  _track(sparkRune.material);
 }
 
 // ── placement ────────────────────────────────────────────────────────────────
@@ -414,10 +413,12 @@ function _stampUnlockableMatrices(i) {
   _coffinLidMesh.setMatrixAt(i, _dummy.matrix);
   // Padlock — hidden.
   _coffinLockMesh.setMatrixAt(i, _ZERO_MATRIX);
-  // Sparkle ring — overhead at y=1.6, rotated flat + spinning around Y.
+  // Sparkle ring — overhead at y=1.6, spinning around Y. Helper's geometry
+  // is pre-rotated -PI/2 (lies flat on XZ) so only the Y spin needs to be
+  // applied here — was previously (PI/2, spin, 0) for the Torus.
   const spin = _animClock * Math.PI * 2 * SPARK_SPIN_HZ + i * 1.3;
   _dummy.position.set(x, 1.6, z);
-  _dummy.rotation.set(Math.PI / 2, spin, 0);
+  _dummy.rotation.set(0, spin, 0);
   _dummy.scale.setScalar(1);
   _dummy.updateMatrix();
   _coffinSparkMesh.setMatrixAt(i, _dummy.matrix);

@@ -64,6 +64,7 @@ import { BLOOM_LAYER } from './postfx.js';
 import { FOREST_ROOMS, FOREST_PORTAL_POSITIONS } from './forestRooms.js';
 import { spawnHealNumber } from './damageNumbers.js';
 import { sfx } from './audio.js';
+import { createRuneRing } from './fx/runeRing.js';
 
 // ── caps ─────────────────────────────────────────────────────────────────────
 const CAP_SHRINES = 64;
@@ -225,18 +226,17 @@ function _buildShrineMeshes() {
   _shrineObeliskMesh.userData.landmarkKind = 'shrine_obelisk';
   _track(obeGeo); _track(obeMat);
 
-  // Sparkle ring above — TorusGeometry with gold emissive, bloom-tagged.
-  // Slot-6 gold — palette-locked. Discovered shrines hide this via zero-scale.
-  const sparkleGeo = new THREE.TorusGeometry(0.45, 0.04, 6, 16);
-  const sparkleMat = new THREE.MeshBasicMaterial({
-    color: SLOT6_GOLD,
-    transparent: true, opacity: 0.85,
-    blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+  // Sparkle ring above — canonical rune-ring helper (PHASE 2 P2A).
+  // Replaces the prior TorusGeometry "blank gold donut" with the 8-layer
+  // baked-glyph quality bar so shrines read as a magical summoning sigil.
+  // Discovered shrines still hide via zero-scale on the InstancedMesh slot.
+  const shrineRune = createRuneRing({
+    radius: 0.45, color: SLOT6_GOLD, opacity: 0.85,
+    instanced: true, cap: CAP_SHRINES,
+    userData: { landmarkKind: 'shrine_sparkle' },
   });
-  _shrineSparkleMesh = new THREE.InstancedMesh(sparkleGeo, sparkleMat, CAP_SHRINES);
-  _shrineSparkleMesh.layers.enable(BLOOM_LAYER);
-  _shrineSparkleMesh.userData.landmarkKind = 'shrine_sparkle';
-  _track(sparkleGeo); _track(sparkleMat);
+  _shrineSparkleMesh = shrineRune.mesh;
+  _track(shrineRune.material);
 }
 
 function _buildAltarMeshes() {
@@ -313,25 +313,17 @@ function _buildLogMeshes() {
 }
 
 function _buildPulsePool() {
-  // Pre-allocate CAP_PULSES ring meshes. Each owns its own geometry+material
-  // so we can color/scale them independently per pulse without per-spawn alloc.
-  const ringGeo = new THREE.RingGeometry(PULSE_INNER, PULSE_OUTER, 24);
-  ringGeo.rotateX(-Math.PI / 2);
-  _track(ringGeo);
-  // Geometry is shared across all pool slots (read-only). Each slot gets its
-  // own material so opacity/color can be driven independently per frame.
+  // Pre-allocate CAP_PULSES ring meshes via canonical rune-ring helper
+  // (PHASE 2 P2A). Each pulse owns its own MATERIAL so opacity/color can be
+  // animated independently per-frame (helper's shared geometry is reused).
   for (let i = 0; i < CAP_PULSES; i++) {
-    const mat = new THREE.MeshBasicMaterial({
-      color: SLOT6_GOLD,
-      transparent: true, opacity: 0,
-      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+    const pulse = createRuneRing({
+      radius: PULSE_OUTER, color: SLOT6_GOLD, opacity: 0,
+      userData: { landmarkKind: 'pulse' },
     });
-    const mesh = new THREE.Mesh(ringGeo, mat);
-    mesh.layers.enable(BLOOM_LAYER);
-    mesh.visible = false;
-    mesh.userData.landmarkKind = 'pulse';
-    _pulseMeshes.push(mesh);
-    _track(mat);
+    pulse.mesh.visible = false;
+    _pulseMeshes.push(pulse.mesh);
+    _track(pulse.material);
   }
 }
 
