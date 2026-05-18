@@ -21,7 +21,7 @@ Author: Claude C  ·  Opened: 2026-05-18  ·  Advisor-ordered sequence
 
 | ID | Item | Acceptance |
 |----|------|-----------|
-| P4J | Telemetry harness | `src/telemetry.js` collects per-run stats (duration, kills, picks, deaths, weapons taken, evolves) → localStorage `kks_telemetry`. Export JSON button on end-run summary. Schema versioned. Smoke parses 1 sample run. |
+| P4J | Telemetry harness | ✅ 208b89a — `src/telemetry.js` collects per-run stats (duration, kills, picks, deaths, weapons taken, evolves) → localStorage `kks_telemetry`. Export JSON button on end-run summary. Schema v1. smoke-p4j-telemetry passes. |
 | P4G | Audio mixer | 3 sliders (music/sfx/ambient) in pause menu + main menu, persist to localStorage. All 12 SFX + 5 music tracks route through correct bus. Mute = 0 amplitude (not skip). Smoke verifies bus routing. |
 | P4H | Accessibility | (a) Colorblind palette toggle (deuteranopia variant of forest 8-color), (b) screen-shake 0–100% slider, (c) hold-to-confirm toggle on irreversible menu actions. All persist. Smoke loads w/ each toggle off+on. |
 | P4D | NG+ modifiers | 3 modifiers unlock on first forest clear: Mirror Mobs (+50% spawn), Twin Bosses, Half Pickups. Toggle pre-run. Stats tagged in telemetry. Smoke verifies each modifier flag affects spawn count. |
