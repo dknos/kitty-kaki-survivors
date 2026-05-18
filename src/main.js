@@ -482,29 +482,42 @@ async function boot() {
     // we wait here and dispose all other hero_* cache entries to free VRAM.
     try { await _ensureSelectedAvatarLoaded(); } catch (_) {}
     try { _disposeUnselectedAvatars(); } catch (_) {}
-    state.started = true;
-    if (state.mode === 'town') exitTown();
-    state.mode = 'run';
-    // Mid-run flavor: arena props at run start, mini-events scheduler reset.
-    resetMiniEvents();
-    spawnArenaProps();
-    // Iter 10b — Greed tier-4 capstone: idempotent across run-entry paths
-    // (restartRun calls _primeRunStart which also calls this; first-from-menu
-    // skips _primeRunStart and lands here directly). The guard inside the
-    // helper prevents double-spawn.
-    _maybeSpawnTreasureMapChest();
-    // Player may have changed character on the picker — rebuild hero so the
-    // placeholder tint reflects the current selection.
-    rebuildHero(state.scene);
-    hideStartScreen();
-    hideMenuV2();
-    state.run.startedAt = performance.now();
-    if (meta.optMusic) startMusic();
-    setMusicTier(0);
-    if (state.modes && state.modes.bossRush) {
-      showBanner('⚔ BOSS RUSH ⚔', 3.0, '#ff7a7a');
-    } else if (state.modes && state.modes.daily) {
-      showBanner('★ DAILY CHALLENGE ★', 3.0, '#c87bff');
+    // Re-apply avatar/character stats and re-acquire starter weapon if weapons
+    // were wiped (kkReturnToMenu path clears them via resetState but skips
+    // _primeRunStart). applyMetaUpgrades re-reads selectedAvatar so the correct
+    // sig-weapon (e.g. sig_sote_warhowl) is always given regardless of what was
+    // set at boot time.
+    if (state.weapons.length === 0) {
+      applyMetaUpgrades();
+      acquireWeapon(state.run.starterWeapon || 'orbitals');
+      for (let i = 0; i < (state.run.cellarLv || 0); i++) acquireWeapon(state.run.starterWeapon || 'orbitals');
+    }
+    // Set run state inside try so a failure resets the guard flags and lets
+    // the player retry (otherwise state.started+mode='run' stays set with the
+    // menu still visible and every subsequent Embark click returns early).
+    try {
+      state.started = true;
+      if (state.mode === 'town') exitTown();
+      state.mode = 'run';
+      resetMiniEvents();
+      spawnArenaProps();
+      // Iter 10b — Greed tier-4 capstone: idempotent across run-entry paths
+      _maybeSpawnTreasureMapChest();
+      rebuildHero(state.scene);
+      hideStartScreen();
+      hideMenuV2();
+      state.run.startedAt = performance.now();
+      if (meta.optMusic) startMusic();
+      setMusicTier(0);
+      if (state.modes && state.modes.bossRush) {
+        showBanner('⚔ BOSS RUSH ⚔', 3.0, '#ff7a7a');
+      } else if (state.modes && state.modes.daily) {
+        showBanner('★ DAILY CHALLENGE ★', 3.0, '#c87bff');
+      }
+    } catch (e) {
+      state.started = false;
+      state.mode = 'menu';
+      console.error('[start] failed, state reset for retry:', e);
     }
     // Tutorial disabled by user request — how-to-play.html covers new players.
   };
