@@ -8,7 +8,7 @@ import { WORLD, SPAWN, AVATARS, CHARACTERS, STAGES, archetypeForAvatar } from '.
 import { preloadAll, lazyLoadGLTF, disposeCachedGLTF, BASE, GLTF_CACHE } from './assets.js';
 import { createComposer, resizeComposer, BLOOM_LAYER, applyAccessibilityOptions } from './postfx.js';
 import { buildEnv } from './env.js';
-import { unlockAudio, startMusic, setMusicTier, setVolume, setMasterVolume, setMusicVolume, setSfxVolume, suspendAudio, resumeAudio, sfx, playStageAmbient } from './audio.js';
+import { unlockAudio, startMusic, setMusicTier, setVolume, setMasterVolume, setMusicVolume, setSfxVolume, setAmbientVolume, suspendAudio, resumeAudio, sfx, playStageAmbient, _debug as _audioDebug } from './audio.js';
 import { getMeta, shopLevel, selectedCharacter, selectedAvatar, dailyChallengeConfig, equippedRelic, selectedStage, QUEST_TEMPLATES, weeklyMutatorConfig, commitWeeklyRun, setOption, SHOP_TREE, recordAvatarRun } from './meta.js';
 import { applyWeeklyMutator } from './weeklyMutator.js';
 import { recordRun } from './leaderboard.js';
@@ -441,12 +441,20 @@ async function boot() {
   state._optReducedFlashing = !!meta.optReducedFlashing;
   // Shake multiplier: reduce-motion forces 0 regardless of optShake slider.
   state._optShakeMul = state._optReduceMotion ? 0 : Number(meta.optShake);
-  // Audio mix split — push all three buses from meta. Legacy setVolume() is
+  // Audio mix split — push all four buses from meta. Legacy setVolume() is
   // a back-compat shim that aliases setMasterVolume; we call the explicit
   // setters here so the new keys win when both are present.
+  // P4G #141 (2026-05-18): added optAmbientVolume — fourth bus governs sampled
+  // stage ambient loops (forest day/night phases + flat beds). Defaults via
+  // the meta DEFAULT spread; the `!= null` guard keeps boot safe for older
+  // saves that predate the key.
   setMasterVolume(meta.optMasterVolume != null ? meta.optMasterVolume : meta.optVolume);
   setMusicVolume(meta.optMusicVolume != null ? meta.optMusicVolume : (meta.optVolume * 0.6));
   setSfxVolume(meta.optSfxVolume != null ? meta.optSfxVolume : meta.optVolume);
+  setAmbientVolume(meta.optAmbientVolume != null ? meta.optAmbientVolume : 0.6);
+  // P4G #141 — expose the audio debug surface on window for the smoke test.
+  // Off the public API surface (underscore prefix). Smoke reads it directly.
+  try { if (typeof window !== 'undefined') window.kkAudioDebug = _audioDebug; } catch (_) {}
   // Accessibility uniforms (chromatic gate + colorblind remap + high contrast).
   applyAccessibilityOptions(state.postFXPass, {
     reduceMotion: state._optReduceMotion,

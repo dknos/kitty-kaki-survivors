@@ -29,7 +29,7 @@ import {
 // the Options menu sliders. Imported eagerly so the Options modal sliders
 // don't have to await a dynamic import on every drag event.
 import { applyAccessibilityOptions } from './postfx.js';
-import { setMasterVolume, setMusicVolume, setSfxVolume, sfx } from './audio.js';
+import { setMasterVolume, setMusicVolume, setSfxVolume, setAmbientVolume, sfx } from './audio.js';
 import { CHARACTERS, STAGES, AVATARS, SIGIL_REROLL, DAILY_SURVIVOR_BADGE_ID } from './config.js';
 import { SLOT_SYMBOLS, rollReel, resolveOutcome, applyOutcome } from './slotMachine.js';
 import { pushFocusScope, popFocusScope } from './uiFocus.js';
@@ -5201,16 +5201,24 @@ export function showOptions() {
   const sfxSlider = mkSlider(0, 1, 0.05, meta.optSfxVolume != null ? meta.optSfxVolume : meta.optVolume, v => {
     setOption('optSfxVolume', v); setSfxVolume(v);
   });
+  // P4G #141 — Ambient bus slider (4th audio control). Governs sampled stage
+  // ambient loops: forest day/night phase tracks + cinder/twilight/void flat
+  // beds. Sits between Music and SFX in the modal so the visual order
+  // (Master → Music → SFX → Ambient) matches the bus hierarchy.
+  const ambientSlider = mkSlider(0, 1, 0.05, meta.optAmbientVolume != null ? meta.optAmbientVolume : 0.6, v => {
+    setOption('optAmbientVolume', v); setAmbientVolume(v);
+  });
   const musicTgl = mkToggle(!!meta.optMusic, C.cyan, 'On', 'Off', () => {
     const nv = !getMeta().optMusic;
     setOption('optMusic', nv);
     import('./audio.js').then(m => nv ? m.startMusic() : m.stopMusic());
     return nv;
   });
-  sAudio.appendChild(row('Master Volume', masterSlider));
-  sAudio.appendChild(row('Music Volume',  musicSlider));
-  sAudio.appendChild(row('SFX Volume',    sfxSlider));
-  sAudio.appendChild(row('Music Track',   musicTgl, 'Procedural in-run music loop'));
+  sAudio.appendChild(row('Master Volume',  masterSlider));
+  sAudio.appendChild(row('Music Volume',   musicSlider));
+  sAudio.appendChild(row('SFX Volume',     sfxSlider));
+  sAudio.appendChild(row('Ambient Volume', ambientSlider, 'Stage ambience (forest phases, etc)'));
+  sAudio.appendChild(row('Music Track',    musicTgl,      'Procedural in-run music loop'));
 
   // ─── Section: Display ───
   const sDisp = sectionBox('Display');

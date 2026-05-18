@@ -61,9 +61,16 @@ const DEFAULT = {
   optShake: 1.0,
   optMusic: false,    // user prefers silence by default; opt-in via options menu
   // ── Iter 10a audio mix split — Master/Music/SFX (defaults: combat readability) ──
+  // P4G #141 (2026-05-18): added optAmbientVolume — fourth bus governs sampled
+  // stage ambient loops (forest day/night phases + cinder/twilight/void flat
+  // beds). Default 0.6 sits between music (0.5) and SFX (0.7) so atmosphere
+  // reads under combat without drowning the procedural music tier. New v2
+  // saves missing the key fall back to this default via {...DEFAULT,...parsed}
+  // spread in loadMeta — no legacy migration entry needed for a brand-new key.
   optMasterVolume: 1.0,
   optMusicVolume: 0.5,
   optSfxVolume: 0.7,
+  optAmbientVolume: 0.6,
   // ── Iter 10a accessibility ──
   // Reduce Motion: skip screen shake, chromatic aberration, VFX bursts.
   // ReduceMotionUserSet sentinel = true once the user explicitly toggled the

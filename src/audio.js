@@ -1,19 +1,32 @@
 /**
  * Audio: CC0 sample playback for combat/UI SFX + procedural music bed.
  *
- * Layout (iter 16):
+ * Layout (P4G — 2026-05-18):
  *   _ctx ─► _master ─► destination
  *               ▲
- *       _musicBus (procedural music + ambient bed)
- *       _sfxBus   (sample-based combat sfx)
+ *       _musicBus    (procedural music + menu/town bed — synthesized only)
+ *       _sfxBus      (sample-based combat sfx)
+ *       _ambientBus  (stage ambient loops — flat ambient + forest day/night phases)
  *
  * - `_master` is the master gain; `setMasterVolume` writes to it.
- * - `_musicBus` carries the still-procedural music + menu/town/interior bed.
+ * - `_musicBus` carries procedural music + menu/town/interior bed.
  *   `setMusicVolume` writes to it.
  * - `_sfxBus` carries SFX. `setSfxVolume` writes to it.
+ * - `_ambientBus` (P4G #141) carries sampled stage ambient loops —
+ *   `playStageAmbient` flat beds + the 5 forest day/night phase tracks.
+ *   `setAmbientVolume` writes to it. Note: per-bus split lets players keep
+ *   atmospheric nature loops audible while muting the procedural music tier
+ *   (or vice versa).
  * - Legacy `setVolume(v)` is a deprecated shim mapping to `setMasterVolume`.
  * - Every sfx.* is throttled: a 30ms minimum gap per-method prevents layering
  *   when e.g. an orbital hits 5 enemies in one frame.
+ *
+ * Mute = 0 amplitude, not skip (P4G #141 audit): every play path lands at a
+ * GainNode whose value is set by setMaster/Music/Sfx/AmbientVolume. Setting a
+ * slider to 0 sets the bus gain to 0 — the play() / scheduleNote() / element
+ * .play() call still fires, the sample/oscillator still spawns, telemetry can
+ * still observe the event. There is no `if (vol <= 0) return` skip path; the
+ * `if (!_enabled) return` in _play is a separate kill-switch (setEnabled).
  *
  * Iter 16 (2026-05-14): replaced procedural tone synthesis with CC0 Kenney
  * samples decoded into `SFX_BANK[bucket]`. Each public sfx.* method picks a
@@ -26,9 +39,16 @@ import { state } from './state.js';
 
 let _ctx = null;
 let _master = null;       // master gain (everything funnels here)
-let _musicBus = null;     // procedural music + ambient bed submaster
+let _musicBus = null;     // procedural music + menu/town bed submaster
 let _sfxBus = null;       // combat sfx submaster
+let _ambientBus = null;   // stage ambient loops submaster (P4G #141)
 let _enabled = true;
+
+// ── Play counters (P4G #141 smoke verification) ─────────────────────────────
+// Smoke test asserts that mute=0 doesn't skip the play call. We bump these
+// inside every play path so the smoke can poll a count delta with the bus
+// gain at 0 and verify the call fired. Counters are reset()-able by tests.
+const _playCounts = { sfx: 0, music: 0, ambient: 0 };
 // Cached menu/town/interior mode detector — audio module polls state.mode
 // since we can't observe writes to it from town/interior/catacomb modules.
 let _modePollTimer = null;
@@ -48,6 +68,12 @@ function ensureCtx() {
   _sfxBus = _ctx.createGain();
   _sfxBus.gain.value = 0.7;
   _sfxBus.connect(_master);
+  // Ambient submaster (P4G #141) — default 0.6. Sits between music and SFX so
+  // a stage's atmosphere reads under combat without drowning the procedural
+  // music tier. main.js boot overrides from meta.optAmbientVolume.
+  _ambientBus = _ctx.createGain();
+  _ambientBus.gain.value = 0.6;
+  _ambientBus.connect(_master);
   // Kick off CC0 sample decoding once we have a ctx. Safe to call on a
   // suspended context — decodeAudioData works regardless of run state.
   _primeSamples();
@@ -79,6 +105,19 @@ export function setMusicVolume(v) {
 export function setSfxVolume(v) {
   const clamped = Math.max(0, Math.min(1, Number(v) || 0));
   if (_sfxBus) _sfxBus.gain.value = clamped;
+}
+
+/**
+ * Ambient submaster volume (0..1) — P4G #141.
+ *
+ * Affects sampled stage ambient loops: `playStageAmbient` flat beds (cinder /
+ * twilight / void) AND the 5 forest day/night phase tracks
+ * (midday/golden/dusk/twilight/bloodmoon). Mute = 0 amplitude only — the
+ * HTMLAudioElement.play() still fires; the gain node clamps output.
+ */
+export function setAmbientVolume(v) {
+  const clamped = Math.max(0, Math.min(1, Number(v) || 0));
+  if (_ambientBus) _ambientBus.gain.value = clamped;
 }
 
 /**
@@ -333,6 +372,9 @@ function _play(bucket, opts = {}) {
   const g = ctx.createGain();
   g.gain.value = (opts.gain != null ? opts.gain : 1);
   src.connect(g).connect(_sfxBus);
+  // P4G #141 — count BEFORE start() so the increment lands even if start()
+  // throws on a freshly-suspended ctx. Mute=0 must still bump the count.
+  _playCounts.sfx++;
   src.start(t);
   // Auto-stop a generous window after buffer length to give Chrome a hint to
   // release the source node (buffer.duration may be undefined in odd edge
@@ -543,6 +585,9 @@ function playNote(f, dur, type, vol) {
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
   // Route music through the music submaster so it tracks Music Volume slider.
   osc.connect(g).connect(_musicBus);
+  // P4G #141 — bump music count; bumped here (not _musicStep / _menuBedStep)
+  // so menu bed AND combat music both contribute. Smoke compares delta only.
+  _playCounts.music++;
   osc.start(t);
   osc.stop(t + dur + 0.02);
 }
@@ -767,13 +812,17 @@ export function playStageAmbient(stageId) {
   }
   const gainNode = _ctx.createGain();
   gainNode.gain.value = 0.55;  // bed gain — sits under SFX + procedural music
-  srcNode.connect(gainNode).connect(_musicBus);
+  // P4G #141 — route flat stage ambient through the ambient submaster (not
+  // _musicBus). Lets the player keep nature loops audible while muting the
+  // procedural music tier.
+  srcNode.connect(gainNode).connect(_ambientBus);
 
   _stageAmbient = { stageId, el, srcNode, gainNode };
 
   // Play. If ctx is suspended (rare here — we'd have bailed above) browser
   // policy will throw an unmuted-autoplay error; catch + retry on next
   // unlockAudio call by stashing the intent.
+  _playCounts.ambient++;
   const playPromise = el.play();
   if (playPromise && typeof playPromise.catch === 'function') {
     playPromise.catch((err) => {
@@ -903,7 +952,11 @@ function _forestSlotInit(idx, url) {
   }
   const gainNode = ctx.createGain();
   gainNode.gain.value = 0;
-  srcNode.connect(gainNode).connect(_musicBus);
+  // P4G #141 — forest day/night phase tracks are sampled ambient loops, not
+  // structured music. Route through _ambientBus so the Ambient Volume slider
+  // governs them. The only "music" left on _musicBus is the procedural pad
+  // (combat music tiers + menu/town bed).
+  srcNode.connect(gainNode).connect(_ambientBus);
   return { el, srcNode, gainNode, url, phase: null, playing: false };
 }
 
@@ -1010,6 +1063,9 @@ export const music = {
     // it for the next user-gesture resume to retry (forestDayNight will call
     // setForestPhase again on the next phase tick anyway, so eventual
     // playback is guaranteed).
+    // P4G #141 — count BEFORE play() so the increment lands even if the
+    // promise rejects on a suspended ctx (mute=0 must still bump).
+    _playCounts.ambient++;
     const pp = newSlot.el.play();
     if (pp && typeof pp.catch === 'function') {
       pp.catch((err) => {
@@ -1092,4 +1148,27 @@ export const music = {
       if (p && typeof p.catch === 'function') p.catch(() => {});
     }
   },
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// P4G #141 — Debug surface for the mixer smoke test.
+//
+// Exposes the 4 gain nodes + play counters so tools/smoke-p4g-mixer.mjs can
+// verify (a) all 4 buses exist post-boot, (b) setting a slider to 0 produces
+// gainNode.gain.value === 0, and (c) play() still fires when the bus is muted
+// (counter increments even at gain 0). main.js wires this onto window via a
+// dev-mode hook; the smoke harness reads window.kkAudioDebug directly.
+//
+// Not part of the public API — underscore prefix signals "do not consume".
+// ─────────────────────────────────────────────────────────────────────────────
+export const _debug = {
+  buses: () => ({
+    master:  _master,
+    music:   _musicBus,
+    sfx:     _sfxBus,
+    ambient: _ambientBus,
+  }),
+  counts: () => ({ ..._playCounts }),
+  resetCounts() { _playCounts.sfx = 0; _playCounts.music = 0; _playCounts.ambient = 0; },
+  ctx: () => _ctx,
 };
