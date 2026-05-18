@@ -1223,6 +1223,19 @@ function applyMetaUpgrades() {
   // Boss Rush is gated by first-victory (same unlock as Hyper), and is
   // incompatible with Daily / Weekly (each picks its own modifier set).
   state.modes.bossRush = !!(meta.unlockedHyper && meta.optBossRush) && !dailyOn && !weeklyOn;
+  // P4D NG+ modifiers (#143) — gated by meta.unlockedNgPlus AND limited to the
+  // Forest stage (acceptance scope per docs/P4_BACKLOG.md). Mirror into
+  // state.modes so the existing telemetry.js beginRun call (which does
+  // `modifiers: state.modes ?...` at line 329) auto-tags each flag into the
+  // per-run record without touching telemetry.js itself. Each flag is
+  // independently consumed: ngMirror in spawnDirector swarmMul, ngTwin in
+  // spawnMiniBoss/spawnFinalBoss adjacency, ngHalfPickup in
+  // forestPickups.dropForestPickup roll gate.
+  const ngPlusEligible = !!meta.unlockedNgPlus && !dailyOn && !weeklyOn
+    && (meta.selectedStage === 'forest');
+  state.modes.ngMirror     = !!(ngPlusEligible && meta.optNgMirror);
+  state.modes.ngTwin       = !!(ngPlusEligible && meta.optNgTwin);
+  state.modes.ngHalfPickup = !!(ngPlusEligible && meta.optNgHalfPickup);
 
   // Stage selection — modifies enemy HP, final-boss timing, ground tint.
   // Daily / Weekly force stage 1 so the leaderboard is fair.

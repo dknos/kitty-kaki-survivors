@@ -584,6 +584,18 @@ function _spawnChicken(x, z) {
 export function dropForestPickup(pos, rngRoll, heroHpPct) {
   if (!_loaded) return null;
   if (!pos) return null;
+  // P4D NG+ Half Pickups (#143) — pre-gate the entire forest pickup roll with
+  // a 50% deny. Applies to bomb / magnet / chicken (every pickup type this
+  // chokepoint dispatches). dropForestPickup is the canonical per-kill drop
+  // site called from enemies.js:879 inside the `_forestChestStage` guard —
+  // forest-only by construction, no extra stage check needed here. Uses a
+  // fresh Math.random() (separate from `rngRoll`) so the 50% gate is a clean
+  // independent coin flip, not a re-bucketing of the pre-rolled value (which
+  // would bias which types survive).
+  if (_gameState && _gameState.modes && _gameState.modes.ngHalfPickup
+      && Math.random() < 0.5) {
+    return null;
+  }
   const x = (typeof pos.x === 'number') ? pos.x : 0;
   const z = (typeof pos.z === 'number') ? pos.z : 0;
   if (rngRoll < 0.01) {

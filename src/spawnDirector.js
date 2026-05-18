@@ -138,7 +138,12 @@ function spawnOnRing(tier, angle, radiusMul = 1) {
   const stageRingMul = (state.run && state.run.stageRuleSpawnRingMul) || 1;
   const r = (SPAWN.ringRadius + (Math.random() * 2 - 1) * SPAWN.ringJitter) * radiusMul * stageRingMul;
   const { x, z } = ringPos(angle, r);
-  spawnEnemy(tier, x, z);
+  // P4D NG+ (#143) — return the spawned enemy so the Twin Bosses caller can
+  // tag the twin via _isTwin post-spawn. spawnEnemy hard-copies known
+  // tierConfig fields (enemies.js line 389 region) so custom tags must be
+  // stamped on the returned object, not the tier blob. Returns null on pool
+  // exhaustion (rare).
+  return spawnEnemy(tier, x, z);
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────
@@ -178,6 +183,19 @@ function spawnMiniBoss() {
   };
   const angle = Math.random() * Math.PI * 2;
   spawnOnRing(buffed, angle, 1.3);
+  // P4D NG+ Twin Bosses (#143) — spawn a second adjacent miniboss with the
+  // same buffed stats; offset by ~PI/12 around the ring (small angular
+  // separation so both sit inside the ring band but read as a pair). _isTwin
+  // tags the second for telemetry / debug; HP bar dispatch is automatic since
+  // forestBossBars.js iterates state.enemies.active and renders one row per
+  // isMiniBoss / isFinalBoss entity (MAX_ROWS=3, so two minibosses fit).
+  // spawnEnemy strips unknown tierConfig fields (enemies.js:389 region) so
+  // we stamp _isTwin on the returned live enemy, not the tier blob.
+  if (state.modes && state.modes.ngTwin) {
+    const twinAngle = angle + Math.PI / 12;
+    const twinEnemy = spawnOnRing(buffed, twinAngle, 1.3);
+    if (twinEnemy) twinEnemy._isTwin = true;
+  }
   state.fx.chromaticPulse = 0.9;
   state.fx.bloomBoost = 0.6;
   state.fx.shake = Math.max(state.fx.shake || 0, 0.5);
@@ -277,7 +295,19 @@ function spawnFinalBoss() {
   const angle = Math.random() * Math.PI * 2;
   const r = SPAWN.ringRadius * 1.5;
   const hp = state.hero.pos;
-  spawnEnemy(buffed, hp.x + Math.cos(angle) * r, hp.z + Math.sin(angle) * r);
+  const fbx = hp.x + Math.cos(angle) * r;
+  const fbz = hp.z + Math.sin(angle) * r;
+  spawnEnemy(buffed, fbx, fbz);
+  // P4D NG+ Twin Bosses (#143) — second final boss with ~3u tangential offset
+  // (perpendicular to the ring radial so both bosses share the same ring
+  // distance — keeps the visual "pair" framing). spawnEnemy strips unknown
+  // tier fields, so _isTwin is stamped on the returned live enemy.
+  if (state.modes && state.modes.ngTwin) {
+    const offX = -Math.sin(angle) * 3;
+    const offZ =  Math.cos(angle) * 3;
+    const twinEnemy = spawnEnemy(buffed, fbx + offX, fbz + offZ);
+    if (twinEnemy) twinEnemy._isTwin = true;
+  }
   state.fx.chromaticPulse = 1.0;
   state.fx.bloomBoost = 1.0;
   state.fx.shake = 0.8;
@@ -529,10 +559,17 @@ export function tickSpawnDirector(dt) {
     const k = 1 - Math.max(0, Math.min(1, remaining / SMOOTHING_WINDOW_SEC));
     _puzzleSmoothMul = SMOOTHING_FLOOR + (1 - SMOOTHING_FLOOR) * k;
   }
+  // P4D NG+ Mirror Mobs (#143) — +50% on the alive-cap target. Composes
+  // multiplicatively into swarmMul alongside daily/rule/weekly/helltide and
+  // the puzzle-smoothing ramp; targetAliveCap below still hard-caps the
+  // composition so we never overshoot the engine's bookkeeping limit. The
+  // alive-cap bump is the dominant lever for "+50% spawn" (matches the
+  // existing hyper/weekly modifiers — they all bend the cap, not the cadence).
+  const ngMirrorMul = (state.modes && state.modes.ngMirror) ? 1.5 : 1;
   // Weekly DOUBLE_SPAWNS multiplies the target alive cap. Compose with daily +
   // stage-rule swarms so a Daily SWARM_DAY happening to be Weekly DOUBLE_SPAWNS
   // doesn't compound past targetAliveCap (still hard-capped below).
-  const swarmMul = dailyMul * ruleMul * weeklyMul * helltideMul * _puzzleSmoothMul;
+  const swarmMul = dailyMul * ruleMul * weeklyMul * helltideMul * _puzzleSmoothMul * ngMirrorMul;
   // Boss rush: tiny ambient swarm (3-4 alive) so the player still has XP and
   // pickups, but the focus is the bosses.
   const target = bossRush

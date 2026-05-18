@@ -86,6 +86,26 @@ const DEFAULT = {
   // back to false via the {...DEFAULT,...parsed} spread in loadMeta — no
   // explicit legacy migration needed.
   optHoldConfirm: false,
+  // ── P4D NG+ modifiers (#143, 2026-05-18) ─────────────────────────────────
+  // Three pre-run toggles unlocked on first Forest victory (or Reaper
+  // outlasted). Read by:
+  //   - main.js applyMetaUpgrades → mirrors into state.modes.ngMirror/
+  //     ngTwin/ngHalfPickup so telemetry's beginRun auto-tags them (per
+  //     P4J modifiers contract; state.modes is the canonical surface).
+  //   - src/spawnDirector.js — ngMirror multiplies swarmMul ×1.5;
+  //     spawnMiniBoss / spawnFinalBoss spawn a second adjacent boss with
+  //     _isTwin: true when ngTwin is set.
+  //   - src/forestPickups.js dropForestPickup — ngHalfPickup gates the
+  //     roll with a 50% pre-check.
+  // unlockedNgPlus is the profile-wide gate; menuV2 disables the toggle
+  // group when false. Flipped in src/forestAchievements.js tick on the
+  // first forest victory edge (self-gated by state.run._ngPlusUnlockFired).
+  // Loaded saves missing these keys fall back to false/false/false via the
+  // {...DEFAULT,...parsed} spread in loadMeta — no migration needed.
+  optNgMirror: false,
+  optNgTwin: false,
+  optNgHalfPickup: false,
+  unlockedNgPlus: false,
   optFontScale: 1.0,             // 0.85..1.30, surfaced via --kk-font-scale CSS var
   optFrameCap: 0,                // 0=unlocked; 30/60/144 valid
   optControllerDeadzone: 0.15,   // 0..0.30 — gamepad.js reads this

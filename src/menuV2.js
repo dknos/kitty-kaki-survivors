@@ -623,10 +623,116 @@ function _buildContinueCard(parent) {
   card.appendChild(eyebrow);
   card.appendChild(bio);
   card.appendChild(row);
+  // P4D NG+ modifiers (#143) — pre-run toggle panel, forest-only. Mounted
+  // between the stats row and Begin Run so the player sees the active
+  // modifier set immediately before launch. Greyed-out + locked-hint text
+  // when meta.unlockedNgPlus is false (first-clear gate).
+  if (stage.id === 'forest') _buildNgPlusPanel(card);
   card.appendChild(btn);
 
   card.dataset.role = 'continue';
   parent.appendChild(card);
+}
+
+// ─────────────────────────────────────────────────────────
+// P4D NG+ modifier panel (#143)
+// ─────────────────────────────────────────────────────────
+// Three pre-run toggles unlocked on first forest clear. Built inline with
+// the continue card (forest-only — other stages don't have NG+ yet). Uses
+// the 8-color amber palette via the same chrome already declared in
+// menuV2.css for the continue card; inline styles only for the row layout
+// + lock affordance so we don't bolt new selectors onto the stylesheet.
+function _buildNgPlusPanel(card) {
+  const meta = getMeta();
+  const locked = !meta || !meta.unlockedNgPlus;
+
+  const panel = document.createElement('div');
+  panel.className = 'kkv2-ng-panel';
+  panel.style.cssText = `
+    margin: 14px 0 12px;
+    padding: 12px 14px;
+    border: 1px solid rgba(217,166,72,0.32);
+    background: rgba(74,50,32,0.18);
+    border-radius: 4px;
+    opacity: ${locked ? '0.55' : '1'};
+  `;
+
+  const head = document.createElement('div');
+  head.style.cssText = `
+    font-family: Cinzel, serif;
+    font-weight: 600;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #d9a648;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  `;
+  const hLabel = document.createElement('span');
+  hLabel.textContent = 'NG+ Modifiers';
+  head.appendChild(hLabel);
+  if (locked) {
+    const lockHint = document.createElement('span');
+    lockHint.textContent = '\u{1F512} Clear the forest to unlock';
+    lockHint.style.cssText = `
+      font-family: Geist, sans-serif;
+      font-weight: 400;
+      font-size: 10px;
+      letter-spacing: 0.06em;
+      text-transform: none;
+      color: #c7b89a;
+      opacity: 0.85;
+    `;
+    head.appendChild(lockHint);
+  }
+  panel.appendChild(head);
+
+  const TOGGLES = [
+    { key: 'optNgMirror',     label: 'Mirror Mobs',   hint: '+50% spawn cap' },
+    { key: 'optNgTwin',       label: 'Twin Bosses',   hint: 'Paired miniboss + final' },
+    { key: 'optNgHalfPickup', label: 'Half Pickups',  hint: '50% drop denial' },
+  ];
+
+  for (const t of TOGGLES) {
+    const row = document.createElement('label');
+    row.style.cssText = `
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 5px 0;
+      cursor: ${locked ? 'not-allowed' : 'pointer'};
+      font-family: Geist, sans-serif;
+      font-size: 12px;
+      color: #c7b89a;
+    `;
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = !!(meta && meta[t.key]);
+    cb.disabled = locked;
+    cb.style.cssText = `
+      width: 14px;
+      height: 14px;
+      accent-color: #d9a648;
+      cursor: ${locked ? 'not-allowed' : 'pointer'};
+    `;
+    cb.addEventListener('change', () => {
+      try { setOption(t.key, !!cb.checked); } catch (_) {}
+    });
+    const label = document.createElement('span');
+    label.textContent = t.label;
+    label.style.cssText = 'flex: 0 0 auto; font-weight: 500; color: #e89c4a;';
+    const hint = document.createElement('span');
+    hint.textContent = t.hint;
+    hint.style.cssText = 'flex: 1; opacity: 0.72; font-size: 11px; color: #c7b89a;';
+    row.appendChild(cb);
+    row.appendChild(label);
+    row.appendChild(hint);
+    panel.appendChild(row);
+  }
+
+  card.appendChild(panel);
 }
 
 function _stat(label, value) {

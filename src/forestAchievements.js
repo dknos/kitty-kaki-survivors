@@ -401,6 +401,31 @@ export function tickAchievements(state, dt) {
     if (hp >= hpMax - 0.001) _fullHpTimer += dt;
     if (_fullHpTimer >= 300) unlockAchievement('full_hp_5min');
   }
+
+  // ── P4D NG+ unlock (#143, 2026-05-18) ────────────────────────────────
+  // Profile-wide flag flips true on the first Forest clear. Two signals
+  // qualify as "clear" per docs/P4_BACKLOG.md: state.victory (final-boss
+  // kill) OR state.run.stats.reaperOutlasted (Reaper outlasted at 35:00 —
+  // the alternate forest clear path forestReaper.js stamps). Self-gated
+  // via state.run._ngPlusUnlockFired (initialized by state.js resetState
+  // implicitly — the run object is rebuilt per run, so a fresh run starts
+  // with the field undefined, matching the _xFired idiom from
+  // feedback_kks_wave_dispatcher_throttle.md). saveMeta() inline because
+  // forestAchievements.js already owns a saveMeta() import (line 28) and
+  // mirrors the pattern unlockAchievement uses two functions up.
+  if (!state.run._ngPlusUnlockFired
+      && state.run.stage && state.run.stage.id === 'forest'
+      && (state.victory === true
+          || (state.run.stats && state.run.stats.reaperOutlasted === true))) {
+    state.run._ngPlusUnlockFired = true;
+    try {
+      const meta = getMeta();
+      if (meta && !meta.unlockedNgPlus) {
+        meta.unlockedNgPlus = true;
+        saveMeta();
+      }
+    } catch (_) { /* persistence best-effort */ }
+  }
 }
 
 // ── Title-screen panel ───────────────────────────────────────────────────
