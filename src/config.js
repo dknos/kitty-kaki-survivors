@@ -507,6 +507,43 @@ export const AVATARS = [
     // on the hypermode difficulty modifier. Flag set in commitRunResults.
     unlock: 'flag:allBossesHypermode',
   },
+  // PHASE 4 P4F (2026-05-18, #144) — Forest-achievement-gated hidden roster.
+  // Three avatars whose `unlock` field carries a forestAchievements.js id.
+  // The hook in forestAchievements.js#unlockAchievement scans AVATARS for any
+  // entry whose `unlock` equals the just-fired id, then calls
+  // unlockAvatar(av.id, 'achievement:' + id). The 'achievement:' source prefix
+  // triggers the unlock-toast banner.
+  //
+  // Glbs reuse the donor kitty model with a unique tint per char (no asset
+  // pipeline change). 8-color forest palette tints picked for visual distinction
+  // (rune=cyan/teal, mire=swamp green, shroud=violet/death).
+  {
+    id: 'rune_kitten', name: 'Rune Kitten', icon: '🔷',
+    desc: 'Rune Kitten — sigil-etched fur, never struck in battle.',
+    glb: null,                          // donor kitty model + tint
+    tint: 0x7fffe4, scaleMul: 1.00,     // cyan/teal — slot reserved for rune-blue
+    baseArchetype: 'kitty',             // Balanced base
+    signatureWeapon: 'sig_kitty_lucky_paw',
+    unlock: 'no_hit_clear',             // forest achievement id (NOT 'flag:' form)
+  },
+  {
+    id: 'mire_kitten', name: 'Mire Kitten', icon: '🟢',
+    desc: 'Mire Kitten — spore-veiled, reads every ring before it pops.',
+    glb: null,
+    tint: 0x4a7a4a, scaleMul: 1.00,     // forest-green (slot-2 spore puff)
+    baseArchetype: 'kitty',
+    signatureWeapon: 'sig_kitty_lucky_paw',
+    unlock: 'rings_dodged_100',
+  },
+  {
+    id: 'shroud_kitten', name: 'Shroud Kitten', icon: '🟣',
+    desc: 'Shroud Kitten — Reaper-marked, the scythe passed and never returned.',
+    glb: null,
+    tint: 0x6a4a8a, scaleMul: 1.00,     // void-purple (matches Catacomb stage tint)
+    baseArchetype: 'kitty',
+    signatureWeapon: 'sig_kitty_lucky_paw',
+    unlock: 'reaper_outlasted',         // existing achievement, fires at 35:00
+  },
 ];
 
 /**

@@ -25,7 +25,8 @@
  * Implementation notes / contract decisions documented inline.
  */
 
-import { getMeta, saveMeta } from './meta.js';
+import { getMeta, saveMeta, unlockAvatar, isAvatarUnlocked } from './meta.js';
+import { AVATARS } from './config.js';
 import { sfx } from './audio.js';
 
 // ── Achievement definitions ──────────────────────────────────────────────────
@@ -62,6 +63,15 @@ const ACH_DEFS = [
   // Survival
   { id: 'no_hit_60s',        name: 'Untouchable Minute',desc: 'Take no damage for the first 60s', category: 'Survival' },
   { id: 'full_hp_5min',      name: 'Picture of Health', desc: 'Stay at full HP for 5 cumulative minutes', category: 'Survival' },
+  // PHASE 4 P4F (#144, 2026-05-18) — Char-unlock gating achievements.
+  // Three forest avatars (rune/mire/shroud kitten) are gated on these:
+  //   no_hit_clear      → Rune Kitten
+  //   rings_dodged_100  → Mire Kitten
+  //   reaper_outlasted  → Shroud Kitten (existing — see Bosses)
+  // The avatar unlock fires from _maybeUnlockAvatarFor() below, called inside
+  // unlockAchievement() on the first-lifetime write path.
+  { id: 'no_hit_clear',      name: 'Untouched Victory', desc: 'Win a forest run without taking any damage', category: 'Survival' },
+  { id: 'rings_dodged_100',  name: 'Ring Reader',       desc: 'Dodge 100 mushroom-ring puffs',             category: 'Survival' },
 ];
 
 // Quick id→def lookup (built once, no per-tick allocation).
@@ -141,7 +151,15 @@ function _renderToast(def) {
 
   const title = document.createElement('div');
   title.style.cssText = `color:${PALETTE_GOLD};font-weight:700;letter-spacing:0.18em;text-transform:uppercase;font-size:11px;margin-bottom:4px;`;
-  title.textContent = '\u{1F3C6} ACHIEVEMENT UNLOCKED';
+  // PHASE 4 P4F (#144) — avatar-unlock variant uses a different title prefix
+  // so the player can tell a character unlock from an achievement unlock.
+  // Same palette / chime / slide animation as the achievement toast so the
+  // visual language stays unified.
+  if (def && def._kind === 'avatar') {
+    title.textContent = (def._icon || '\u{1F3C6}') + ' CHARACTER UNLOCKED';
+  } else {
+    title.textContent = '\u{1F3C6} ACHIEVEMENT UNLOCKED';
+  }
 
   const name = document.createElement('div');
   name.style.cssText = `color:${PALETTE_BONE};font-size:15px;font-weight:600;margin-bottom:2px;`;
@@ -243,13 +261,75 @@ export function unlockAchievement(id) {
   // Persistent meta write — only on the FIRST lifetime unlock.
   const meta = getMeta();
   if (!meta.achievements) meta.achievements = {};
-  if (!meta.achievements[id]) {
+  const isFirstLifetimeUnlock = !meta.achievements[id];
+  if (isFirstLifetimeUnlock) {
     meta.achievements[id] = { unlockedAt: new Date().toISOString(), count: 1 };
     try { saveMeta(); } catch (e) { /* persistence is best-effort */ }
   }
 
   _enqueueToast(def);
+
+  // PHASE 4 P4F (#144) — Avatar unlock funnel.
+  // Generic hook: any AVATARS[] entry whose `unlock` field equals this
+  // achievement id graduates from locked → unlocked here. Gated on the
+  // first-lifetime path so re-firing the achievement in later runs does not
+  // re-toast the avatar banner. unlockAvatar() is also internally idempotent
+  // (no-op if already unlocked) — this gate is a belt over a suspender.
+  if (isFirstLifetimeUnlock) {
+    try { _maybeUnlockAvatarFor(id); }
+    catch (e) { /* avatar unlock is best-effort, never breaks ach toast */ }
+  }
+
   return def;
+}
+
+// ── Avatar unlock hook (P4F #144) ────────────────────────────────────────
+// Scans the AVATARS array for entries whose `unlock` field carries this
+// achievement id (the "achievement id" unlock form documented in meta.js
+// #isCharacterUnlocked). Calls unlockAvatar() + fires a transient banner
+// reusing the achievement toast pipeline (same gold-bordered, slot-7
+// palette) so a unified "Achievement → Char Unlocked" beat plays.
+//
+// `unlock` form contract — three shapes are documented in meta.js for
+// CHARACTERS:
+//   null              — always unlocked
+//   'sigils:N'        — sigil milestone (NOT an achievement id)
+//   'flag:fieldName'  — meta flag set elsewhere (NOT an achievement id)
+//   <any other str>   — bare achievement id (this hook's match path)
+// We deliberately skip the prefixed forms so a future avatar gated on a
+// flag whose name happens to collide with an achievement id won't double-fire.
+function _maybeUnlockAvatarFor(achId) {
+  if (!achId || !Array.isArray(AVATARS)) return;
+  for (let i = 0; i < AVATARS.length; i++) {
+    const av = AVATARS[i];
+    if (!av || typeof av.unlock !== 'string') continue;
+    if (av.unlock === achId
+        && !av.unlock.startsWith('flag:')
+        && !av.unlock.startsWith('sigils:')) {
+      if (isAvatarUnlocked(av.id)) continue;
+      unlockAvatar(av.id, 'achievement:' + achId);
+      _enqueueAvatarUnlockToast(av, achId);
+    }
+  }
+}
+
+// Banner-style toast for avatar unlocks. Reuses the achievement toast queue
+// so consecutive unlocks (e.g. dodge-100 + no-hit on a clean victory run)
+// stack without overlapping. Visually distinct from the achievement toast
+// via a different title prefix ("CHARACTER UNLOCKED") but same palette so
+// the moment reads as one unified celebration.
+function _enqueueAvatarUnlockToast(avatar, achId) {
+  if (!avatar) return;
+  const synthDef = {
+    id: '__avatar_unlock_' + avatar.id,
+    name: avatar.name + ' UNLOCKED',
+    desc: (avatar.desc || '').split('—').slice(1).join('—').trim()
+          || ('Unlocked via ' + achId),
+    category: 'Avatar',
+    _kind: 'avatar',                  // tag picked up by _renderToast below
+    _icon: avatar.icon || '🐱',
+  };
+  _enqueueToast(synthDef);
 }
 
 // Lazy access to the per-run Set so we tolerate a missing state.run shape
@@ -425,6 +505,40 @@ export function tickAchievements(state, dt) {
         saveMeta();
       }
     } catch (_) { /* persistence best-effort */ }
+  }
+
+  // ── P4F no_hit_clear edge (#144, 2026-05-18) ──────────────────────────
+  // Forest-only win where state.run.dmgTaken === 0 at clear moment. Uses
+  // the same victory-OR-reaperOutlasted clear signal as the NG+ unlock so
+  // an outlast counts as a clear. Self-gated via state.run._noHitClearFired
+  // mirroring the _ngPlusUnlockFired idiom — a fresh run rebuilds state.run,
+  // so the flag starts undefined and fires exactly once per qualifying clear.
+  // damageTaken field is state.run.dmgTaken (stamped by hero.js#heroTakeDamage,
+  // state.js:271 init to 0) — NOT state.run.stats.damageTakenTotal as the
+  // P4F brief loosely described. The tick fires unlockAchievement which
+  // routes through the avatar-unlock hook for Rune Kitten.
+  if (!state.run._noHitClearFired
+      && state.run.stage && state.run.stage.id === 'forest'
+      && (state.victory === true
+          || (state.run.stats && state.run.stats.reaperOutlasted === true))
+      && (state.run.dmgTaken | 0) === 0) {
+    state.run._noHitClearFired = true;
+    if (!runSet.has('no_hit_clear')) unlockAchievement('no_hit_clear');
+  }
+
+  // ── P4F rings_dodged_100 tick (#144, 2026-05-18) ──────────────────────
+  // forestEnvHazards.js bumps state.run.stats.ringsDodged at each
+  // MP_PUFF→MP_IDLE transition where the hero never entered the puff
+  // radius. Lifetime threshold is intentionally per-run (matches the
+  // "dodge 100 mushroom rings" framing) — the counter resets every run
+  // via state.run rebuild, so a player who consistently dodges 30/run will
+  // never unlock without a single bigger session. That matches the design
+  // intent of a moderate-effort secret. Mire Kitten unlocks from the
+  // avatar-unlock hook inside unlockAchievement.
+  if (state.run.stats
+      && (state.run.stats.ringsDodged | 0) >= 100
+      && !runSet.has('rings_dodged_100')) {
+    unlockAchievement('rings_dodged_100');
   }
 }
 

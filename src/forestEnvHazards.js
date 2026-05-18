@@ -651,6 +651,21 @@ function _tickMushroomRings(state, dt) {
       }
 
       if (t >= PHASE_PUFF_SEC) {
+        // PHASE 4 P4F (#144, 2026-05-18) — dodge counter.
+        // Bump ringsDodged exactly once per puff cycle when the hero was
+        // never registered as hit by this ring during the just-completed
+        // MP_PUFF phase. Edge-only fire (NOT every frame inside MP_PUFF)
+        // so a player standing 10m away during a 0.3s puff adds 1, not 18.
+        // Guarded on heroAlive so a dead hero in the puff's wind-down
+        // doesn't farm dodges. state.run.stats is initialized defensively
+        // (mirrors forestReaper.js:423 lazy-init pattern). Consumed by
+        // forestAchievements.js#tickAchievements (rings_dodged_100 check).
+        if (heroAlive && !_ringHits[r].has(state.hero)) {
+          if (state.run) {
+            state.run.stats = state.run.stats || {};
+            state.run.stats.ringsDodged = (state.run.stats.ringsDodged | 0) + 1;
+          }
+        }
         _ringPhase[r] = MP_IDLE;
         _ringPhaseT[r] = 0;
         // Hide spore ring.
