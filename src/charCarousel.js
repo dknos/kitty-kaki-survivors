@@ -111,8 +111,11 @@ export function createCharCarousel(host, opts) {
   const nextBtn = mkArrow(+1);
 
   const stage = document.createElement('div');
+  // Iter 36 — bump max-height + switch to 4:3 ratio so the model isn't smushed
+  // when the carousel mounts inside the heroes overlay (full-screen). Legacy
+  // start-screen context still respects 55vh cap on small viewports.
   stage.style.cssText = `
-    position: relative; flex: 1 1 auto; aspect-ratio: 16 / 9; max-height: min(280px, 32vh);
+    position: relative; flex: 1 1 auto; aspect-ratio: 4 / 3; max-height: min(520px, 55vh); min-height: 320px;
     min-width: 0;
     border: 1px solid rgba(127,255,228,0.18);
     border-radius: 12px;
