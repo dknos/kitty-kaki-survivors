@@ -43,6 +43,8 @@ import { downloadShareCard, renderShareCard } from './shareCard.js';
 import { topRunsAcrossAll, formatSeedShareString } from './leaderboard.js';
 import { createCharCarousel } from './charCarousel.js';
 import { GLTF_CACHE } from './assets.js';
+// P4H #142 — Accessibility hold-to-confirm wrapper for irreversible buttons.
+import { holdConfirm } from './holdConfirm.js';
 
 // ── Theme constants ──────────────────────────────────────────────────────────
 const C = {
@@ -4943,9 +4945,23 @@ export function showQuestBoard() {
       }));
     }
     if (isActive && !complete) {
-      btns.appendChild(mkBtn('Abandon', '#c87b7b', () => {
+      // P4H #142 — Abandon destroys in-progress quest counters (irreversible).
+      // mkBtn binds a click listener internally so we attach holdConfirm to
+      // the same node after build; holdConfirm's pass-through path (when
+      // optHoldConfirm is off) re-fires onConfirm, so we must clear the
+      // original handler. Easier: construct the button manually here.
+      const abandonBtn = document.createElement('button');
+      abandonBtn.type = 'button';
+      abandonBtn.textContent = 'Abandon';
+      abandonBtn.style.cssText = `padding:7px 14px; cursor:pointer;
+        background:rgba(20,28,22,0.78); border:1px solid #c87b7b; border-radius:6px;
+        color:#c87b7b; font-family:${F.display}; font-size:calc(var(--kk-font-scale, 1) * 11px); letter-spacing:0.22em;`;
+      holdConfirm(abandonBtn, () => {
         if (abandonQuest(tpl.id)) repaint();
-      }));
+      }, { palette: { fill: '#c87b7b', trough: 'rgba(40,12,12,0.55)' } });
+      // Ensure click bubbling doesn't trigger ancestor card handlers.
+      abandonBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
+      btns.appendChild(abandonBtn);
     }
     if (!isActive) {
       const canAccept = activeQuests().length < maxActiveQuests();
@@ -5272,6 +5288,16 @@ export function showOptions() {
   sDisp.appendChild(row('Reduced Flashing', reducedFlashTgl, 'Cap to ~4 flashes/sec at 40% alpha'));
   sDisp.appendChild(row('High Contrast',    hcTgl, 'Boost HUD + text legibility'));
   sDisp.appendChild(row('Colorblind',       cbSelect));
+  // P4H #142 — Hold-to-confirm for irreversible actions. Lives next to the
+  // colorblind enum so all a11y toggles cluster visually in the Display
+  // section. When on, destructive buttons (Wipe Progress, Save Import) need
+  // a sustained pointerdown (~600ms) before firing — see src/holdConfirm.js.
+  const holdConfirmTgl = mkToggle(!!meta.optHoldConfirm, C.amber, 'On', 'Off', () => {
+    const nv = !getMeta().optHoldConfirm;
+    setOption('optHoldConfirm', nv);
+    return nv;
+  });
+  sDisp.appendChild(row('Hold to Confirm',  holdConfirmTgl, 'Require 600ms hold on irreversible actions'));
   sDisp.appendChild(row('Font Scale',       fsSlider, '0.85× to 1.30× (modals only)'));
   sDisp.appendChild(row('Frame Cap',        frameCapSel, 'Hint only; v1.0 honors monitor refresh'));
 
@@ -5402,7 +5428,10 @@ export function showOptions() {
   importBtn.className = 'kk-fs-sm';
   importBtn.style.cssText = toggleStyle(C.amber);
   importBtn.textContent = 'Import Pasted';
-  importBtn.addEventListener('click', () => {
+  // P4H #142 — Save Import overwrites the entire meta blob (coins, embers,
+  // unlocks, run history) with the pasted JSON. Wrap with hold-to-confirm
+  // so a misclick on a populated textarea can't nuke years of progress.
+  holdConfirm(importBtn, () => {
     const r = importMeta(importTa.value);
     if (r.ok) {
       importStatus.style.color = C.green;
@@ -5583,11 +5612,15 @@ function _showResetConfirmModal(onConfirm) {
     confirmBtn.style.opacity = ok ? '1' : '0.5';
   }
   inp.addEventListener('input', refreshGate);
-  confirmBtn.addEventListener('click', () => {
+  // P4H #142 — Wipe Progress is the most catastrophic action in the game
+  // (irrecoverable meta wipe). Stack hold-to-confirm on TOP of the existing
+  // type-RESET gate when optHoldConfirm is on. Red fill matches the danger
+  // accent already used on the button border.
+  holdConfirm(confirmBtn, () => {
     if (inp.value.trim().toUpperCase() !== 'RESET') return;
     if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
     try { onConfirm(); } catch (e) { console.warn('[resetMeta] confirm failed', e); }
-  });
+  }, { palette: { fill: '#ff5e5e', trough: 'rgba(40,8,8,0.65)' } });
   btnRow.appendChild(cancelBtn);
   btnRow.appendChild(confirmBtn);
   box.appendChild(h);

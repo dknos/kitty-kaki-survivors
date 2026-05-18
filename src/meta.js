@@ -80,6 +80,12 @@ const DEFAULT = {
   optReducedFlashing: false,
   optHighContrast: false,
   optColorblind: 'off',          // 'off' | 'deuteranopia' | 'protanopia' | 'tritanopia'
+  // P4H #142 — Hold-to-confirm for irreversible destructive actions.
+  // When true, buttons wrapped by holdConfirm() require a sustained
+  // pointerdown (~600ms) before firing. Loaded saves missing this key fall
+  // back to false via the {...DEFAULT,...parsed} spread in loadMeta — no
+  // explicit legacy migration needed.
+  optHoldConfirm: false,
   optFontScale: 1.0,             // 0.85..1.30, surfaced via --kk-font-scale CSS var
   optFrameCap: 0,                // 0=unlocked; 30/60/144 valid
   optControllerDeadzone: 0.15,   // 0..0.30 — gamepad.js reads this
