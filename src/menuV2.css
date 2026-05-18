@@ -634,3 +634,32 @@
   font-size: 18px;
   color: rgba(236,230,213,.5);
 }
+.kkv2-overlay-foot {
+  display: flex;
+  justify-content: center;
+  margin-top: 20px;
+}
+.kkv2-overlay-confirm {
+  font-family: "Cinzel", serif;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.28em;
+  padding: 14px 36px;
+  background: linear-gradient(180deg, rgba(255,210,127,.16), rgba(255,210,127,.06));
+  border: 1px solid rgba(255,210,127,.42);
+  border-radius: 3px;
+  color: #f5efe1;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: 0 0 24px rgba(255,210,127,.18), inset 0 0 18px rgba(255,210,127,.08);
+  transition: background .15s ease, border-color .15s ease, box-shadow .15s ease;
+}
+.kkv2-overlay-confirm:hover {
+  background: linear-gradient(180deg, rgba(255,210,127,.26), rgba(255,210,127,.12));
+  border-color: rgba(255,210,127,.7);
+  box-shadow: 0 0 32px rgba(255,210,127,.32), inset 0 0 22px rgba(255,210,127,.14);
+}
+.kkv2-overlay-confirm:focus-visible {
+  outline: 2px solid rgba(255,210,127,.8);
+  outline-offset: 3px;
+}

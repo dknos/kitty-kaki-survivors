@@ -132,6 +132,11 @@ import { tickEvolveCinematic, disposeEvolveCinematic } from './evolveCinematic.j
 // top of frame() for placement detail. Dispose mirrors the 5-site
 // bossIntroCinematic teardown so DOM doesn't leak across stage swaps.
 import { loadEndRunSummary, tickEndRunSummary, disposeEndRunSummary } from './endRunSummary.js';
+// PHASE 4 P4J (#140) — Per-run telemetry harness. Stage-agnostic poll-based
+// begin/end detection (no invasive hooks into start/teardown). Counters live
+// on a module-local _current record; instrumented call sites bump in-place
+// via event(). Persists last 100 runs to localStorage `kks_telemetry`.
+import { tickTelemetry as tickTelemetryPoll, event as telemetryEvent } from './telemetry.js';
 // PHASE 1 P1B (swarm/forest-achievements) — Achievement chain. Stage-agnostic
 // per-tick check loop (kills / time / weapon / hp). loadAchievements binds
 // state + WEAPON_REGISTRY for the visible-kit count probe. The module also
@@ -283,7 +288,15 @@ async function boot() {
   // state.replaySeed for 9c's "Replaying X's run" header.
   try { _parseReplaySeedFromURL(); } catch (e) { console.warn('[boot.replaySeed]', e); }
 
-  showStartScreen('Loading…');
+  // Iter 36 — boot loader. Legacy showStartScreen() during preload was painting
+  // the full v1 menu (title + ornament + char carousel placeholder), then v2
+  // swapped in on top → visible "old menu, then new menu" flash. Use a minimal
+  // black overlay during preload instead; it's removed before showMenuV2().
+  const _bootLoader = document.createElement('div');
+  _bootLoader.id = 'kk-boot-loader';
+  _bootLoader.style.cssText = 'position:fixed;inset:0;background:#000;display:flex;align-items:center;justify-content:center;z-index:9999;font-family:"Cinzel",serif;font-size:14px;letter-spacing:0.3em;color:rgba(236,230,213,0.55);text-transform:uppercase;pointer-events:auto;';
+  _bootLoader.textContent = 'Loading…';
+  document.body.appendChild(_bootLoader);
   initParticleTextures();   // synchronous canvas → texture, no network
   await preloadAll();
   // iter 33w — load the hand-painted FX manifest before initFX so synchronous
@@ -401,11 +414,11 @@ async function boot() {
   acquireWeapon(state.run.starterWeapon || 'orbitals');
   for (let i = 0; i < (state.run.cellarLv || 0); i++) acquireWeapon(state.run.starterWeapon || 'orbitals');
 
-  // Iter 35 — Menu V2 swap. Pre-preload showStartScreen('Loading…') stays for
-  // the loading screen (menuV2 needs GLTF_CACHE.hero before the carousel can
-  // mount). This first post-preload mount happens AFTER preloadAll resolves,
-  // so showMenuV2 has everything it needs. hideStartScreen() is still called
-  // to tear down the loader DOM the boot path put up.
+  // Iter 36 — Menu V2 swap. preloadAll has resolved, GLTF_CACHE.hero is ready,
+  // so showMenuV2 can mount the carousel immediately. Tear down the boot loader
+  // overlay first to avoid double-painting. hideStartScreen() left as a no-op
+  // safety net in case any code path still mounted the legacy DOM.
+  try { document.getElementById('kk-boot-loader')?.remove(); } catch (_) {}
   try { hideStartScreen(); } catch (_) {}
   showMenuV2();
   // ── Iter 10a — Apply saved options at boot ──
@@ -1633,6 +1646,9 @@ function _tickForestRoomTransition(dt) {
   if (detected && detected !== cur) {
     state.run.currentRoom = detected;
     state.run.roomState = 'TRANSITIONING';
+    // PHASE 4 P4J — telemetry room_enter (forest stage only — this hook is
+    // inside _tickForestRoomTransition, no need to gate further).
+    try { telemetryEvent('room_enter', { id: detected }); } catch (_) {}
     _applyForestRoomVisibility(detected);
     // FOREST-V2-A14 — sealed-door cohort needs the room-enter edge to spawn
     // a miniboss + seal the return portal (first-time entries) or re-seal a
@@ -1684,6 +1700,11 @@ function frame(now) {
   // state.run._summaryShown so it does real work only on the first
   // transition frame each run.
   tickEndRunSummary(state, realDt);
+  // PHASE 4 P4J — Telemetry poll. Mirrors tickEndRunSummary placement: must
+  // run BEFORE the per-mode early returns + the gameOver/paused gate so the
+  // end-edge detection fires on the same frame the summary appears. Cheap
+  // (one-shot flag short-circuits steady-state frames).
+  tickTelemetryPoll(state);
 
   // Interior mode — close iso camera over a small room.
   if (state.mode === 'interior') {

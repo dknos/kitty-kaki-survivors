@@ -998,17 +998,32 @@ function _openHeroes() {
   host.className = 'kkv2-overlay-host';
   body.appendChild(host);
 
+  // Iter 36 — heroes overlay was missing an explicit "Select" CTA. Users hit
+  // the carousel arrows, expected a button, found only ESC·Close. Confirm
+  // commits selection (already auto-saved in onSelect) and closes the overlay
+  // back to the main menu. Enter key bound below mirrors the click.
+  const foot = document.createElement('div');
+  foot.className = 'kkv2-overlay-foot';
+  const confirmBtn = document.createElement('button');
+  confirmBtn.type = 'button';
+  confirmBtn.className = 'kkv2-overlay-confirm';
+  confirmBtn.textContent = 'ENTER · Select';
+  confirmBtn.addEventListener('click', _closeHeroes);
+  foot.appendChild(confirmBtn);
+
   _overlay.appendChild(head);
   _overlay.appendChild(body);
+  _overlay.appendChild(foot);
   _stage.appendChild(_overlay);
 
   _mountCarousel(host);
-  // Esc closes overlay
+  // Esc closes overlay; Enter commits selection (same effect — selection is
+  // already persisted via onSelect; closing returns to main menu).
   document.addEventListener('keydown', _heroEsc);
 }
 
 function _heroEsc(e) {
-  if (e.key === 'Escape') _closeHeroes();
+  if (e.key === 'Escape' || e.key === 'Enter') _closeHeroes();
 }
 
 function _closeHeroes() {
