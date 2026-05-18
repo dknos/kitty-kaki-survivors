@@ -43,6 +43,10 @@ import { disposeBossTelegraphs } from './bossTelegraphs.js';
 // dynamic-import Promises per frame, stalling next-frame entry → 20fps.
 import { notifyEnemyKilled } from './codex.js';
 import { notifyTutorialEvent } from './tutorial.js';
+// PHASE 4 P4J (#140) — Telemetry kill/boss event hook. STATIC import to keep
+// the kill chokepoint allocation-free (dynamic import() here would fire
+// hundreds of microtasks/frame on borgir salvos — see perf-fix 9509535).
+import { event as telemetryEvent } from './telemetry.js';
 import { questEvent, grantSigils, recordHyperBossKill, rollRelic, addRelic, bumpLifetime } from './meta.js';
 import { tryAchievement, trySecret, showBanner } from './ui.js';
 // Sprite FX — STATIC import per perf-fix 9509535. NEVER convert to dynamic
@@ -889,6 +893,15 @@ export function killEnemy(enemy) {
 
   state.run.kills++;
   state.run.noDmgKills = (state.run.noDmgKills || 0) + 1;
+  // PHASE 4 P4J — telemetry hook. event() is allocation-free (counter bump
+  // only); boss_clear fires on miniboss/final/room-boss kills so balance
+  // tuning (P4I) can read p50 TTK directly from boss-clear inter-arrival.
+  try {
+    telemetryEvent('kill');
+    if (enemy.isMiniBoss || enemy.isFinalBoss || enemy._isRoomBoss) {
+      telemetryEvent('boss_clear');
+    }
+  } catch (_) {}
   // Codex: bump kill tally for this tier (silently throttled in codex.js).
   try { notifyEnemyKilled(enemy.glbKey); } catch (_) {}
   // Tutorial: 3-kill auto-advance for stage 2.

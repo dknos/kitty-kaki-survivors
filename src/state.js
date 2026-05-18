@@ -386,6 +386,16 @@ export function resetState() {
   // module never clears this itself — ownership lives here so the tick
   // poll has a single canonical source of truth across run resets.
   state.run._summaryShown         = false;
+  // PHASE 4 P4J (2026-05-18, #140) — Telemetry harness one-shot flags.
+  // `_telemetryStarted` flips true the first frame state.started===true &&
+  // state.mode==='run' AFTER resetState (begin-edge in src/telemetry.js).
+  // `_telemetryEnded` flips true the first frame state.gameOver===true OR
+  // state.run.stats.reaperOutlasted===true (end-edge). Cleared on every
+  // resetState so the next run can fire begin/end cleanly. Ownership lives
+  // here so the poll tick has a single canonical source of truth across
+  // run resets (mirrors _summaryShown above).
+  state.run._telemetryStarted     = false;
+  state.run._telemetryEnded       = false;
   // Per-run chest counter consumed by forestHud.js (em-dash fallback path
   // flips to numeric "Chests: N" once this field exists). Bumped in
   // forestChests._onPicked after _applyReward succeeds (single dispatch site).

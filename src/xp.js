@@ -13,6 +13,9 @@ import { showLevelUpModal, hideLevelUpModal, flashLevelUp } from './ui.js';
 import { spawnMagnetSpark } from './fx.js';
 import { tex } from './particleTextures.js';
 import { BLOOM_LAYER } from './postfx.js';
+// PHASE 4 P4J (#140) — Telemetry pickup + levelup events. Static import keeps
+// the gem-pickup hot path allocation-free.
+import { event as telemetryEvent } from './telemetry.js';
 import { GLTF_CACHE } from './assets.js';
 // Sprite FX — STATIC import (level-up isn't per-frame, but keep the contract
 // uniform with enemies.js so future per-frame XP hooks can't accidentally
@@ -288,6 +291,8 @@ export function updateGems(dt) {
                       (catnipActive ? 1.5 : 1);
         hero.xp += g.value * xpMul;
         state.run.pickedGems++;
+        // PHASE 4 P4J — telemetry pickup (counter bump, no allocation).
+        try { telemetryEvent('pickup'); } catch (_) {}
         g.active = false;
         g.magnetized = false;
         _hideInstance(i);
@@ -342,6 +347,9 @@ export function updateGems(dt) {
       hero.xpNext = xpForLevel(hero.level);
       state.pendingLevelCount = (state.pendingLevelCount || 0) + 1;
       didLevel = true;
+      // PHASE 4 P4J — telemetry levelup (per-level, not per-batch, so the
+      // count matches state.hero.level - 1 at any point in the run).
+      try { telemetryEvent('levelup'); } catch (_) {}
     }
     if (didLevel) {
       // Tutorial: stage 3 → 4 advance on first level-up.

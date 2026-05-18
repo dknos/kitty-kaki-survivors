@@ -25,6 +25,10 @@ import { shopLevel, getMeta } from './meta.js';
 import { nameForMiniBoss, FINAL_BOSS_NAME } from './bossTelegraphs.js';
 import { spawnHeart, spawnStar } from './pickups.js';
 import { dropGem } from './xp.js';
+// PHASE 4 P4J (#140) — Telemetry hook for the nemesis kill chokepoint. Static
+// import; nemesis kill is the second `state.run.kills++` site outside
+// enemies.js so we mirror its kill+boss_clear event pair here.
+import { event as telemetryEvent } from './telemetry.js';
 import { endPuzzleEarly } from './puzzleSystem.js';
 import { FOREST_ROOMS } from './forestRooms.js';
 
@@ -243,6 +247,8 @@ export function onNemesisKilled(enemy) {
   // past. Run kills/dmg/quest counters all bump here so the nemesis counts.
   state.run.kills++;
   state.run.noDmgKills = (state.run.noDmgKills || 0) + 1;
+  // PHASE 4 P4J — telemetry kill + boss_clear (nemesis is treated as a boss).
+  try { telemetryEvent('kill'); telemetryEvent('boss_clear'); } catch (_) {}
 
   // Reschedule + clear the active slot. Doing this LAST so any throw above
   // doesn't leave the schedule armed against a dangling mesh.

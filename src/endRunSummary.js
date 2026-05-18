@@ -66,6 +66,9 @@
 // Lazy import — runtime only, mirrors bossIntroCinematic. Static would pull
 // audio.js's WebAudio refs into the smoke harness.
 import { REGISTRY as WEAPON_REGISTRY } from './weapons/index.js';
+// PHASE 4 P4J (#140) — Telemetry export button (Download telemetry JSON).
+// Static import; telemetry.js is dependency-free so it adds no graph weight.
+import { exportJSON as telemetryExportJSON, suggestFilename as telemetrySuggestFilename } from './telemetry.js';
 
 // ── Slot-locked palette (reused constants, no new hex) ─────────────────────
 const C_PANEL_BG     = '#4a3220';   // slot-4 dark
@@ -235,6 +238,34 @@ export function disposeEndRunSummary() {
  * hook is somehow missing, falls back to a hard reload — the nuclear option
  * but always works.
  */
+/**
+ * PHASE 4 P4J (#140) — "Telemetry" button handler. Creates a Blob URL of the
+ * full persisted telemetry store (last 100 runs) and triggers a download via
+ * a temporary anchor click. Does NOT close the panel — the player may still
+ * want to click CONTINUE after grabbing the file. Revokes the Blob URL after
+ * the click so we don't leak object URLs across many opens.
+ */
+function _onDownloadTelemetry() {
+  let url = null;
+  try { url = telemetryExportJSON(); } catch (e) { console.warn('[endRunSummary] telemetry export failed:', e); }
+  if (!url) return;
+  let filename = 'kks_telemetry.json';
+  try { filename = telemetrySuggestFilename() || filename; } catch (_) {}
+  try {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  } catch (e) {
+    console.warn('[endRunSummary] telemetry download click failed:', e);
+  }
+  // Revoke shortly after the click so the download finishes claiming the URL.
+  try { setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 1500); } catch (_) {}
+}
+
 function _onContinue() {
   // Hide the panel locally before kkReturnToMenu does its teardown — the
   // teardown will dispose us too, but a fast click should feel responsive.
@@ -416,7 +447,17 @@ function _ensureStyle() {
     #${PANEL_ID} .kk-ers-footer {
       display: flex;
       justify-content: center;
+      align-items: center;
+      gap: 12px;
       margin-top: 8px;
+    }
+    /* PHASE 4 P4J — secondary "Telemetry" button. Same gold border for
+       palette discipline (slot-locked, no new hex), smaller padding +
+       font size so the primary CONTINUE keeps the visual emphasis. */
+    #${PANEL_ID} .kk-ers-btn-sm {
+      padding: 8px 18px;
+      font-size: 11px;
+      letter-spacing: 0.20em;
     }
     #${PANEL_ID} .kk-ers-btn {
       background: rgba(0,0,0,0.45);
@@ -516,9 +557,26 @@ function _ensureBuilt(reason) {
     el.appendChild(achBox);
   }
 
-  // ── Footer: CONTINUE button ───────────────────────────────────────────
+  // ── Footer: CONTINUE + DOWNLOAD TELEMETRY ─────────────────────────────
+  // PHASE 4 P4J (#140) — secondary "Telemetry" button writes the full
+  // localStorage `kks_telemetry` store to disk via Blob URL. Sits LEFT of
+  // CONTINUE so the primary action keeps its position. Styled `.kk-ers-btn-sm`
+  // so the gold border read isn't a duplicate of CONTINUE's emphasis.
   const footer = document.createElement('div');
   footer.className = 'kk-ers-footer';
+
+  const dlBtn = document.createElement('button');
+  dlBtn.type = 'button';
+  dlBtn.className = 'kk-ers-btn kk-ers-btn-sm';
+  dlBtn.textContent = 'Telemetry';
+  dlBtn.title = 'Download per-run telemetry JSON (last 100 runs)';
+  dlBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    _onDownloadTelemetry();
+  });
+  footer.appendChild(dlBtn);
+
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'kk-ers-btn';

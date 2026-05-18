@@ -78,6 +78,9 @@ import { applyPassive, PASSIVES } from './weapons/passives.js';
 import { spawnKillRing, spawnMagnetSpark } from './fx.js';
 import { sfx } from './audio.js';
 import { createRuneRing } from './fx/runeRing.js';
+// PHASE 4 P4J (#140) — Telemetry chest_open hook. Fires from the post-apply
+// chest counter bump site so the telemetry count matches state.run._chestsOpened.
+import { event as telemetryEvent } from './telemetry.js';
 
 // ── pool caps ───────────────────────────────────────────────────────────────
 const CAP_CHESTS = 8;
@@ -583,6 +586,9 @@ function _onPicked(chestIdx, opt) {
   if (_gameState && _gameState.run) {
     _gameState.run._chestsOpened = (_gameState.run._chestsOpened || 0) + 1;
   }
+  // PHASE 4 P4J — telemetry chest_open (single dispatch site mirrors the
+  // _chestsOpened counter so the two never drift).
+  try { telemetryEvent('chest_open'); } catch (_) {}
   _phase[chestIdx] = CP_DISPATCH;
   _phaseT[chestIdx] = 0;
   _activePickIdx = -1;

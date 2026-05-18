@@ -68,6 +68,9 @@ import chainStorm   from './chainStorm.js';
 import frostEternal from './frostEternal.js';
 import { getMeta } from '../meta.js';
 import { passiveChoices, applyPassive, PASSIVES } from './passives.js';
+// PHASE 4 P4J (#140) — Telemetry weapon_take + weapon_evolve hooks. Called
+// from acquireWeapon (first-pickup branch only) and applyEvolution.
+import { event as telemetryEvent } from '../telemetry.js';
 export { applyPassive, PASSIVES };
 
 export const REGISTRY = {
@@ -182,6 +185,9 @@ export function acquireWeapon(id) {
   state.weapons.push(entry);
   const level = mod.levels[0];
   if (mod.init) mod.init(state, level, entry.inst);
+  // PHASE 4 P4J — telemetry weapon_take (first acquire only; level-ups stay
+  // implicit since they fire on the early-return branch above).
+  try { telemetryEvent('weapon_take', { id }); } catch (_) {}
   // FE-C1B: the first weapon acquired this run is the starter (see
   // main.js _startRun / _restartRun). Use this lifecycle moment to also
   // auto-equip any Forest special weapons the player has unlocked.
@@ -512,6 +518,14 @@ export function applyEvolution(weaponId) {
  */
 function _fireAscensionFx() {
   state.run.hasEvolvedThisRun = true;
+  // PHASE 4 P4J — telemetry weapon_evolve. Fires from both regular and dash
+  // evolution branches (applyEvolution funnels both through here).
+  try {
+    // Best-effort: stamp the most recently mutated weapon id, falling back
+    // to a generic marker so the event still counts even if the lookup misses.
+    const owned = state.weapons && state.weapons.find((w) => w && w.inst && w.inst.evolved);
+    telemetryEvent('weapon_evolve', { id: owned ? owned.id : null });
+  } catch (_) {}
   const heroMesh = state.hero && state.hero.mesh;
   const scene = heroMesh && heroMesh.parent;
   const pos = state.hero && state.hero.pos;
