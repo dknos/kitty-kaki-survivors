@@ -69,6 +69,14 @@ import { REGISTRY as WEAPON_REGISTRY } from './weapons/index.js';
 // PHASE 4 P4J (#140) — Telemetry export button (Download telemetry JSON).
 // Static import; telemetry.js is dependency-free so it adds no graph weight.
 import { exportJSON as telemetryExportJSON, suggestFilename as telemetrySuggestFilename } from './telemetry.js';
+// PHASE 4 P4E (#145) — Daily leaderboard + share code. All four imports are
+// pure functions over localStorage; no scene/audio refs so smoke is safe.
+import {
+  topDailyToday,
+  encodeShareCode,
+  makeSeed,
+  formatTime as fmtLBTime,
+} from './leaderboard.js';
 
 // ── Slot-locked palette (reused constants, no new hex) ─────────────────────
 const C_PANEL_BG     = '#4a3220';   // slot-4 dark
@@ -264,6 +272,56 @@ function _onDownloadTelemetry() {
   }
   // Revoke shortly after the click so the download finishes claiming the URL.
   try { setTimeout(() => { try { URL.revokeObjectURL(url); } catch (_) {} }, 1500); } catch (_) {}
+}
+
+/**
+ * PHASE 4 P4E (#145) — Share Daily Code handler. Builds an entry shape from
+ * live state (the recordRun call in main.js may not have written yet on the
+ * gameOver edge, so we don't read back from storage), encodes it via
+ * encodeShareCode, and writes the result to the clipboard. On success the
+ * button briefly labels "Copied!"; on failure it surfaces the raw code via
+ * prompt() so the player can copy manually.
+ *
+ * Daily-mode only — caller already gates button visibility.
+ */
+function _onShareDaily(state, button) {
+  if (!state || !state.run) return;
+  const stageId = (state.run.stage && state.run.stage.id) || 'forest';
+  const charId  = state.run.character || 'kitty';
+  const entry = {
+    seed: makeSeed(stageId, charId, 'daily'),
+    char: charId,
+    kills: state.run.kills | 0,
+    timeSurvived: Math.max(0, Math.floor((state.time && state.time.game) || 0)),
+  };
+  const code = encodeShareCode(entry);
+  if (!code) {
+    try { button.textContent = 'Failed'; } catch (_) {}
+    return;
+  }
+  const original = button.textContent;
+  const finish = (ok) => {
+    try {
+      button.textContent = ok ? 'Copied!' : 'Copy Manually';
+      setTimeout(() => { try { button.textContent = original; } catch (_) {} }, 1600);
+    } catch (_) {}
+  };
+  // navigator.clipboard requires secure context. Fall back to prompt() so
+  // the player can still grab the code on http://localhost test runs.
+  try {
+    if (navigator && navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+      navigator.clipboard.writeText(code).then(() => finish(true)).catch(() => {
+        try { window.prompt('Daily share code (copy + paste):', code); } catch (_) {}
+        finish(false);
+      });
+    } else {
+      try { window.prompt('Daily share code (copy + paste):', code); } catch (_) {}
+      finish(false);
+    }
+  } catch (e) {
+    console.warn('[endRunSummary.shareDaily]', e);
+    finish(false);
+  }
 }
 
 function _onContinue() {
@@ -557,6 +615,33 @@ function _ensureBuilt(reason) {
     el.appendChild(achBox);
   }
 
+  // ── PHASE 4 P4E (#145) — Daily leaderboard top-3 inline ─────────────────
+  // Daily-mode runs ONLY. Surfaces today's local-leaderboard top three
+  // entries so the player has immediate context for the run that just ended.
+  // Reuses the achievements box style (slot-7 cream title + slot-6 gold
+  // entries) so we don't add new palette tokens. Empty/error states bail
+  // silently — never block the summary if leaderboard read throws.
+  if (state.modes && state.modes.daily) {
+    try {
+      const top = topDailyToday(3);
+      if (top && top.length > 0) {
+        const dailyBox = document.createElement('div');
+        dailyBox.className = 'kk-ers-achievements';
+        const t = document.createElement('div');
+        t.className = 'kk-ers-ach-title';
+        t.textContent = "Today's Daily Leaderboard";
+        dailyBox.appendChild(t);
+        const list = document.createElement('div');
+        list.className = 'kk-ers-ach-list';
+        list.textContent = top.map((r, i) =>
+          `${i + 1}. ${r.char || '?'} · ${fmtLBTime(r.timeSurvived)} · ${r.kills | 0}k`
+        ).join('   ');
+        dailyBox.appendChild(list);
+        el.appendChild(dailyBox);
+      }
+    } catch (e) { console.warn('[endRunSummary.daily.top]', e); }
+  }
+
   // ── Footer: CONTINUE + DOWNLOAD TELEMETRY ─────────────────────────────
   // PHASE 4 P4J (#140) — secondary "Telemetry" button writes the full
   // localStorage `kks_telemetry` store to disk via Blob URL. Sits LEFT of
@@ -576,6 +661,26 @@ function _ensureBuilt(reason) {
     _onDownloadTelemetry();
   });
   footer.appendChild(dlBtn);
+
+  // PHASE 4 P4E (#145) — Share Daily Code button. Daily-mode runs ONLY.
+  // Encodes the just-finished run as a base64 share code and writes it to
+  // the clipboard, with a fallback prompt() if clipboard API is gated
+  // (Safari iframe / non-secure context). Sits LEFT of CONTINUE so the
+  // primary action keeps its position; `.kk-ers-btn-sm` for the
+  // secondary-action read.
+  if (state.modes && state.modes.daily) {
+    const shareBtn = document.createElement('button');
+    shareBtn.type = 'button';
+    shareBtn.className = 'kk-ers-btn kk-ers-btn-sm';
+    shareBtn.textContent = 'Share Daily';
+    shareBtn.title = 'Copy a base64 share code for this daily run';
+    shareBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      _onShareDaily(state, shareBtn);
+    });
+    footer.appendChild(shareBtn);
+  }
 
   const btn = document.createElement('button');
   btn.type = 'button';

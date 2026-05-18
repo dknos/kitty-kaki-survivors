@@ -12,6 +12,11 @@ import { unlockAudio, startMusic, setMusicTier, setVolume, setMasterVolume, setM
 import { getMeta, shopLevel, selectedCharacter, selectedAvatar, dailyChallengeConfig, equippedRelic, selectedStage, QUEST_TEMPLATES, weeklyMutatorConfig, commitWeeklyRun, setOption, SHOP_TREE, recordAvatarRun } from './meta.js';
 import { applyWeeklyMutator } from './weeklyMutator.js';
 import { recordRun } from './leaderboard.js';
+// PHASE 4 P4E (#145) — Daily seed PRNG. Seeded at run-start when daily mode is
+// active so spawnDirector decisions (angle / horde center / tier weighted pick
+// / ring jitter) replay byte-for-byte across two browsers on the same day.
+// Cleared in _teardownActiveRun so non-daily runs revert to native Math.random.
+import { seedDaily, clearDailySeed, todaySeedInt } from './dailyRng.js';
 
 // Module imports (filled in by parallel agents)
 import { initInput, sampleInput, getZoom, resetZoom } from './input.js';
@@ -677,6 +682,9 @@ async function boot() {
 function _teardownActiveRun() {
   // Tutorial: stage 6 (shop hint) fires on first death/run-end.
   try { notifyTutorialEvent('runEnd'); } catch (_) {}
+  // P4E (#145) — drop the daily seed so the next non-daily run uses native
+  // Math.random. Idempotent; no-op if not seeded.
+  try { clearDailySeed(); } catch (_) {}
 
   // Return active enemies to pools + hide them
   const active = state.enemies.active;
@@ -1220,6 +1228,15 @@ function applyMetaUpgrades() {
   state.modes.endless = !!(meta.unlockedEndless && meta.optEndless) && !dailyOn && !weeklyOn;
   state.modes.daily = dailyOn;
   state.modes.weekly = weeklyOn;
+  // P4E (#145) — seed the daily PRNG when daily mode is on, otherwise CLEAR
+  // it so a previous daily run can't poison this run's spawn determinism.
+  // Self-gating: idempotent within a run (subsequent applyMetaUpgrades calls
+  // re-seed to the same YYYYMMDD, mulberry32 state restarts → same stream).
+  if (dailyOn) {
+    try { seedDaily(todaySeedInt()); } catch (e) { console.warn('[p4e.seedDaily]', e); }
+  } else {
+    try { clearDailySeed(); } catch (_) {}
+  }
   // Boss Rush is gated by first-victory (same unlock as Hyper), and is
   // incompatible with Daily / Weekly (each picks its own modifier set).
   state.modes.bossRush = !!(meta.unlockedHyper && meta.optBossRush) && !dailyOn && !weeklyOn;
@@ -1942,6 +1959,27 @@ function frame(now) {
             victory: !!state.victory,
           });
         } catch (e) { console.warn('[weekly.recordRun]', e); }
+      }
+      // P4E (#145) — daily leaderboard commit. Mirrors the weekly block above:
+      // one-shot per run via _dailyCommitted, writes a recordRun entry tagged
+      // mode='daily' (which stamps dailyDate via leaderboard.recordRun). The
+      // existing commitDailyRun call in ui.js:1707 still owns the meta bests
+      // toast + sigil grant; this site just adds the per-entry record that
+      // topDailyForSeed / topDailyToday read.
+      if (state.modes && state.modes.daily && state.run && !state.run._dailyCommitted) {
+        state.run._dailyCommitted = true;
+        try {
+          recordRun({
+            stage: state.run.stage ? state.run.stage.id : 'forest',
+            char: state.run.character || 'kitty',
+            mode: 'daily',
+            kills: state.run.kills,
+            timeSurvived: state.time.game,
+            level: state.hero.level,
+            dmgDealt: state.run.dmgDealt,
+            victory: !!state.victory,
+          });
+        } catch (e) { console.warn('[daily.recordRun]', e); }
       }
     }
     if (state.postFXPass) state.postFXPass.uniforms.time.value = state.time.real;

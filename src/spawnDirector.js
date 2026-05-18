@@ -31,6 +31,16 @@ import { dropGem } from './xp.js';
 import { event as telemetryEvent } from './telemetry.js';
 import { endPuzzleEarly } from './puzzleSystem.js';
 import { FOREST_ROOMS } from './forestRooms.js';
+// PHASE 4 P4E (#145) — daily seed PRNG seam. `rand()` is a transparent alias
+// for Math.random() unless daily mode is seeded (main.js applyMetaUpgrades),
+// in which case it deterministically replays from a YYYYMMDD-seeded mulberry32
+// stream. Cleared at run-end teardown so non-daily runs keep native behavior.
+// Only spawn-decision call sites are routed through `rand()` — cosmetic
+// per-mesh jitter in enemies.js (hue / animation phase / ranged cooldown
+// start) is intentionally NOT swapped: replacing those would over-constrain
+// the seam, and they don't influence the first-N spawn positions that the
+// acceptance test verifies.
+import { rand as _seedRand, clearDailySeed } from './dailyRng.js';
 
 // ── Module-local director state ──────────────────────────────────────────────
 let _acc = 0;
@@ -91,7 +101,7 @@ function _nemesisTelegraphAt() {
   return NEMESIS_SPAWN.telegraphWave * NEMESIS_SPAWN.waveSec;
 }
 function _rollNemesisRespawn(now) {
-  return now + NEMESIS_SPAWN.respawnMinSec + Math.random() * NEMESIS_SPAWN.respawnJitterSec;
+  return now + NEMESIS_SPAWN.respawnMinSec + _seedRand() * NEMESIS_SPAWN.respawnJitterSec;
 }
 function _hasFirstVictory() {
   try {
@@ -109,7 +119,7 @@ const _nemesisState = {
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function weightedPick(tiers) {
   const total = tiers.reduce((s, t) => s + t.weight, 0);
-  let r = Math.random() * total;
+  let r = _seedRand() * total;
   for (const t of tiers) { r -= t.weight; if (r <= 0) return t; }
   return tiers[tiers.length - 1];
 }
@@ -136,7 +146,7 @@ function ringPos(angle, radius) {
 function spawnOnRing(tier, angle, radiusMul = 1) {
   // Stage rule may tighten/widen the ring (Forest "Overgrowth" = 0.75×).
   const stageRingMul = (state.run && state.run.stageRuleSpawnRingMul) || 1;
-  const r = (SPAWN.ringRadius + (Math.random() * 2 - 1) * SPAWN.ringJitter) * radiusMul * stageRingMul;
+  const r = (SPAWN.ringRadius + (_seedRand() * 2 - 1) * SPAWN.ringJitter) * radiusMul * stageRingMul;
   const { x, z } = ringPos(angle, r);
   // P4D NG+ (#143) — return the spawned enemy so the Twin Bosses caller can
   // tag the twin via _isTwin post-spawn. spawnEnemy hard-copies known
@@ -148,6 +158,18 @@ function spawnOnRing(tier, angle, radiusMul = 1) {
 
 // ── Public API ───────────────────────────────────────────────────────────────
 export function initSpawnDirector() {
+  // P4E (#145) — Defensive: drop any stale daily seed UNLESS this run is
+  // already in daily mode (in which case main.js applyMetaUpgrades has
+  // already seeded for the current day and we'd lose that seed by
+  // clearing here). Without this guard, a crashed daily run that didn't
+  // reach _teardownActiveRun could leave _seedRand pinned to a
+  // deterministic stream during the next non-daily run. The state.modes
+  // check is the live source of truth — applyMetaUpgrades wrote it just
+  // before kkStartRun would normally call init() the second time around,
+  // and tests that call resetSpawnDirector mid-run will see the same.
+  try {
+    if (!(state.modes && state.modes.daily)) clearDailySeed();
+  } catch (_) {}
   _acc = 0;
   _nextHorde = SPAWN.hordeIntervalSec;
   _nextChest = SPAWN.chestIntervalSec;
@@ -173,7 +195,7 @@ function spawnMiniBoss() {
   const eliteAllowed = ENEMY_TIERS.filter(t => t.elite && t.minD <= D + 1);
   const pool = eliteAllowed.length > 0 ? eliteAllowed : ENEMY_TIERS.filter(t => t.elite);
   if (pool.length === 0) return;
-  const choice = pool[Math.floor(Math.random() * pool.length)];
+  const choice = pool[Math.floor(_seedRand() * pool.length)];
   const buffed = {
     ...choice,
     hp: choice.hp * STAGE.miniBossHpMul,
@@ -181,7 +203,7 @@ function spawnMiniBoss() {
     isMiniBoss: true,
     _patternIdx: _miniBossIdx, // tells bossTelegraphs which signature attack
   };
-  const angle = Math.random() * Math.PI * 2;
+  const angle = _seedRand() * Math.PI * 2;
   spawnOnRing(buffed, angle, 1.3);
   // P4D NG+ Twin Bosses (#143) — spawn a second adjacent miniboss with the
   // same buffed stats; offset by ~PI/12 around the ring (small angular
@@ -292,7 +314,7 @@ function spawnFinalBoss() {
     scale: (choice.scale || 1) * STAGE.finalBossScaleMul,
     isFinalBoss: true,
   };
-  const angle = Math.random() * Math.PI * 2;
+  const angle = _seedRand() * Math.PI * 2;
   const r = SPAWN.ringRadius * 1.5;
   const hp = state.hero.pos;
   const fbx = hp.x + Math.cos(angle) * r;
@@ -482,7 +504,7 @@ export function tickSpawnDirector(dt) {
   //      taught without overwhelming).
   if (!bossRush && !_nemesisState.telegraphed && t >= _nemesisTelegraphAt()) {
     _nemesisState.telegraphed = true;
-    _nemesisState.angle = Math.random() * Math.PI * 2;
+    _nemesisState.angle = _seedRand() * Math.PI * 2;
     try { showNemesisTease(_nemesisState.angle, NEMESIS_SPAWN.arrowLifetimeSec); } catch (_) {}
     if (sfx && sfx.bossWarn) sfx.bossWarn();
   }
@@ -506,7 +528,7 @@ export function tickSpawnDirector(dt) {
       const hp = state.hero.pos;
       const angle = (isFirstSpawn && _nemesisState.telegraphed)
         ? _nemesisState.angle
-        : Math.random() * Math.PI * 2;
+        : _seedRand() * Math.PI * 2;
       const r = NEMESIS_SPAWN.spawnRadius;
       const nx = hp.x + Math.cos(angle) * r;
       const nz = hp.z + Math.sin(angle) * r;
@@ -583,7 +605,7 @@ export function tickSpawnDirector(dt) {
     const n = Math.min(SPAWN.spawnBatchPerTick, Math.ceil(deficit));
     for (let i = 0; i < n; i++) {
       const tier = weightedPick(allowedTiers);
-      const angle = Math.random() * Math.PI * 2;
+      const angle = _seedRand() * Math.PI * 2;
       spawnOnRing(tier, angle);
     }
   }
@@ -595,11 +617,11 @@ export function tickSpawnDirector(dt) {
     const pool = hordePool.length > 0 ? hordePool : allowedTiers;
 
     // Tight arc on one side of hero
-    const center = Math.random() * Math.PI * 2;
+    const center = _seedRand() * Math.PI * 2;
     const arc = Math.PI / 3; // 60° spread
     for (let i = 0; i < SPAWN.hordeCount; i++) {
       const tier = weightedPick(pool);
-      const angle = center + (Math.random() - 0.5) * arc;
+      const angle = center + (_seedRand() - 0.5) * arc;
       spawnOnRing(tier, angle);
     }
 
