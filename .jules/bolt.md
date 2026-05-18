@@ -1,3 +1,3 @@
-## 2024-05-17 - Blob Shadow Culling
-**Learning:** The blob shadow InstancedMesh `updateBlobShadows` in `src/blobShadows.js` iterated over all active enemies regardless of distance, doing matrix math for off-screen enemies.
-**Action:** Always check if `InstancedMesh` updates can be distance-culled. I added a 24u distance threshold (squared distance) to the hero before updating the matrix. Ensure that fallback positions (`e.pos` instead of `e.mesh.position`) are used correctly when testing culling conditions.
+## 2024-05-13 - Fast SpatialHash Keys
+**Learning:** In highly queried code paths (like spatial hash key generation called multiple times per enemy frame), string concatenation `cx + '_' + cz` can lead to GC pauses and slower Map lookups than using integers. Packing grid coordinates into integers avoids these issues entirely.
+**Action:** For 2D grid lookups, pack coordinates using bitwise operations (e.g. `((cx & 0xFFFF) << 16) | (cz & 0xFFFF)`) instead of strings whenever possible to improve hot-loop performance and prevent allocation in game loops.
